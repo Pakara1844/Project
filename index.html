@@ -2,13 +2,12 @@
 <html lang="th" data-theme="light">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-  <title>EGAT C-Bank Optimizer v5</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>⚡ EGAT C-Bank Optimizer (3-Phase Edition)</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script>
     (function(){
       const t = localStorage.getItem('cbank-theme') || 'light';
@@ -17,2059 +16,438 @@
   </script>
   <style>
 /* ============================================================
-   EGAT C-Bank Optimizer v5 — Modern Dual-Theme UI
+   EGAT C-Bank Optimizer — 3-Phase Double Wye (2.0x Font Size)
    ============================================================ */
-@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
-
-/* ── Light theme (default) ───────────────────────────────────── */
 :root {
-  /* Surfaces */
-  --bg:        #f4f6fb;
-  --bg2:       #ffffff;
-  --bg3:       #eef2f8;
-  --bg4:       #e1e7f0;
-  --bg-glass:  rgba(255,255,255,0.7);
-
-  /* Borders */
-  --border:    #d8dfe8;
-  --border2:   #b8c2d0;
-  --border-strong: #8a96a8;
-
-  /* Brand */
-  --blue:      #1e5fdc;
-  --blue-2:    #2563eb;
-  --blue-dim:  #1647ad;
-  --blue-soft: rgba(30,95,220,0.08);
-  --blue-glow: rgba(30,95,220,0.15);
-
-  --amber:     #d97706;
-  --amber-2:   #f59e0b;
-  --amber-soft:rgba(217,119,6,0.10);
-
-  --green:     #059669;
-  --green-soft:rgba(5,150,105,0.10);
-  --red:       #dc2626;
-  --red-soft:  rgba(220,38,38,0.10);
-  --purple:    #7c3aed;
-  --teal:      #0891b2;
-
-  /* Text */
-  --txt:       #0f1419;
-  --txt2:      #475569;
-  --txt3:      #94a3b8;
-
-  /* Effects */
-  --shadow-sm: 0 1px 2px rgba(15,20,25,0.04), 0 1px 3px rgba(15,20,25,0.06);
-  --shadow:    0 4px 12px rgba(15,20,25,0.06), 0 2px 4px rgba(15,20,25,0.04);
-  --shadow-lg: 0 12px 32px rgba(15,20,25,0.10), 0 4px 12px rgba(15,20,25,0.06);
-  --shadow-glow: 0 0 0 4px var(--blue-glow);
-
-  /* Diagram colors (used by SVG) */
-  --diag-bg: #fafbfc;
-  --diag-grid: #e8edf3;
-  --diag-cap-body: #e8e4d8;
-  --diag-cap-shade: #b8b4a8;
-  --diag-insulator: #a89060;
-  --diag-insulator-dark: #7a6740;
-  --diag-metal: #a8b2bf;
-  --diag-metal-dark: #5a6371;
-  --diag-metal-light: #d4dae3;
-
-  /* Typography */
-  --mono:      'JetBrains Mono','Space Mono',monospace;
-  --th:        'Inter','Noto Sans Thai',sans-serif;
-  --head:      'Inter',sans-serif;
-  --r:         10px;
-  --rl:        14px;
-  --rxl:       18px;
+  --bg:#f5f7fa; --bg2:#ffffff; --bg3:#f0f4f8; --bg4:#e8edf3;
+  --border:#dde3ec; --border2:#c5cfd9;
+  --blue:#1a5fb4; --blue-dim:#103e7a; --blue-light:#4a90d9;
+  --blue-glow:rgba(26,95,180,0.10); --blue-soft:rgba(26,95,180,0.06);
+  --amber:#c97d00; --amber-bg:rgba(201,125,0,0.08);
+  --green:#1a7a3c; --green-bg:rgba(26,122,60,0.08);
+  --red:#c0392b; --red-bg:rgba(192,57,43,0.08);
+  --teal:#0b7a75; --purple:#6a3093;
+  --txt:#1a2332; --txt2:#4a5568; --txt3:#718096;
+  --mono:'Space Mono',monospace; --th:'Noto Sans Thai',sans-serif; --head:'Rajdhani',sans-serif;
+  --r:10px; --rl:18px;
 }
 
-/* ── Dark theme ──────────────────────────────────────────────── */
 [data-theme="dark"] {
-  --bg:        #0a0e17;
-  --bg2:       #131825;
-  --bg3:       #1a2030;
-  --bg4:       #242b3d;
-  --bg-glass:  rgba(19,24,37,0.7);
-
-  --border:    #2a3346;
-  --border2:   #3d4862;
-  --border-strong: #5a6783;
-
-  --blue:      #60a5fa;
-  --blue-2:    #3b82f6;
-  --blue-dim:  #2563eb;
-  --blue-soft: rgba(96,165,250,0.12);
-  --blue-glow: rgba(96,165,250,0.20);
-
-  --amber:     #fbbf24;
-  --amber-2:   #f59e0b;
-  --amber-soft:rgba(251,191,36,0.12);
-
-  --green:     #34d399;
-  --green-soft:rgba(52,211,153,0.12);
-  --red:       #f87171;
-  --red-soft:  rgba(248,113,113,0.12);
-  --purple:    #a78bfa;
-  --teal:      #22d3ee;
-
-  --txt:       #e8eef7;
-  --txt2:      #94a3b8;
-  --txt3:      #64748b;
-
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.3), 0 1px 3px rgba(0,0,0,0.4);
-  --shadow:    0 4px 12px rgba(0,0,0,0.30), 0 2px 4px rgba(0,0,0,0.20);
-  --shadow-lg: 0 12px 32px rgba(0,0,0,0.40), 0 4px 12px rgba(0,0,0,0.25);
-  --shadow-glow: 0 0 0 4px var(--blue-glow);
-
-  --diag-bg: #131825;
-  --diag-grid: #2a3346;
-  --diag-cap-body: #3a4255;
-  --diag-cap-shade: #1f2535;
-  --diag-insulator: #8b7a4f;
-  --diag-insulator-dark: #5a4f33;
-  --diag-metal: #6c7a8f;
-  --diag-metal-dark: #3d4862;
-  --diag-metal-light: #8b97ad;
+  --bg:#0d1117; --bg2:#161b22; --bg3:#21262d; --bg4:#30363d;
+  --border:#30363d; --border2:#484f58;
+  --txt:#e6edf3; --txt2:#8b949e; --txt3:#6e7681;
+  --blue:#58a6ff; --blue-dim:#1f6feb; --blue-light:#79c0ff;
+  --amber:#f0a500; --green:#3fb950; --red:#f85149;
+  --blue-glow:rgba(88,166,255,0.18); --blue-soft:rgba(88,166,255,0.10);
+  --amber-bg:rgba(240,165,0,0.14); --green-bg:rgba(63,185,80,0.14); --red-bg:rgba(248,81,73,0.14);
 }
 
-/* ── Reset ───────────────────────────────────────────────────── */
 *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
-html { scroll-behavior:smooth; }
 body {
-  font-family:var(--th); background:var(--bg); color:var(--txt);
-  min-height:100vh; transition:background 0.3s, color 0.3s;
-  background-image:
-    radial-gradient(ellipse 70% 30% at 30% 0%, var(--blue-glow), transparent 65%),
-    radial-gradient(ellipse 50% 30% at 80% 0%, var(--amber-soft), transparent 65%);
-  font-feature-settings:'cv11','ss01';
+  font-family:var(--th); background:var(--bg); color:var(--txt); min-height:100vh;
+  transition: background 0.3s, color 0.3s;
 }
-.wrap { max-width:1320px; margin:0 auto; padding:24px 24px 80px; }
+.wrap { max-width:1800px; margin:0 auto; padding:30px 24px 90px; }
 
-/* ── Header ──────────────────────────────────────────────────── */
+/* Header */
 .app-header {
   display:flex; align-items:center; justify-content:space-between;
-  padding:18px 24px; margin-bottom:20px;
-  background:var(--bg2);
-  border:1px solid var(--border);
-  border-radius:var(--rxl);
-  box-shadow:var(--shadow);
-  position:relative; z-index:1;
+  padding:24px 32px; background:var(--bg2); border:2px solid var(--border); border-radius:var(--rl);
+  margin-bottom:24px; box-shadow:0 4px 24px rgba(0,0,0,0.05);
 }
-.header-left { display:flex; align-items:center; gap:14px; }
+.header-left { display:flex; align-items:center; gap:18px; }
 .brand-icon {
-  width:44px; height:44px; border-radius:12px;
-  background:linear-gradient(135deg, var(--blue), var(--blue-dim));
-  display:flex; align-items:center; justify-content:center;
-  font-size:22px; color:#fff;
-  box-shadow:0 4px 12px var(--blue-glow);
+  width:80px; height:80px; background:var(--blue-soft); color:var(--blue);
+  border:3px solid var(--blue-glow); border-radius:14px;
+  display:flex; align-items:center; justify-content:center; font-size:38px;
 }
-.brand-title {
-  font-family:var(--head); font-size:1.4rem; font-weight:800;
-  color:var(--txt); letter-spacing:-0.02em; line-height:1.1;
-}
-.brand-sub { color:var(--txt3); font-size:0.74rem; margin-top:2px; font-weight:500; }
-.header-right { display:flex; align-items:center; gap:10px; }
-.ver-badge {
-  font-family:var(--mono); font-size:0.7rem; color:var(--txt3);
-  background:var(--bg3); border:1px solid var(--border);
-  padding:5px 11px; border-radius:99px; font-weight:600;
-}
+.brand-title { font-family:var(--head); font-size:3rem; font-weight:700; color:var(--blue); line-height:1.1; }
+.brand-sub { color:var(--txt2); font-size:1.4rem; margin-top:4px; font-weight:500; }
+.btn-theme { background:var(--bg3); border:2px solid var(--border); color:var(--txt); padding:12px 20px; border-radius:var(--r); cursor:pointer; font-size:1.8rem; transition:0.2s; }
+.btn-theme:hover { background:var(--bg4); border-color:var(--border2); }
 
-/* Theme toggle button */
-.theme-toggle {
-  width:40px; height:40px; border-radius:50%;
-  background:var(--bg3); border:1px solid var(--border);
-  color:var(--txt2); cursor:pointer; transition:all 0.2s;
-  display:flex; align-items:center; justify-content:center;
-  font-size:1rem;
-  touch-action:manipulation; -webkit-tap-highlight-color:transparent;
-  -webkit-appearance:none; appearance:none;
-}
-.theme-toggle:hover { background:var(--bg4); color:var(--txt); }
-.theme-toggle .icon-light { display:none; }
-.theme-toggle .icon-dark  { display:block; }
-[data-theme="dark"] .theme-toggle .icon-light { display:block; }
-[data-theme="dark"] .theme-toggle .icon-dark  { display:none; }
-
-/* ── Wizard bar ──────────────────────────────────────────────── */
-.wizard-bar {
-  display:flex; align-items:center; gap:8px;
-  background:var(--bg2); border:1px solid var(--border);
-  border-radius:var(--rxl); padding:14px 22px; margin-bottom:20px;
-  box-shadow:var(--shadow-sm);
-}
-.wiz-step { display:flex; align-items:center; gap:12px; flex:1; opacity:0.45; transition:opacity 0.3s; cursor:default; }
-.wiz-step.active { opacity:1; }
-.wiz-step.completed { opacity:0.85; cursor:pointer; }
-.wiz-step.completed:hover { opacity:1; }
-.wiz-num {
-  width:36px; height:36px; border-radius:50%;
-  background:var(--bg3); color:var(--txt3);
-  display:flex; align-items:center; justify-content:center;
-  font-family:var(--head); font-size:1rem; font-weight:700;
-  border:2px solid var(--border); transition:all 0.3s; flex-shrink:0;
-}
-.wiz-step.active .wiz-num {
-  background:linear-gradient(135deg, var(--blue), var(--blue-dim));
-  color:#fff; border-color:transparent;
-  box-shadow:0 0 0 4px var(--blue-glow);
-}
-.wiz-step.completed .wiz-num {
-  background:var(--green); color:#fff; border-color:transparent;
-}
-.wiz-info { line-height:1.2; }
-.wiz-title { font-family:var(--head); font-size:0.92rem; font-weight:700; color:var(--txt); letter-spacing:-0.01em; }
-.wiz-step.active .wiz-title { color:var(--blue); }
-.wiz-desc { font-size:0.7rem; color:var(--txt3); margin-top:2px; }
-.wiz-line { flex:0 0 60px; height:2px; background:var(--border); max-width:80px; transition:background 0.3s; }
-.wiz-line.done { background:var(--green); }
-
-/* ── Pages ───────────────────────────────────────────────────── */
-.page { display:none; animation:fadeSlide 0.4s cubic-bezier(0.16,1,0.3,1); }
-.page.active { display:block; }
-@keyframes fadeSlide { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-
-.page-nav {
-  display:flex; justify-content:space-between; align-items:center;
-  margin-top:24px; padding:18px 0; gap:12px; flex-wrap:wrap;
-}
-
-/* ── Card ────────────────────────────────────────────────────── */
-.card {
-  background:var(--bg2); border:1px solid var(--border);
-  border-radius:var(--rxl); padding:24px; margin-bottom:18px;
-  box-shadow:var(--shadow-sm);
-}
-.card-title {
-  font-family:var(--head); font-size:1.05rem; font-weight:700;
-  color:var(--txt); letter-spacing:-0.01em;
-  display:flex; align-items:center; gap:10px;
-  margin-bottom:18px; padding-bottom:14px;
-  border-bottom:1px solid var(--border);
-}
-.card-title i { color:var(--blue); }
-
-/* ── Topology selector ───────────────────────────────────────── */
-.conn-row { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-.conn-opt {
-  cursor:pointer; background:var(--bg2); border:2px solid var(--border);
-  border-radius:var(--rxl); padding:24px 22px 20px;
-  text-align:left; transition:all 0.25s; user-select:none;
-  position:relative; overflow:hidden;
-  touch-action:manipulation; -webkit-tap-highlight-color:transparent;
-}
-.conn-opt::before {
-  content:''; position:absolute; inset:0; pointer-events:none;
-  background:linear-gradient(135deg, transparent 60%, var(--blue-soft));
-  opacity:0; transition:opacity 0.25s;
-}
-.conn-opt:hover { border-color:var(--blue); box-shadow:var(--shadow); }
-.conn-opt:hover::before { opacity:1; }
-.conn-opt.active {
-  border-color:var(--blue); background:var(--blue-soft);
-  box-shadow:0 0 0 4px var(--blue-glow), var(--shadow);
-}
-.conn-opt.active::before { opacity:1; }
-
-.conn-head { display:flex; align-items:center; gap:12px; margin-bottom:14px; }
-.conn-icon-box {
-  width:48px; height:48px; border-radius:12px;
-  background:var(--blue-soft); color:var(--blue);
-  display:flex; align-items:center; justify-content:center;
-  font-size:1.4rem; flex-shrink:0;
-}
-.conn-opt[data-conn="h-bridge"] .conn-icon-box { background:var(--amber-soft); color:var(--amber); }
-.conn-name { font-family:var(--head); font-size:1.15rem; font-weight:700; color:var(--txt); letter-spacing:-0.01em; }
-.conn-tag {
-  display:inline-block; font-size:0.68rem; font-weight:700; padding:2px 10px;
-  border-radius:99px; background:var(--bg3); color:var(--txt2); margin-top:4px;
-  font-family:var(--mono); letter-spacing:0.5px;
-}
-.conn-opt.active .conn-tag { background:var(--blue); color:#fff; }
-.conn-opt[data-conn="h-bridge"].active .conn-tag { background:var(--amber); }
-.conn-desc { font-size:0.85rem; color:var(--txt2); line-height:1.6; }
-.conn-check {
-  position:absolute; top:18px; right:18px; width:26px; height:26px;
-  background:var(--blue); border-radius:50%; display:none;
-  align-items:center; justify-content:center; font-size:0.7rem; color:#fff;
-  box-shadow:0 2px 8px var(--blue-glow);
-}
-.conn-opt.active .conn-check { display:flex; }
-.conn-opt[data-conn="h-bridge"].active .conn-check { background:var(--amber); }
-
-/* ── Diagram ─────────────────────────────────────────────────── */
-.diagram-wrap {
-  background:var(--bg2); border:1px solid var(--border);
-  border-radius:var(--rxl); overflow:hidden; margin-bottom:18px;
-  box-shadow:var(--shadow-sm);
-}
-.diagram-wrap .card-title {
-  padding:16px 20px; margin-bottom:0; border-bottom:1px solid var(--border);
-}
-.diagram-wrap svg { width:100%; height:auto; display:block; }
-
-/* ── Setup ───────────────────────────────────────────────────── */
-.fg { display:flex; flex-direction:column; gap:6px; }
-.fg label { font-size:0.78rem; color:var(--txt2); font-weight:600; letter-spacing:0.01em; }
-.fg input,.fg select {
-  background:var(--bg3); border:1.5px solid var(--border); color:var(--txt);
-  border-radius:var(--r); padding:10px 13px; font-family:var(--th); font-size:0.93rem;
-  width:100%; transition:all 0.2s; font-weight:500;
-}
-.fg input:focus,.fg select:focus { outline:none; border-color:var(--blue); box-shadow:var(--shadow-glow); background:var(--bg2); }
-
+/* Setup & Config */
 .sys-params {
-  display:grid; grid-template-columns:repeat(4,1fr); gap:12px;
-  background:var(--bg3); border:1px solid var(--border); border-radius:var(--rl);
-  padding:18px 20px; margin-bottom:20px;
+  display:flex; flex-wrap:wrap; gap:20px; background:var(--bg3); border:2px solid var(--border); border-radius:var(--r);
+  padding:24px 30px; margin-bottom:26px;
 }
-.sys-params .fg label { color:var(--blue); font-weight:700; font-size:0.74rem; text-transform:uppercase; letter-spacing:0.5px; }
+.fg { display:flex; flex-direction:column; gap:10px; flex:1; min-width:200px; }
+.fg label { color:var(--txt2); font-weight:700; font-size:1.5rem; }
+.fg input, .fg select {
+  background:var(--bg2); border:2px solid var(--border); color:var(--txt);
+  border-radius:var(--r); padding:14px 18px; font-family:var(--th); font-size:1.8rem; outline:none; transition:0.2s;
+}
+.fg input:focus, .fg select:focus { border-color:var(--blue); box-shadow:0 0 0 4px var(--blue-glow); }
 
-/* ── Buttons ─────────────────────────────────────────────────── */
-.btn {
-  display:inline-flex; align-items:center; justify-content:center; gap:8px;
-  padding:11px 22px; font-family:var(--th); font-size:0.92rem; font-weight:600;
-  border:none; border-radius:var(--r); cursor:pointer;
-  transition:all 0.2s cubic-bezier(0.16,1,0.3,1); white-space:nowrap;
-  letter-spacing:-0.005em;
-  touch-action:manipulation; -webkit-tap-highlight-color:transparent;
-  -webkit-appearance:none; appearance:none;
-}
-.btn-outline { background:transparent; color:var(--blue); border:1.5px solid var(--blue); }
-.btn-outline:hover { background:var(--blue-soft); }
-.btn-primary {
-  background:linear-gradient(135deg, var(--blue), var(--blue-dim));
-  color:#fff; box-shadow:0 4px 14px var(--blue-glow);
-  font-family:var(--head); font-weight:700;
-}
-.btn-primary:hover { box-shadow:0 6px 20px var(--blue-glow); }
-.btn-primary:active { opacity:0.9; }
-.btn-primary:disabled { opacity:0.4; cursor:not-allowed; transform:none; box-shadow:none; }
-.btn-lg { padding:14px 32px; font-size:1.02rem; border-radius:var(--rl); }
-.btn-back { background:var(--bg3); color:var(--txt2); border:1.5px solid var(--border); }
-.btn-back:hover { background:var(--bg4); color:var(--txt); }
-.btn-excel { background:var(--green-soft); color:var(--green); border:1.5px solid var(--green); }
-.btn-excel:hover { background:var(--green); color:#fff; }
+/* Layout 3 Phase (Grid) */
+.phase-grid { display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-bottom:24px; }
+.inp-panel { background:var(--bg2); border:2px solid var(--border); border-radius:var(--rl); padding:24px; box-shadow:0 2px 10px rgba(0,0,0,0.03); }
+.inp-panel.wa { border-top:5px solid var(--red); }
+.inp-panel.wb { border-top:5px solid var(--amber); }
+.inp-panel.wc { border-top:5px solid var(--blue); }
+.inp-panel.spare { border-top:5px solid var(--teal); grid-column: 1 / -1; }
 
-/* ── Input panels ────────────────────────────────────────────── */
-.input-cols { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px; }
-.inp-panel {
-  background:var(--bg2); border:1px solid var(--border);
-  border-radius:var(--rl); padding:16px; transition:border-color 0.2s;
-}
-.inp-panel:hover { border-color:var(--border2); }
-.inp-panel.y1, .inp-panel.la { border-top:3px solid var(--blue); }
-.inp-panel.y2, .inp-panel.lb { border-top:3px solid var(--amber); }
-.inp-panel.spare              { border-top:3px solid var(--teal); }
-.inp-panel.lc                 { border-top:3px solid var(--purple); }
-.inp-panel.ld                 { border-top:3px solid var(--green); }
-.panel-hd {
-  font-family:var(--head); font-size:0.95rem; font-weight:700;
-  margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid var(--border);
-  display:flex; align-items:center; gap:8px; letter-spacing:-0.01em;
-}
-.y1 .panel-hd, .la .panel-hd { color:var(--blue); }
-.y2 .panel-hd, .lb .panel-hd { color:var(--amber); }
-.spare .panel-hd { color:var(--teal); }
-.lc .panel-hd { color:var(--purple); }
-.ld .panel-hd { color:var(--green); }
+.panel-hd { font-family:var(--head); font-size:2.2rem; font-weight:700; margin-bottom:18px; padding-bottom:12px; border-bottom:2px solid var(--border); display:flex; align-items:center; gap:10px; color:var(--txt); }
 
-.cr { display:flex; align-items:center; gap:8px; margin-bottom:7px; }
-.cr label { font-family:var(--mono); font-size:0.72rem; color:var(--txt3); min-width:46px; font-weight:600; }
-.cr input {
-  flex:1; background:var(--bg3); border:1.5px solid var(--border); color:var(--txt);
-  border-radius:7px; padding:7px 10px; font-family:var(--mono); font-size:0.83rem;
-  transition:all 0.15s; font-weight:500;
-}
-.cr input:focus { outline:none; border-color:var(--blue); box-shadow:0 0 0 2px var(--blue-glow); background:var(--bg2); }
-.cr .unit { font-size:0.68rem; color:var(--txt3); min-width:18px; }
+/* Input Rows */
+.cr { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+.cr label { font-family:var(--mono); font-size:1.5rem; color:var(--txt2); min-width:85px; font-weight:600; }
+.cr input { flex:1; background:var(--bg3); border:2px solid var(--border); color:var(--txt); border-radius:8px; padding:12px 16px; font-family:var(--mono); font-size:1.7rem; transition:0.15s; }
+.cr input:focus { border-color:var(--blue); box-shadow:0 0 0 3px var(--blue-glow); }
+.cr .unit { font-size:1.4rem; color:var(--txt3); min-width:30px; }
 
-/* ── Results header ──────────────────────────────────────────── */
-.res-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; flex-wrap:wrap; gap:10px; }
-.res-title { font-family:var(--head); font-size:1.4rem; font-weight:800; color:var(--txt); letter-spacing:-0.02em; display:flex; align-items:center; gap:10px; }
-.res-title i { color:var(--blue); }
+/* Buttons */
+.action-bar { display:flex; gap:16px; margin:30px 0; }
+.btn { display:inline-flex; align-items:center; justify-content:center; gap:12px; padding:18px 36px; font-family:var(--th); font-size:2rem; font-weight:700; border:none; border-radius:var(--r); cursor:pointer; transition:0.2s; flex:1; }
+.btn-primary { background:linear-gradient(135deg, var(--blue), var(--blue-dim)); color:#fff; box-shadow:0 6px 20px rgba(26,95,180,0.25); }
+.btn-primary:hover { transform:translateY(-2px); box-shadow:0 8px 25px rgba(26,95,180,0.35); }
+.btn-primary:disabled { opacity:0.5; cursor:not-allowed; transform:none; }
+.btn-outline { background:var(--bg3); color:var(--txt); border:2px solid var(--border); }
+.btn-outline:hover { background:var(--bg4); border-color:var(--border2); }
 
-/* ── Symmetric totals grid ───────────────────────────────────── */
-.totals-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:18px; }
-.total-card {
-  background:var(--bg2); border:1px solid var(--border);
-  border-radius:var(--rxl); padding:18px 22px; box-shadow:var(--shadow-sm);
-  transition:transform 0.2s;
-}
-.total-card:hover { box-shadow:var(--shadow); }
-.total-card.before { border-top:3px solid var(--amber); }
-.total-card.system { border-top:3px solid var(--blue); }
-.tc-head {
-  font-family:var(--head); font-size:0.9rem; font-weight:700;
-  margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid var(--border);
-  display:flex; align-items:center; gap:8px; letter-spacing:-0.01em;
-}
-.before .tc-head { color:var(--amber); }
-.system .tc-head { color:var(--blue); }
-.tc-row { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px dashed var(--border); }
-.tc-row:last-child { border-bottom:none; }
-.tc-lbl { font-size:0.85rem; color:var(--txt2); font-weight:500; }
-.tc-val { font-family:var(--mono); font-size:0.95rem; font-weight:700; color:var(--txt); }
-.tc-row.tc-warn .tc-val { color:var(--amber); }
-.tc-row.tc-info .tc-val { color:var(--blue); }
+/* Results */
+#resultsArea { display:none; animation:fadeIn 0.4s ease; }
+@keyframes fadeIn { from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:translateY(0);} }
+.res-title { font-family:var(--head); font-size:2.8rem; font-weight:700; color:var(--blue); margin-bottom:24px; border-bottom:3px solid var(--border); padding-bottom:16px; }
 
-/* ── Calculation buttons row ─────────────────────────────────── */
-.calc-actions {
-  display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:20px;
-}
-.calc-action-btn {
-  background:var(--bg2); border:1.5px solid var(--border); border-radius:var(--rl);
-  padding:14px 18px; cursor:pointer; transition:all 0.2s;
-  display:flex; align-items:center; gap:12px; text-align:left;
-  font-family:var(--th); color:var(--txt);
-  touch-action:manipulation; -webkit-tap-highlight-color:transparent;
-}
-.calc-action-btn:hover { border-color:var(--blue); transform:translateY(-2px); box-shadow:var(--shadow); }
-.calc-action-btn.active { border-color:var(--blue); background:var(--blue-soft); box-shadow:var(--shadow-glow); }
-.calc-action-btn .ca-icon {
-  width:38px; height:38px; border-radius:10px; flex-shrink:0;
-  display:flex; align-items:center; justify-content:center; font-size:1rem;
-}
-.calc-action-btn[data-view="metrics"]   .ca-icon { background:var(--amber-soft); color:var(--amber); }
-.calc-action-btn[data-view="formulas"]  .ca-icon { background:var(--blue-soft);  color:var(--blue); }
-.calc-action-btn[data-view="results"]   .ca-icon { background:var(--green-soft); color:var(--green); }
-.calc-action-btn .ca-info { line-height:1.3; }
-.calc-action-btn .ca-title { font-family:var(--head); font-size:0.9rem; font-weight:700; letter-spacing:-0.01em; }
-.calc-action-btn .ca-desc  { font-size:0.72rem; color:var(--txt3); margin-top:2px; }
+.sol-card { background:var(--bg2); border:2px solid var(--border); border-radius:var(--rl); margin-bottom:30px; overflow:hidden; box-shadow:0 4px 15px rgba(0,0,0,0.05); }
+.sol-card.s1 { border-left:6px solid var(--amber); }
+.sol-card.full { border-left:6px solid var(--blue); }
+.sol-top { display:flex; align-items:center; justify-content:space-between; padding:24px 30px; background:var(--bg3); border-bottom:2px solid var(--border); }
+.sol-name { font-family:var(--head); font-size:2.4rem; font-weight:700; color:var(--txt); }
+.delta-badge { font-family:var(--mono); font-size:2rem; font-weight:700; padding:10px 24px; border-radius:30px; background:var(--blue-glow); color:var(--blue); border:2px solid var(--blue); }
 
-/* ── Calc view sections (toggle on/off) ──────────────────────── */
-.calc-view { display:none; animation:fadeSlide 0.3s ease; }
-.calc-view.active { display:block; }
+.sol-body { padding:30px; }
+.step-box { background:var(--bg3); border:2px solid var(--border); border-radius:var(--r); padding:24px; margin-bottom:26px; }
+.step-title { font-size:1.6rem; font-weight:700; color:var(--amber); margin-bottom:16px; text-transform:uppercase; }
+.step-txt { font-size:1.8rem; font-weight:600; color:var(--txt); line-height:1.6; }
 
-/* ── Engineering metrics symmetric grid ──────────────────────── */
-.eng-panel-full {
-  background:var(--bg2); border:1px solid var(--border); border-radius:var(--rxl);
-  padding:20px 24px; box-shadow:var(--shadow-sm); border-top:3px solid var(--amber);
-  margin-bottom:18px;
-}
-.eng-panel-full .eng-panel-title {
-  font-family:var(--head); font-size:1.05rem; font-weight:700;
-  margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid var(--border);
-  display:flex; align-items:center; gap:10px; color:var(--amber); letter-spacing:-0.01em;
-}
-.eng-grid-sym { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
-.eng-item {
-  background:var(--bg3); border-radius:var(--r); padding:13px 15px;
-  border-left:3px solid var(--border2); transition:transform 0.15s;
-}
-.eng-item:hover { transform:translateY(-2px); }
-.eng-item.hi-blue  { border-left-color:var(--blue); }
-.eng-item.hi-amber { border-left-color:var(--amber); }
-.eng-item.hi-green { border-left-color:var(--green); }
-.eng-item.hi-red   { border-left-color:var(--red); }
-.eng-item .ei-lbl  { font-size:0.68rem; color:var(--txt3); font-weight:700; margin-bottom:5px; text-transform:uppercase; letter-spacing:0.5px; }
-.eng-item .ei-val  { font-family:var(--mono); font-size:0.98rem; font-weight:700; color:var(--txt); }
-.eng-item .ei-val.warn { color:var(--amber); }
-.eng-item .ei-val.good { color:var(--green); }
-.eng-item .ei-val.bad  { color:var(--red); }
-.eng-item .ei-val.hi   { color:var(--blue); }
-.eng-item .ei-unit     { font-size:0.7rem; color:var(--txt3); margin-left:3px; font-weight:500; }
-
-/* ── Formulas section ────────────────────────────────────────── */
-.formula-section {
-  background:var(--bg2); border:1px solid var(--border); border-radius:var(--rxl);
-  padding:24px 28px; box-shadow:var(--shadow-sm); border-top:3px solid var(--blue);
-  margin-bottom:18px;
-}
-.formula-title {
-  font-family:var(--head); font-size:1.1rem; font-weight:700;
-  margin-bottom:8px; color:var(--blue); letter-spacing:-0.01em;
-  display:flex; align-items:center; gap:10px;
-}
-.formula-sub { font-size:0.85rem; color:var(--txt2); margin-bottom:20px; line-height:1.6; }
-.formula-step {
-  background:var(--bg3); border:1px solid var(--border);
-  border-radius:var(--rl); padding:18px 20px; margin-bottom:14px;
-  border-left:3px solid var(--blue);
-}
-.fs-head {
-  display:flex; align-items:center; gap:10px; margin-bottom:12px;
-}
-.fs-num {
-  width:28px; height:28px; border-radius:50%;
-  background:linear-gradient(135deg, var(--blue), var(--blue-dim));
-  color:#fff; display:flex; align-items:center; justify-content:center;
-  font-family:var(--head); font-size:0.85rem; font-weight:700; flex-shrink:0;
-}
-.fs-title {
-  font-family:var(--head); font-size:0.98rem; font-weight:700;
-  color:var(--txt); letter-spacing:-0.01em; flex:1;
-}
-.fs-tag {
-  font-size:0.66rem; padding:3px 9px; border-radius:99px;
-  background:var(--blue-soft); color:var(--blue); font-weight:700;
-  font-family:var(--mono); letter-spacing:0.4px;
-}
-.fs-desc { font-size:0.82rem; color:var(--txt2); margin-bottom:10px; line-height:1.6; }
-.fs-formula {
-  background:var(--bg2); border:1px solid var(--border);
-  border-radius:var(--r); padding:14px 18px; margin:10px 0;
-  font-family:var(--mono); font-size:1rem; line-height:1.8;
-  text-align:center; color:var(--txt); overflow-x:auto;
-  font-weight:500;
-}
-.fs-formula .var { color:var(--blue); font-weight:700; }
-.fs-formula .num { color:var(--amber); font-weight:700; }
-.fs-formula .res { color:var(--green); font-weight:700; }
-.fs-formula .op  { color:var(--txt3); margin:0 4px; }
-.fs-eq  { display:block; padding:6px 0; }
-.fs-eq.sym { color:var(--txt2); font-style:italic; }
-.fs-eq.sub { color:var(--txt2); font-size:0.88rem; padding:2px 0; }
-.fs-eq.final { color:var(--green); font-weight:700; padding-top:8px; border-top:1px dashed var(--border); margin-top:6px; }
-.fs-eq.final::before { content:'➜  '; color:var(--green); }
-
-/* ── Tabs ────────────────────────────────────────────────────── */
-.tab-bar {
-  display:flex; gap:0; border-bottom:2px solid var(--border);
-  margin-bottom:20px; overflow-x:auto;
-}
-.tab {
-  padding:11px 22px; font-family:var(--head); font-size:0.92rem; font-weight:600;
-  color:var(--txt3); cursor:pointer; border-bottom:3px solid transparent;
-  margin-bottom:-2px; white-space:nowrap; transition:all 0.15s;
-  background:none; border-top:none; border-left:none; border-right:none;
-  letter-spacing:-0.005em;
-  touch-action:manipulation; -webkit-tap-highlight-color:transparent;
-  -webkit-appearance:none; appearance:none;
-}
-.tab:hover { color:var(--blue); }
-.tab.active { color:var(--blue); border-bottom-color:var(--blue); }
-.tab-panel { display:none; }
-.tab-panel.active { display:block; }
-
-/* ── Solution card ───────────────────────────────────────────── */
-.sol-card {
-  background:var(--bg2); border:1px solid var(--border); border-radius:var(--rxl);
-  margin-bottom:16px; overflow:hidden; box-shadow:var(--shadow-sm);
-  transition:transform 0.2s, box-shadow 0.2s;
-}
-.sol-card:hover { box-shadow:var(--shadow); }
-.sol-card.s1   { border-top:3px solid var(--green); }
-.sol-card.s2   { border-top:3px solid var(--amber); }
-.sol-card.s3   { border-top:3px solid var(--purple); }
-.sol-card.full { border-top:3px solid var(--blue); }
-.sol-top {
-  display:flex; align-items:center; justify-content:space-between;
-  padding:16px 22px; background:var(--bg3); border-bottom:1px solid var(--border);
-  flex-wrap:wrap; gap:8px;
-}
-.sol-name { font-family:var(--head); font-size:1.05rem; font-weight:700; letter-spacing:-0.01em; }
-.s1   .sol-name { color:var(--green); }
-.s2   .sol-name { color:var(--amber); }
-.s3   .sol-name { color:var(--purple); }
-.full .sol-name { color:var(--blue); }
-.delta-badge {
-  font-family:var(--mono); font-size:0.88rem; font-weight:700;
-  padding:6px 14px; border-radius:99px;
-}
-.delta-badge.great { background:var(--green-soft); color:var(--green); border:1px solid var(--green); }
-.delta-badge.ok    { background:var(--amber-soft); color:var(--amber); border:1px solid var(--amber); }
-.delta-badge.bad   { background:var(--red-soft);   color:var(--red);   border:1px solid var(--red); }
-.sol-body { padding:20px 22px; }
-
-/* Steps */
-.steps-box { background:var(--bg3); border:1px solid var(--border); border-radius:var(--rl); padding:16px 18px; margin-bottom:16px; }
-.steps-title { font-size:0.75rem; font-weight:700; color:var(--amber); letter-spacing:0.5px; margin-bottom:12px; display:flex; align-items:center; gap:8px; text-transform:uppercase; }
-.step-item { display:flex; align-items:flex-start; gap:12px; padding:8px 0; border-bottom:1px dashed var(--border); font-size:0.88rem; }
-.step-item:last-child { border-bottom:none; }
-.step-num {
-  min-width:24px; height:24px;
-  background:linear-gradient(135deg, var(--blue), var(--blue-dim));
-  color:#fff; border-radius:50%; display:flex; align-items:center; justify-content:center;
-  font-family:var(--mono); font-size:0.72rem; flex-shrink:0; margin-top:1px; font-weight:700;
-}
-
-/* Eng metrics in sol card — symmetric 4-col */
-.sol-eng { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:16px; }
-.sol-eng-item {
-  background:var(--bg3); border-radius:var(--r); padding:11px 13px;
-  border-left:3px solid var(--border2);
-}
-.sol-eng-item.hi-blue  { border-left-color:var(--blue); }
-.sol-eng-item.hi-green { border-left-color:var(--green); }
-.sol-eng-item.hi-amber { border-left-color:var(--amber); }
-.sol-eng-item .sei-lbl { font-size:0.65rem; color:var(--txt3); font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px; }
-.sol-eng-item .sei-val { font-family:var(--mono); font-size:0.92rem; font-weight:700; color:var(--txt); }
-.sol-eng-item .sei-val.warn { color:var(--amber); }
-.sol-eng-item .sei-val.good { color:var(--green); }
-.sol-eng-item .sei-val.bad  { color:var(--red); }
-.sol-eng-item .sei-unit { font-size:0.65rem; color:var(--txt3); margin-left:3px; font-weight:500; }
-
-/* Cap lists */
-.cap-cols { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-.cap-box { background:var(--bg3); border:1px solid var(--border); border-radius:var(--rl); padding:14px 16px; }
-.cap-box h4 { font-family:var(--head); font-size:0.88rem; font-weight:700; color:var(--txt2); margin-bottom:10px; padding-bottom:8px; border-bottom:1px dashed var(--border); letter-spacing:-0.01em; }
-.ci { display:flex; align-items:center; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--border); font-size:0.85rem; }
+/* 6-Column Phase Results */
+.res-grid-6 { display:grid; grid-template-columns:repeat(3, 1fr); gap:20px; }
+.cap-box { background:var(--bg3); border:2px solid var(--border); border-radius:var(--r); padding:20px; }
+.cap-box h4 { font-family:var(--head); font-size:1.8rem; font-weight:700; color:var(--txt); margin-bottom:16px; padding-bottom:12px; border-bottom:2px dashed var(--border); }
+.ci { display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-bottom:2px solid var(--border); font-size:1.7rem; }
 .ci:last-child { border-bottom:none; }
-.ci .cv  { font-family:var(--mono); font-weight:700; color:var(--txt); }
-.ci .cid { font-size:0.72rem; color:var(--txt3); margin-left:3px; }
-.pill { font-size:0.68rem; padding:3px 10px; border-radius:99px; font-weight:600; }
-.p-stay  { background:var(--bg4); color:var(--txt3); }
-.p-move  { background:var(--amber-soft); color:var(--amber); }
-.p-spare { background:var(--blue-soft); color:var(--blue); }
+.ci .cv { font-family:var(--mono); font-weight:700; color:var(--txt); }
+.ci .cid { font-size:1.4rem; color:var(--txt3); margin-left:6px; }
+.pill { font-size:1.4rem; padding:4px 14px; border-radius:16px; font-weight:700; }
+.p-stay { background:var(--bg4); color:var(--txt2); }
+.p-move { background:var(--amber-bg); color:var(--amber); border:2px solid rgba(201,125,0,0.3); }
+.p-spare { background:var(--blue-glow); color:var(--blue); border:2px solid rgba(26,95,180,0.3); }
 
-/* Misc */
-::-webkit-scrollbar { width:8px; height:8px; }
-::-webkit-scrollbar-track { background:transparent; }
-::-webkit-scrollbar-thumb { background:var(--border2); border-radius:99px; }
-::-webkit-scrollbar-thumb:hover { background:var(--border-strong); }
-
-@media (max-width:980px) {
-  .input-cols  { grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); }
-  .cap-cols    { grid-template-columns:1fr; }
-  .conn-row    { grid-template-columns:1fr; }
-  .sys-params  { grid-template-columns:1fr 1fr; }
-  .totals-grid { grid-template-columns:1fr; }
-  .eng-grid-sym{ grid-template-columns:1fr 1fr; }
-  .sol-eng     { grid-template-columns:1fr 1fr; }
-  .calc-actions{ grid-template-columns:1fr; }
-  .app-header  { flex-direction:column; gap:10px; align-items:flex-start; }
-  .wizard-bar  { flex-wrap:wrap; padding:12px; }
-  .wiz-line    { display:none; }
-  .wiz-step    { flex-basis:100%; padding:6px 0; }
+@media(max-width:1200px) {
+  .res-grid-6 { grid-template-columns:1fr 1fr; }
 }
-
-@media (max-width:640px) {
-  .wrap { padding:12px 12px 60px; }
-  .input-cols  { grid-template-columns:1fr 1fr; }
-  .sys-params  { grid-template-columns:1fr; }
-  .eng-grid-sym{ grid-template-columns:1fr 1fr; }
-  .sol-eng     { grid-template-columns:1fr 1fr; }
-  .calc-actions{ grid-template-columns:1fr; }
-  .totals-grid { grid-template-columns:1fr; }
-  .card        { padding:16px; }
-  .brand-title { font-size:1.15rem; }
-  .btn-lg      { padding:12px 20px; font-size:0.95rem; }
+@media(max-width:800px) {
+  .phase-grid, .res-grid-6 { grid-template-columns:1fr; }
+  .sys-params { flex-direction:column; }
 }
-
-@media (max-width:480px) {
-  .input-cols  { grid-template-columns:1fr; }
-  .cap-cols    { grid-template-columns:1fr; }
-}
-
   </style>
 </head>
 <body>
-<div class="wrap">
 
+<div class="wrap">
   <header class="app-header">
     <div class="header-left">
       <div class="brand-icon"><i class="fas fa-bolt"></i></div>
       <div>
-        <div class="brand-title">C-Bank Optimizer</div>
-        <div class="brand-sub">EGAT Capacitor Bank Rebalancing Tool</div>
+        <div class="brand-title">3-PHASE C-BANK OPTIMIZER</div>
+        <div class="brand-sub">Double Wye Ungrounded Rebalancing Tool</div>
       </div>
     </div>
-    <div class="header-right">
-      <button class="theme-toggle" onclick="toggleTheme()" title="สลับธีม">
-        <i class="fas fa-moon icon-dark"></i>
-        <i class="fas fa-sun icon-light"></i>
-      </button>
-      <div class="ver-badge">v5.0</div>
-    </div>
+    <button class="btn-theme" onclick="toggleTheme()" title="สลับโหมดสว่าง/มืด">
+      <i class="fas fa-moon" id="themeIcon"></i>
+    </button>
   </header>
 
-  <div class="wizard-bar">
-    <div class="wiz-step active" data-step="1" onclick="if(this.classList.contains('completed'))goToStep(1)">
-      <div class="wiz-num">1</div>
-      <div class="wiz-info"><div class="wiz-title">Topology</div><div class="wiz-desc">เลือกรูปแบบการต่อ</div></div>
+  <div class="sys-params">
+    <div class="fg">
+      <label>ระบบแรงดันไฟฟ้า (kV)</label>
+      <select id="sysVolt">
+        <option value="230">230 kV</option>
+        <option value="115">115 kV</option>
+        <option value="69" selected>69 kV</option>
+        <option value="22">22 kV</option>
+      </select>
     </div>
-    <div class="wiz-line"></div>
-    <div class="wiz-step" data-step="2" onclick="if(this.classList.contains('completed'))goToStep(2)">
-      <div class="wiz-num">2</div>
-      <div class="wiz-info"><div class="wiz-title">Setup</div><div class="wiz-desc">ตั้งค่าและกรอกข้อมูล</div></div>
+    <div class="fg">
+      <label>จำนวน C ต่อกิ่ง (กระป๋อง)</label>
+      <input type="number" id="numPairs" value="10" min="1">
     </div>
-    <div class="wiz-line"></div>
-    <div class="wiz-step" data-step="3">
-      <div class="wiz-num">3</div>
-      <div class="wiz-info"><div class="wiz-title">Results</div><div class="wiz-desc">ผลการวิเคราะห์</div></div>
+    <div class="fg">
+      <label>จำนวนอะไหล่ (Spare)</label>
+      <input type="number" id="numSpares" value="5" min="0">
+    </div>
+    <div class="fg" style="justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="buildInputs()"><i class="fas fa-sync"></i> สร้างตารางกรอก</button>
     </div>
   </div>
 
-  <!-- STEP 1 -->
-  <section class="page active" id="page1">
-    <div class="card">
-      <div class="card-title"><i class="fas fa-project-diagram"></i> เลือกรูปแบบการต่อ C-Bank</div>
-      <div class="conn-row">
-        <div class="conn-opt active" data-conn="yy-unground" onclick="highlightConn(this)">
-          <div class="conn-head">
-            <div class="conn-icon-box"><i class="fas fa-grip-lines-vertical"></i></div>
-            <div>
-              <div class="conn-name">Y-Y Ungrounded</div>
-              <span class="conn-tag">59N · ΔV RELAY</span>
-            </div>
-          </div>
-          <div class="conn-desc">Star-Star ไม่ต่อลงดิน 2 string ต่อ phase ตรวจจับด้วย Neutral Voltage (V<sub>no</sub>)</div>
-          <div class="conn-check"><i class="fas fa-check"></i></div>
-        </div>
-        <div class="conn-opt" data-conn="h-bridge" onclick="highlightConn(this)">
-          <div class="conn-head">
-            <div class="conn-icon-box"><i class="fas fa-bezier-curve"></i></div>
-            <div>
-              <div class="conn-name">H-Bridge</div>
-              <span class="conn-tag">60P · CT BRIDGE</span>
-            </div>
-          </div>
-          <div class="conn-desc">4 Legs ต่อ phase (A·B·C·D) มี CT บน H-link ตรวจ I<sub>bridge</sub> เมื่อแบงค์ไม่สมดุล</div>
-          <div class="conn-check"><i class="fas fa-check"></i></div>
-        </div>
-      </div>
+  <div class="phase-grid">
+    <div class="inp-panel wa">
+      <div class="panel-hd">Phase A (Wye 1)</div>
+      <div id="divA"></div>
     </div>
-    <div class="diagram-wrap">
-      <div class="card-title"><i class="fas fa-sitemap"></i> วงจร — <span id="diagramLabel" style="font-weight:500;">Y-Y Ungrounded</span></div>
-      <div id="diagramContainer"></div>
+    <div class="inp-panel wa">
+      <div class="panel-hd">Phase A' (Wye 2)</div>
+      <div id="divA2"></div>
     </div>
-    <div class="page-nav">
-      <div></div>
-      <button class="btn btn-primary btn-lg" onclick="goToStep2()">ถัดไป&nbsp;<i class="fas fa-arrow-right"></i></button>
+    <div class="inp-panel wb">
+      <div class="panel-hd">Phase B (Wye 1)</div>
+      <div id="divB"></div>
     </div>
-  </section>
+    <div class="inp-panel wb">
+      <div class="panel-hd">Phase B' (Wye 2)</div>
+      <div id="divB2"></div>
+    </div>
+    <div class="inp-panel wc">
+      <div class="panel-hd">Phase C (Wye 1)</div>
+      <div id="divC"></div>
+    </div>
+    <div class="inp-panel wc">
+      <div class="panel-hd">Phase C' (Wye 2)</div>
+      <div id="divC2"></div>
+    </div>
+    <div class="inp-panel spare">
+      <div class="panel-hd">Spare (อะไหล่สำรอง)</div>
+      <div id="divSpare" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:10px;"></div>
+    </div>
+  </div>
 
-  <!-- STEP 2 -->
-  <section class="page" id="page2">
-    <div class="card">
-      <div class="card-title">
-        <i class="fas fa-sliders-h"></i> ตั้งค่าระบบและกรอกค่าความจุ
-        <span style="margin-left:auto;font-size:0.78rem;color:var(--txt3);font-weight:normal;">
-          รูปแบบ: <strong id="confirmedType" style="color:var(--blue);">—</strong>
-        </span>
-      </div>
-      <div class="sys-params">
-        <div class="fg"><label>แรงดันระบบ V<sub>S</sub> (kV)</label><input type="number" id="systemKV" value="69" min="1" max="1000" step="0.1"></div>
-        <div class="fg"><label id="labelPairs">จำนวนตัวเก็บประจุต่อกิ่ง</label><input type="number" id="numPairs" value="10" min="1" max="60"></div>
-        <div class="fg"><label>จำนวนอะไหล่ (Spare)</label><input type="number" id="numSpares" value="5" min="0" max="20"></div>
-        <div class="fg" style="justify-content:flex-end;"><label>&nbsp;</label>
-          <button class="btn btn-outline" onclick="buildInputPanels()" style="height:42px;"><i class="fas fa-sync-alt"></i> สร้างตาราง</button>
-        </div>
-      </div>
-      <div class="input-cols" id="inputCols"></div>
-    </div>
-    <div class="page-nav">
-      <button class="btn btn-back" onclick="goToStep(1)"><i class="fas fa-arrow-left"></i>&nbsp;ย้อนกลับ</button>
-      <button class="btn btn-primary btn-lg" id="btnCalc" onclick="handleCalculate()"><i class="fas fa-cogs"></i>&nbsp;วิเคราะห์&nbsp;<i class="fas fa-arrow-right"></i></button>
-    </div>
-  </section>
+  <div class="action-bar">
+    <button class="btn btn-primary" id="btnCalc" onclick="handleCalculate()">
+      <i class="fas fa-calculator"></i> คำนวณหาวิธีสับเปลี่ยนที่ดีที่สุด
+    </button>
+  </div>
 
-  <!-- STEP 3 -->
-  <section class="page" id="page3">
-    <div class="res-header">
-      <div class="res-title"><i class="fas fa-clipboard-list"></i>ผลการวิเคราะห์</div>
-      <div id="exportRow" style="display:none;">
-        <button class="btn btn-excel" onclick="handleExport()"><i class="fas fa-file-excel"></i>&nbsp;Export Excel</button>
-      </div>
-    </div>
-    <div class="totals-grid">
-      <div class="total-card before">
-        <div class="tc-head"><i class="fas fa-arrow-circle-left"></i> ก่อนสับเปลี่ยน</div>
-        <div class="tc-row"><span class="tc-lbl" id="lblSide1">Σ C (Y1)</span><span class="tc-val" id="totalY1">—</span></div>
-        <div class="tc-row"><span class="tc-lbl" id="lblSide2">Σ C (Y2)</span><span class="tc-val" id="totalY2">—</span></div>
-        <div class="tc-row tc-warn"><span class="tc-lbl">ΔC</span><span class="tc-val" id="totalBase">—</span></div>
-      </div>
-      <div class="total-card system">
-        <div class="tc-head"><i class="fas fa-bolt"></i> ระบบ</div>
-        <div class="tc-row"><span class="tc-lbl">Topology</span><span class="tc-val" id="topoLabel">—</span></div>
-        <div class="tc-row"><span class="tc-lbl">V<sub>S</sub> (line)</span><span class="tc-val" id="vsLabel">—</span></div>
-        <div class="tc-row tc-info"><span class="tc-lbl">V<sub>ph</sub> = V<sub>S</sub>/√3</span><span class="tc-val" id="vphLabel">—</span></div>
-      </div>
-    </div>
-    <div class="calc-actions">
-      <button class="calc-action-btn active" data-view="metrics" onclick="switchCalcView('metrics')">
-        <div class="ca-icon"><i class="fas fa-chart-bar"></i></div>
-        <div class="ca-info"><div class="ca-title">ค่าวิศวกรรม</div><div class="ca-desc">B, V<sub>no</sub>, I<sub>no</sub>, Q ก่อนสับ</div></div>
-      </button>
-      <button class="calc-action-btn" data-view="formulas" onclick="switchCalcView('formulas')">
-        <div class="ca-icon"><i class="fas fa-square-root-variable"></i></div>
-        <div class="ca-info"><div class="ca-title">การคำนวณเฟสและสมการ</div><div class="ca-desc">แสดงสูตรพร้อมค่าจริงที่ใส่</div></div>
-      </button>
-      <button class="calc-action-btn" data-view="results" onclick="switchCalcView('results')">
-        <div class="ca-icon"><i class="fas fa-shuffle"></i></div>
-        <div class="ca-info"><div class="ca-title">ผลการสับเปลี่ยน</div><div class="ca-desc">Quick Mode + Full Optimal</div></div>
-      </button>
-    </div>
-    <div class="calc-view active" id="viewMetrics"><div id="engMetricsSection"></div></div>
-    <div class="calc-view" id="viewFormulas"><div id="formulaSection"></div></div>
-    <div class="calc-view" id="viewResults">
-      <div class="tab-bar">
-        <button class="tab" data-tab="quick" onclick="switchTab('quick')"><i class="fas fa-bolt"></i>&nbsp;Quick Mode (1–3 สับ)</button>
-        <button class="tab" data-tab="full" onclick="switchTab('full')"><i class="fas fa-magic"></i>&nbsp;Full Optimal</button>
-      </div>
-      <div id="tabQuick" class="tab-panel"></div>
-      <div id="tabFull"  class="tab-panel"></div>
-    </div>
-    <div class="page-nav">
-      <button class="btn btn-back" onclick="goToStep(2)"><i class="fas fa-arrow-left"></i>&nbsp;กลับไปแก้ไข</button>
-      <button class="btn btn-outline" onclick="restartWizard()"><i class="fas fa-redo"></i>&nbsp;เริ่มใหม่</button>
-    </div>
-  </section>
+  <div id="resultsArea">
+    <div class="res-title">📋 ผลการวิเคราะห์ (3-Phase Unbalance)</div>
+    <div id="renderSolutions"></div>
+  </div>
 
 </div>
 
 <script>
-// ═══════════════════════════════════════
-// CALCULATOR (server-side logic, now client-side)
-// ═══════════════════════════════════════
-/**
- * lib/calculator.js v4 — EGAT C-Bank Optimizer
- * Engineering formulas: C → B → Xc → I_no / I_bridge → Q
- */
-'use strict';
-
-const PI2F = 2 * Math.PI * 50; // ω = 2πf, f=50Hz
-
-function sumC(arr) { return arr.reduce((t, c) => t + c.val, 0); }
-
-/** Engineering metrics for YY topology */
-function calcYYMetrics(y1, y2, systemKV) {
-  const Vph = (systemKV * 1000) / Math.sqrt(3);          // V phase
-  const C1  = sumC(y1) * 1e-6;                           // F
-  const C2  = sumC(y2) * 1e-6;
-  const B1  = PI2F * C1;                                 // S
-  const B2  = PI2F * C2;
-  const Bt  = B1 + B2;
-  // Neutral displacement voltage (Millman, 2-source balanced)
-  const Vnx = (Vph / Bt) * (B1 - B2);                   // simplified 1-phase view
-  const Vno = Math.abs(Vnx);                              // V
-  // Neutral current
-  const Ino_A = Vno * Bt;                                // A
-  const Ino_mA = Ino_A * 1000;
-  // Reactive power
-  const Q_A  = Vph * Vph * B1;                           // VAr
-  const Q_B  = Vph * Vph * B2;
-  const Qt   = (Q_A + Q_B) / 1e6;                        // Mvar
-  return { C1_uF: sumC(y1), C2_uF: sumC(y2), B1, B2, Vph, Vno, Ino_mA, Qt };
+// ── THEME TOGGLE ────────────────────────────────────────────────────────
+function toggleTheme() {
+  const root = document.documentElement;
+  const curr = root.getAttribute('data-theme') || 'light';
+  const next = curr === 'light' ? 'dark' : 'light';
+  root.setAttribute('data-theme', next);
+  localStorage.setItem('cbank-theme', next);
+  document.getElementById('themeIcon').className = next === 'light' ? 'fas fa-moon' : 'fas fa-sun';
 }
-
-/** Engineering metrics for H-Bridge topology */
-function calcHBridgeMetrics(legA, legB, legC, legD, systemKV) {
-  const Vph  = (systemKV * 1000) / Math.sqrt(3);
-  // Left branch = A (top) + C (bottom), Right = B + D
-  const CA_top = sumC(legA) * 1e-6;
-  const CA_bot = sumC(legC) * 1e-6;
-  const CB_top = sumC(legB) * 1e-6;
-  const CB_bot = sumC(legD) * 1e-6;
-  const Xc_left_top  = CA_top > 0 ? 1 / (PI2F * CA_top) : 1e9;
-  const Xc_left_bot  = CA_bot > 0 ? 1 / (PI2F * CA_bot) : 1e9;
-  const Xc_right_top = CB_top > 0 ? 1 / (PI2F * CB_top) : 1e9;
-  const Xc_right_bot = CB_bot > 0 ? 1 / (PI2F * CB_bot) : 1e9;
-  const xa1 = Xc_left_top  + Xc_left_bot;
-  const xa2 = Xc_right_top + Xc_right_bot;
-  const Iup   = xa1 > 0 ? Vph / xa1 : 0;
-  const Idown = xa2 > 0 ? Vph / xa2 : 0;
-  const Iun   = Iup - Idown;
-  const In_mA = Math.abs(Iun) * 1000;
-  // Vx = voltage at bridge midpoint (left branch)
-  const Vx = xa1 > 0 ? Vph * (Xc_left_bot / xa1) : 0;
-  const Bt = PI2F * (CA_top + CA_bot + CB_top + CB_bot);
-  const Qt = (Vph * Vph * Bt) / 1e6;
-  const S_total = Bt;
-  return { CA_top_uF: sumC(legA), CA_bot_uF: sumC(legC), CB_top_uF: sumC(legB), CB_bot_uF: sumC(legD), xa1, xa2, Iup, Idown, Iun, In_mA, Vx, Qt, S_total };
-}
-
-function describeSwap(action) {
-  const { type, from, to } = action;
-  if (type === 'exchange')   return `สลับ [${from.id}] (${from.val.toFixed(3)} µF) ↔ [${to.id}] (${to.val.toFixed(3)} µF)`;
-  if (type === 'replace-y1') return `ถอด [${from.id}] (${from.val.toFixed(3)} µF) จาก Y1 → แทนด้วย [${to.id}] (${to.val.toFixed(3)} µF)`;
-  if (type === 'replace-y2') return `ถอด [${from.id}] (${from.val.toFixed(3)} µF) จาก Y2 → แทนด้วย [${to.id}] (${to.val.toFixed(3)} µF)`;
-  return '';
-}
-
-function applySwaps(y1, y2, spare, ops) {
-  let cY1 = y1.slice(), cY2 = y2.slice(), cS = spare.slice();
-  for (const op of ops) {
-    if (op.type === 'exchange')   { const t = cY1[op.i]; cY1[op.i] = cY2[op.j]; cY2[op.j] = t; }
-    else if (op.type === 'replace-y1') { const t = cY1[op.i]; cY1[op.i] = cS[op.k]; cS[op.k] = t; }
-    else if (op.type === 'replace-y2') { const t = cY2[op.j]; cY2[op.j] = cS[op.k]; cS[op.k] = t; }
-  }
-  return { y1: cY1, y2: cY2, spare: cS };
-}
-
-function allSingleSwaps(y1, y2, spare) {
-  const n = y1.length, s1 = sumC(y1), s2 = sumC(y2), results = [];
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) {
-      const d = Math.abs((s1 - y1[i].val + y2[j].val) - (s2 - y2[j].val + y1[i].val));
-      results.push({ diff: d, ops: [{ type:'exchange', i, j }], action: { type:'exchange', from:y1[i], to:y2[j] } });
-    }
-    for (let k = 0; k < spare.length; k++) {
-      results.push({ diff: Math.abs(s1 - y1[i].val + spare[k].val - s2), ops:[{type:'replace-y1',i,k}], action:{type:'replace-y1',from:y1[i],to:spare[k]} });
-      if (i < y2.length) results.push({ diff: Math.abs(s1 - (s2 - y2[i].val + spare[k].val)), ops:[{type:'replace-y2',j:i,k}], action:{type:'replace-y2',from:y2[i],to:spare[k]} });
-    }
-  }
-  results.sort((a, b) => a.diff - b.diff);
-  return results;
-}
-
-function findBest1to3Swaps(origY1, origY2, origS) {
-  const baseDiff = Math.abs(sumC(origY1) - sumC(origY2));
-  const results  = [];
-  const d1 = allSingleSwaps(origY1, origY2, origS);
-  const best1 = d1[0] || null;
-
-  if (best1) {
-    const { y1:ny1, y2:ny2 } = applySwaps(origY1, origY2, origS, best1.ops);
-    results.push({ swapCount:1, diff:best1.diff, y1:ny1, y2:ny2, steps:[describeSwap(best1.action)] });
-  } else {
-    results.push({ swapCount:1, diff:baseDiff, y1:origY1, y2:origY2, steps:['ไม่มีการสับเปลี่ยนที่เป็นไปได้'] });
-  }
-
-  const K2 = Math.min(40, d1.length);
-  let best2 = { diff: best1 ? best1.diff : baseDiff, ops: best1 ? best1.ops : [], actions: best1 ? [best1.action] : [] };
-  for (let a = 0; a < K2; a++) {
-    const opA = d1[a], stateA = applySwaps(origY1, origY2, origS, opA.ops);
-    const d2  = allSingleSwaps(stateA.y1, stateA.y2, stateA.spare);
-    for (let b = 0; b < d2.length; b++) {
-      if (d2[b].diff < best2.diff) { best2 = { diff:d2[b].diff, ops:[...opA.ops,...d2[b].ops], actions:[opA.action,d2[b].action] }; break; }
-    }
-  }
-  if (best2.actions.length >= 2) {
-    const fs = applySwaps(origY1, origY2, origS, best2.ops);
-    results.push({ swapCount:2, diff:best2.diff, y1:fs.y1, y2:fs.y2, steps:best2.actions.map(describeSwap) });
-  } else {
-    results.push({ swapCount:2, diff:results[0].diff, y1:results[0].y1, y2:results[0].y2, steps:results[0].steps.concat(['(การสับครั้งที่ 2 ไม่ช่วยเพิ่มความสมดุล)']) });
-  }
-
-  let best3 = { diff:best2.diff, ops:best2.ops, actions:best2.actions };
-  for (let a = 0; a < Math.min(25,d1.length); a++) {
-    const opA=d1[a], stateA=applySwaps(origY1,origY2,origS,opA.ops);
-    const d2l=allSingleSwaps(stateA.y1,stateA.y2,stateA.spare);
-    for (let b=0;b<Math.min(20,d2l.length);b++) {
-      const opB=d2l[b], stateB=applySwaps(stateA.y1,stateA.y2,stateA.spare,opB.ops);
-      const d3l=allSingleSwaps(stateB.y1,stateB.y2,stateB.spare);
-      if (d3l.length>0 && d3l[0].diff<best3.diff) { best3={diff:d3l[0].diff,ops:[...opA.ops,...opB.ops,...d3l[0].ops],actions:[opA.action,opB.action,d3l[0].action]}; break; }
-    }
-  }
-  if (best3.actions.length>=3) {
-    const fs=applySwaps(origY1,origY2,origS,best3.ops);
-    results.push({ swapCount:3, diff:best3.diff, y1:fs.y1, y2:fs.y2, steps:best3.actions.map(describeSwap) });
-  } else {
-    results.push({ swapCount:3, diff:results[1].diff, y1:results[1].y1, y2:results[1].y2, steps:results[1].steps.concat(['(การสับครั้งที่ 3 ไม่ช่วยเพิ่มความสมดุล)']) });
-  }
-  return { baseDiff, swaps: results };
-}
-
-function findBestFullSwap(origY1, origY2, origS, iterations=600) {
-  const n=origY1.length, baseDiff=Math.abs(sumC(origY1)-sumC(origY2));
-  let bestG={ diff:baseDiff, y1:origY1.slice(), y2:origY2.slice() };
-  const pool=origY1.concat(origY2,origS);
-  for (let it=0;it<iterations;it++) {
-    const sh=pool.slice().sort(()=>Math.random()-0.5);
-    let cY1=sh.slice(0,n), cY2=sh.slice(n,n*2), cS=sh.slice(n*2);
-    let imp=true;
-    while (imp) {
-      imp=false; let cd=Math.abs(sumC(cY1)-sumC(cY2));
-      for (let i=0;i<n;i++) {
-        for (let j=0;j<n;j++) {
-          const d=Math.abs((sumC(cY1)-cY1[i].val+cY2[j].val)-(sumC(cY2)-cY2[j].val+cY1[i].val));
-          if (d<cd){const t=cY1[i];cY1[i]=cY2[j];cY2[j]=t;cd=d;imp=true;}
-        }
-        for (let k=0;k<cS.length;k++) {
-          const d1=Math.abs((sumC(cY1)-cY1[i].val+cS[k].val)-sumC(cY2));
-          if (d1<cd){const t=cY1[i];cY1[i]=cS[k];cS[k]=t;cd=d1;imp=true;}
-          if (i<cY2.length){const d2=Math.abs(sumC(cY1)-(sumC(cY2)-cY2[i].val+cS[k].val));if(d2<cd){const t=cY2[i];cY2[i]=cS[k];cS[k]=t;cd=d2;imp=true;}}
-        }
-      }
-    }
-    const fd=Math.abs(sumC(cY1)-sumC(cY2));
-    if (fd<bestG.diff) bestG={diff:fd,y1:cY1.slice(),y2:cY2.slice()};
-  }
-  let sc=0;
-  bestG.y1.forEach(c=>{if(c.origin!=='Y1')sc++;});
-  bestG.y2.forEach(c=>{if(c.origin!=='Y2')sc++;});
-  bestG.swapCount=sc;
-  return bestG;
-}
-
-
-// Expose calculator functions globally for client-side use
-window._calcYYMetrics     = calcYYMetrics;
-window._calcHBridgeMetrics= calcHBridgeMetrics;
-window._findBest1to3Swaps = findBest1to3Swaps;
-window._findBestFullSwap  = findBestFullSwap;
-
-
-// ═══════════════════════════════════════
-// CLIENT-SIDE API SHIM
-// replaces fetch('/api/calculate') with direct function calls
-// ═══════════════════════════════════════
-async function clientCalculate(payload) {
-  const {topology, y1, y2, spare, legs, systemKV} = payload;
-  const kv = parseFloat(systemKV) || 69;
-  let quickResult, fullResult, engBefore;
-
-  if (topology === 'h-bridge') {
-    const {a, b, c, d} = legs;
-    engBefore = calcHBridgeMetrics(a, b, c, d, kv);
-    const leftArr = [...a, ...c];
-    const rightArr = [...b, ...d];
-    quickResult = findBest1to3Swaps(leftArr, rightArr, spare || []);
-    fullResult  = findBestFullSwap(leftArr, rightArr, spare || []);
-    quickResult.swaps = quickResult.swaps.map(sw => {
-      const nA = sw.y1.filter(x => x.origin==='A' || x.id.startsWith('A'));
-      const nC = sw.y1.filter(x => !nA.includes(x));
-      const nB = sw.y2.filter(x => x.origin==='B' || x.id.startsWith('B'));
-      const nD = sw.y2.filter(x => !nB.includes(x));
-      sw.engAfter = calcHBridgeMetrics(nA.length?nA:a, nB.length?nB:b, nC.length?nC:c, nD.length?nD:d, kv);
-      return sw;
-    });
-    const na = fullResult.y1.filter(x => x.origin==='A' || x.id.startsWith('A'));
-    const nc = fullResult.y1.filter(x => !na.includes(x));
-    const nb = fullResult.y2.filter(x => x.origin==='B' || x.id.startsWith('B'));
-    const nd = fullResult.y2.filter(x => !nb.includes(x));
-    fullResult.engAfter = calcHBridgeMetrics(na.length?na:a, nb.length?nb:b, nc.length?nc:c, nd.length?nd:d, kv);
-  } else {
-    engBefore   = calcYYMetrics(y1, y2, kv);
-    quickResult = findBest1to3Swaps(y1, y2, spare || []);
-    fullResult  = findBestFullSwap(y1, y2, spare || []);
-    quickResult.swaps = quickResult.swaps.map(sw => {
-      sw.engAfter = calcYYMetrics(sw.y1, sw.y2, kv);
-      return sw;
-    });
-    fullResult.engAfter = calcYYMetrics(fullResult.y1, fullResult.y2, kv);
-  }
-  return { quickResult, fullResult, engBefore };
-}
-</script>
-
-<script>
-// ═══════════════════════════════════════
-// DIAGRAMS
-// ═══════════════════════════════════════
-/**
- * public/js/diagrams.js v4 — Realistic Capacitor Bank Diagrams
- * Photo-realistic style: 3D capacitors, metal frames, insulators, busbars
- */
-'use strict';
-
-const PAL = {
-  blue:'#1a5fb4', blueLight:'#4a90d9', blueDark:'#103e7a',
-  amber:'#c97d00', amberLight:'#e89930', amberDark:'#8a5500',
-  metal:'#a8b2bf', metalDark:'#5a6371', metalLight:'#d4dae3',
-  insulator:'#a89060', insulatorLight:'#c9b58a', insulatorDark:'#7a6740',
-  capBody:'#e8e4d8', capBodyDark:'#b8b4a8', capBodyShade:'#9a9486',
-  capCan:'#d8d0bc',
-  groundLine:'#3a4654', txt:'#1a2332', txt2:'#4a5568', txt3:'#718096',
-  bgGrid:'#f0f4f8', red:'#c0392b', green:'#1a7a3c'
-};
-
-/* ── SVG primitives ─────────────────────────────────────── */
-
-/** Realistic capacitor unit — porcelain insulator + metal can with bushings */
-function realisticCap(x, y, w, h, color) {
-  // x,y = top-left, w,h = overall dimensions
-  color = color || PAL.capBody;
-  const cx = x + w/2;
-  // Top bushing (porcelain insulator)
-  const bushW = w * 0.25;
-  const bushH = h * 0.18;
-  const bushX = cx - bushW/2;
-  // Body (metal can)
-  const bodyY = y + bushH + 2;
-  const bodyH = h - bushH * 2 - 4;
-  // Bottom bushing
-  const bbY = bodyY + bodyH + 2;
-
-  return `
-    <!-- top porcelain insulator -->
-    <rect x="${bushX}" y="${y}" width="${bushW}" height="${bushH}" fill="${PAL.insulator}" stroke="${PAL.insulatorDark}" stroke-width="0.5" rx="1"/>
-    <rect x="${bushX-1}" y="${y+bushH*0.3}" width="${bushW+2}" height="2" fill="${PAL.insulatorDark}" opacity="0.5"/>
-    <rect x="${bushX-1}" y="${y+bushH*0.6}" width="${bushW+2}" height="2" fill="${PAL.insulatorDark}" opacity="0.5"/>
-    <!-- terminal cap -->
-    <rect x="${bushX-2}" y="${y-2}" width="${bushW+4}" height="3" fill="${PAL.metalDark}" rx="0.5"/>
-    <!-- main body (metal can) -->
-    <rect x="${x}" y="${bodyY}" width="${w}" height="${bodyH}" fill="${color}" stroke="${PAL.capBodyShade}" stroke-width="0.6" rx="2"/>
-    <!-- body shading (left highlight, right shadow) -->
-    <rect x="${x+1}" y="${bodyY+1}" width="${w*0.18}" height="${bodyH-2}" fill="#ffffff" opacity="0.35" rx="1"/>
-    <rect x="${x+w-w*0.18-1}" y="${bodyY+1}" width="${w*0.18}" height="${bodyH-2}" fill="#000000" opacity="0.10" rx="1"/>
-    <!-- horizontal ribs (typical of oil-filled caps) -->
-    <line x1="${x+1}" y1="${bodyY+bodyH*0.3}" x2="${x+w-1}" y2="${bodyY+bodyH*0.3}" stroke="${PAL.capBodyShade}" stroke-width="0.4" opacity="0.6"/>
-    <line x1="${x+1}" y1="${bodyY+bodyH*0.6}" x2="${x+w-1}" y2="${bodyY+bodyH*0.6}" stroke="${PAL.capBodyShade}" stroke-width="0.4" opacity="0.6"/>
-    <!-- bottom porcelain insulator -->
-    <rect x="${bushX}" y="${bbY}" width="${bushW}" height="${bushH}" fill="${PAL.insulator}" stroke="${PAL.insulatorDark}" stroke-width="0.5" rx="1"/>
-    <rect x="${bushX-1}" y="${bbY+bushH*0.3}" width="${bushW+2}" height="2" fill="${PAL.insulatorDark}" opacity="0.5"/>
-    <rect x="${bushX-1}" y="${bbY+bushH*0.6}" width="${bushW+2}" height="2" fill="${PAL.insulatorDark}" opacity="0.5"/>
-    <!-- bottom terminal -->
-    <rect x="${bushX-2}" y="${bbY+bushH-1}" width="${bushW+4}" height="3" fill="${PAL.metalDark}" rx="0.5"/>
-  `;
-}
-
-/** Vertical wire with terminals at each end */
-function wire(x1, y1, x2, y2, color, w) {
-  color = color || PAL.metalDark;
-  w = w || 2.2;
-  return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${w}" stroke-linecap="round"/>`;
-}
-
-/** Steel structural frame (rack) */
-function frame(x, y, w, h) {
-  return `
-    <rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="${PAL.metalDark}" stroke-width="1.4" rx="3"/>
-    <rect x="${x+1}" y="${y+1}" width="${w-2}" height="${h-2}" fill="none" stroke="${PAL.metal}" stroke-width="0.5" rx="2"/>
-    <line x1="${x}" y1="${y+h*0.5}" x2="${x+w}" y2="${y+h*0.5}" stroke="${PAL.metalDark}" stroke-width="0.8" opacity="0.5"/>
-  `;
-}
-
-/** Connection terminal (bolted) */
-function terminal(x, y, r) {
-  r = r || 3;
-  return `
-    <circle cx="${x}" cy="${y}" r="${r}" fill="${PAL.metal}" stroke="${PAL.metalDark}" stroke-width="0.6"/>
-    <circle cx="${x}" cy="${y}" r="${r*0.45}" fill="${PAL.metalDark}"/>
-  `;
-}
-
-/** Busbar (horizontal) — thick metal strip */
-function busbar(x1, y, x2, label, color) {
-  color = color || PAL.metal;
-  const len = x2 - x1;
-  return `
-    <rect x="${x1}" y="${y-4}" width="${len}" height="8" fill="${color}" stroke="${PAL.metalDark}" stroke-width="0.8" rx="2"/>
-    <rect x="${x1+1}" y="${y-3}" width="${len-2}" height="2" fill="#ffffff" opacity="0.4" rx="1"/>
-    ${label ? `<text x="${x1 + len/2}" y="${y-9}" fill="${PAL.txt2}" font-size="9" text-anchor="middle" font-family="'Rajdhani',sans-serif" font-weight="600">${label}</text>` : ''}
-  `;
-}
-
-/** Phase indicator circle on bus */
-function phaseDot(x, y, color, label) {
-  return `
-    <circle cx="${x}" cy="${y}" r="5" fill="${color}" stroke="${PAL.metalDark}" stroke-width="0.8"/>
-    <circle cx="${x-1}" cy="${y-1}" r="1.5" fill="#ffffff" opacity="0.5"/>
-    <text x="${x}" y="${y-10}" fill="${color}" font-size="10" text-anchor="middle" font-family="'Rajdhani',sans-serif" font-weight="700">${label}</text>
-  `;
-}
-
-/** Ground symbol */
-function ground(x, y) {
-  return `
-    <line x1="${x}" y1="${y}" x2="${x}" y2="${y+5}" stroke="${PAL.txt2}" stroke-width="1.5"/>
-    <line x1="${x-9}" y1="${y+5}" x2="${x+9}" y2="${y+5}" stroke="${PAL.txt2}" stroke-width="2"/>
-    <line x1="${x-6}" y1="${y+8}" x2="${x+6}" y2="${y+8}" stroke="${PAL.txt2}" stroke-width="1.5"/>
-    <line x1="${x-3}" y1="${y+11}" x2="${x+3}" y2="${y+11}" stroke="${PAL.txt2}" stroke-width="1.2"/>
-  `;
-}
-
-/** CT (current transformer) — toroid with label */
-function ctReal(x, y) {
-  return `
-    <ellipse cx="${x}" cy="${y}" rx="14" ry="10" fill="none" stroke="${PAL.amber}" stroke-width="2"/>
-    <ellipse cx="${x}" cy="${y}" rx="11" ry="7" fill="none" stroke="${PAL.amber}" stroke-width="0.8" opacity="0.6"/>
-    <rect x="${x-7}" y="${y-4}" width="14" height="8" fill="${PAL.bgGrid}" stroke="${PAL.amber}" stroke-width="0.8" rx="1"/>
-    <text x="${x}" y="${y+3}" fill="${PAL.amber}" font-size="8" text-anchor="middle" font-family="'Rajdhani',sans-serif" font-weight="700">CT</text>
-  `;
-}
-
-/** Relay box */
-function relayBox(x, y, label, sub) {
-  return `
-    <rect x="${x}" y="${y}" width="60" height="26" fill="${PAL.bgGrid}" stroke="${PAL.blue}" stroke-width="1.5" rx="3"/>
-    <rect x="${x+1}" y="${y+1}" width="58" height="6" fill="${PAL.blue}" rx="1.5"/>
-    <text x="${x+30}" y="${y+5.5}" fill="#fff" font-size="6.5" text-anchor="middle" font-family="'Rajdhani',sans-serif" font-weight="700">RELAY</text>
-    <text x="${x+30}" y="${y+16}" fill="${PAL.blue}" font-size="9" text-anchor="middle" font-family="'Rajdhani',sans-serif" font-weight="700">${label}</text>
-    <text x="${x+30}" y="${y+24}" fill="${PAL.txt3}" font-size="6" text-anchor="middle" font-family="'Space Mono',monospace">${sub}</text>
-  `;
-}
-
-/* ═══════════════════════════════════════════════════════════
-   Y-Y UNGROUNDED — REALISTIC RENDER
-   ═══════════════════════════════════════════════════════════ */
-function buildYYUngroundReal() {
-  const W = 820, H = 540;
-  const phases = [
-    { x: 180, label: 'A', color: '#c0392b' },
-    { x: 410, label: 'B', color: '#1a7a3c' },
-    { x: 640, label: 'C', color: '#1a5fb4' }
-  ];
-  const nCap = 3;
-  const capW = 28, capH = 50;
-  const busY = 75;
-
-  let s = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="background:#fafbfc;">`;
-
-  // Background grid
-  s += `<defs>
-    <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-      <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e8edf3" stroke-width="0.5"/>
-    </pattern>
-  </defs>
-  <rect width="${W}" height="${H}" fill="url(#grid)"/>`;
-
-  // Title
-  s += `<text x="${W/2}" y="28" fill="${PAL.blue}" font-size="16" text-anchor="middle" font-family="'Rajdhani',sans-serif" font-weight="700">Y-Y UNGROUNDED CAPACITOR BANK</text>`;
-  s += `<text x="${W/2}" y="44" fill="${PAL.txt3}" font-size="10" text-anchor="middle" font-family="'Noto Sans Thai',sans-serif">Star-Star ไม่ต่อลงดิน · ป้องกันด้วย Neutral Voltage Relay (ΔV / 59N)</text>`;
-
-  // HV busbar
-  s += busbar(60, busY, 760, 'H.V. BUS  ·  69 kV', PAL.metal);
-
-  phases.forEach(p => {
-    // Phase identifier
-    s += phaseDot(p.x, busY, p.color, p.label);
-
-    // Wire down from bus
-    s += wire(p.x, busY+4, p.x, busY+25);
-
-    // ── Y1 string frame (upper) ──────────────────
-    const y1FrameY = busY + 25;
-    const y1FrameH = nCap * (capH + 14) + 10;
-    s += frame(p.x - 50, y1FrameY, 100, y1FrameH);
-    s += `<text x="${p.x}" y="${y1FrameY - 4}" fill="${PAL.amber}" font-size="11" text-anchor="middle" font-family="'Rajdhani',sans-serif" font-weight="700">STRING Y1</text>`;
-
-    // Y1 caps
-    let cy = y1FrameY + 8;
-    for (let i = 0; i < nCap; i++) {
-      // Wire above cap
-      s += wire(p.x, cy, p.x, cy + 4);
-      // Capacitor (offset to center)
-      s += realisticCap(p.x - capW/2, cy + 4, capW, capH, PAL.capBody);
-      cy += capH + 14;
-    }
-    // Final wire to N1
-    s += wire(p.x, cy - 10, p.x, cy + 4);
-    const n1Y = cy + 4;
-    s += terminal(p.x, n1Y, 4);
-    s += `<text x="${p.x + 12}" y="${n1Y + 3}" fill="${PAL.amberDark}" font-size="9" font-family="'Space Mono',monospace" font-weight="700">N1</text>`;
-
-    // Gap (insulation) between N1 and N2
-    s += `<line x1="${p.x}" y1="${n1Y}" x2="${p.x}" y2="${n1Y + 22}" stroke="${PAL.txt3}" stroke-width="1.2" stroke-dasharray="3 3"/>`;
-
-    const n2Y = n1Y + 22;
-    s += terminal(p.x, n2Y, 4);
-    s += `<text x="${p.x + 12}" y="${n2Y + 3}" fill="${PAL.blueDark}" font-size="9" font-family="'Space Mono',monospace" font-weight="700">N2</text>`;
-
-    // ── Y2 string frame (lower) ──────────────────
-    const y2FrameY = n2Y + 8;
-    const y2FrameH = nCap * (capH + 14) + 10;
-    s += frame(p.x - 50, y2FrameY, 100, y2FrameH);
-    s += `<text x="${p.x}" y="${y2FrameY + y2FrameH + 14}" fill="${PAL.blue}" font-size="11" text-anchor="middle" font-family="'Rajdhani',sans-serif" font-weight="700">STRING Y2</text>`;
-
-    cy = y2FrameY + 8;
-    for (let i = 0; i < nCap; i++) {
-      s += wire(p.x, cy, p.x, cy + 4);
-      s += realisticCap(p.x - capW/2, cy + 4, capW, capH, PAL.capBody);
-      cy += capH + 14;
-    }
-  });
-
-  // ── Neutral connection bus N1 (left side) ──
-  const n1BusY = busY + 25 + (nCap * (capH + 14)) + 14;
-  s += `<line x1="${phases[0].x}" y1="${n1BusY}" x2="${phases[2].x}" y2="${n1BusY}" stroke="${PAL.amber}" stroke-width="1.8" stroke-dasharray="4 2"/>`;
-  s += `<text x="${phases[0].x - 60}" y="${n1BusY + 4}" fill="${PAL.amberDark}" font-size="10" font-family="'Rajdhani',sans-serif" font-weight="700">N1 BUS</text>`;
-
-  // ── Neutral connection bus N2 ──
-  const n2BusY = n1BusY + 22;
-  s += `<line x1="${phases[0].x}" y1="${n2BusY}" x2="${phases[2].x}" y2="${n2BusY}" stroke="${PAL.blue}" stroke-width="1.8" stroke-dasharray="4 2"/>`;
-  s += `<text x="${phases[0].x - 60}" y="${n2BusY + 4}" fill="${PAL.blueDark}" font-size="10" font-family="'Rajdhani',sans-serif" font-weight="700">N2 BUS</text>`;
-
-  // ── ΔV Relay between N1 and N2 ──
-  const relayX = phases[2].x + 60;
-  s += `<line x1="${phases[2].x}" y1="${n1BusY}" x2="${relayX + 30}" y2="${n1BusY}" stroke="${PAL.amber}" stroke-width="1.5"/>`;
-  s += `<line x1="${phases[2].x}" y1="${n2BusY}" x2="${relayX + 30}" y2="${n2BusY}" stroke="${PAL.blue}" stroke-width="1.5"/>`;
-  s += relayBox(relayX, (n1BusY + n2BusY)/2 - 13, 'ΔV', '59N');
-
-  return s + '</svg>';
-}
-
-/* ═══════════════════════════════════════════════════════════
-   H-BRIDGE — REALISTIC RENDER
-   ═══════════════════════════════════════════════════════════ */
-function buildHBridgeReal() {
-  const W = 820, H = 540;
-  const nCap = 2;
-  const capW = 28, capH = 50;
-  const busY = 75;
-  // Single phase shown — 4 legs A B C D in H formation
-  const cx = W/2;
-  const leftX = cx - 130, rightX = cx + 130;
-  const bridgeY = busY + 25 + nCap * (capH + 14) + 28;
-
-  let s = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="background:#fafbfc;">`;
-
-  s += `<defs>
-    <pattern id="grid2" width="20" height="20" patternUnits="userSpaceOnUse">
-      <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e8edf3" stroke-width="0.5"/>
-    </pattern>
-  </defs>
-  <rect width="${W}" height="${H}" fill="url(#grid2)"/>`;
-
-  // Title
-  s += `<text x="${W/2}" y="28" fill="${PAL.blue}" font-size="16" text-anchor="middle" font-family="'Rajdhani',sans-serif" font-weight="700">H-BRIDGE CAPACITOR BANK</text>`;
-  s += `<text x="${W/2}" y="44" fill="${PAL.txt3}" font-size="10" text-anchor="middle" font-family="'Noto Sans Thai',sans-serif">4 Legs ต่อ Phase (A·B·C·D) · ป้องกันด้วย Bridge Differential CT (60P / 46B)</text>`;
-
-  // HV bus
-  s += busbar(80, busY, 740, 'PHASE BUSBAR  ·  230 kV', PAL.metal);
-  s += phaseDot(cx, busY, '#c0392b', 'Phase');
-
-  // Wire down to bus split point
-  const splitY = busY + 22;
-  s += wire(cx, busY+4, cx, splitY);
-
-  // Top horizontal split to left and right legs
-  s += wire(leftX, splitY, rightX, splitY, PAL.metalDark, 2.5);
-  s += terminal(cx, splitY, 4);
-
-  // ── LEG A (top-left) ──
-  s += frame(leftX - 50, splitY + 5, 100, nCap * (capH + 14) + 12);
-  s += `<text x="${leftX}" y="${splitY + 1}" fill="${PAL.blue}" font-size="11" text-anchor="middle" font-family="'Rajdhani',sans-serif" font-weight="700">LEG A</text>`;
-  let lay = splitY + 12;
-  for (let i = 0; i < nCap; i++) {
-    s += wire(leftX, lay, leftX, lay + 4);
-    s += realisticCap(leftX - capW/2, lay + 4, capW, capH, PAL.capBody);
-    lay += capH + 14;
-  }
-  s += wire(leftX, lay - 10, leftX, bridgeY);
-
-  // ── LEG B (top-right) ──
-  s += frame(rightX - 50, splitY + 5, 100, nCap * (capH + 14) + 12);
-  s += `<text x="${rightX}" y="${splitY + 1}" fill="${PAL.amber}" font-size="11" text-anchor="middle" font-family="'Rajdhani',sans-serif" font-weight="700">LEG B</text>`;
-  let rby = splitY + 12;
-  for (let i = 0; i < nCap; i++) {
-    s += wire(rightX, rby, rightX, rby + 4);
-    s += realisticCap(rightX - capW/2, rby + 4, capW, capH, PAL.capBody);
-    rby += capH + 14;
-  }
-  s += wire(rightX, rby - 10, rightX, bridgeY);
-
-  // ── BRIDGE LINE (horizontal H-link with CT) ──
-  s += `<rect x="${leftX - 4}" y="${bridgeY - 6}" width="${rightX - leftX + 8}" height="12" fill="${PAL.metalLight}" stroke="${PAL.metalDark}" stroke-width="0.8" rx="2"/>`;
-  s += `<rect x="${leftX - 3}" y="${bridgeY - 5}" width="${rightX - leftX + 6}" height="3" fill="#ffffff" opacity="0.4" rx="1"/>`;
-  s += `<text x="${cx}" y="${bridgeY - 12}" fill="${PAL.amber}" font-size="10" text-anchor="middle" font-family="'Rajdhani',sans-serif" font-weight="700">H-LINK BRIDGE</text>`;
-  s += terminal(leftX, bridgeY, 4);
-  s += terminal(rightX, bridgeY, 4);
-
-  // CT on bridge
-  s += ctReal(cx, bridgeY);
-
-  // ── LEG C (bot-left) ──
-  s += frame(leftX - 50, bridgeY + 12, 100, nCap * (capH + 14) + 12);
-  s += `<text x="${leftX}" y="${bridgeY + 8}" fill="${PAL.blueDark}" font-size="11" text-anchor="middle" font-family="'Rajdhani',sans-serif" font-weight="700">LEG C</text>`;
-  let lcy = bridgeY + 18;
-  for (let i = 0; i < nCap; i++) {
-    s += wire(leftX, lcy, leftX, lcy + 4);
-    s += realisticCap(leftX - capW/2, lcy + 4, capW, capH, PAL.capBody);
-    lcy += capH + 14;
-  }
-  const bottomY = lcy - 10;
-
-  // ── LEG D (bot-right) ──
-  s += frame(rightX - 50, bridgeY + 12, 100, nCap * (capH + 14) + 12);
-  s += `<text x="${rightX}" y="${bridgeY + 8}" fill="${PAL.amberDark}" font-size="11" text-anchor="middle" font-family="'Rajdhani',sans-serif" font-weight="700">LEG D</text>`;
-  let rdy = bridgeY + 18;
-  for (let i = 0; i < nCap; i++) {
-    s += wire(rightX, rdy, rightX, rdy + 4);
-    s += realisticCap(rightX - capW/2, rdy + 4, capW, capH, PAL.capBody);
-    rdy += capH + 14;
-  }
-
-  // Bottom bus / neutral
-  const neutralY = bottomY + 18;
-  s += wire(leftX, bottomY, leftX, neutralY);
-  s += wire(rightX, bottomY, rightX, neutralY);
-  s += `<line x1="${leftX - 30}" y1="${neutralY}" x2="${rightX + 30}" y2="${neutralY}" stroke="${PAL.txt2}" stroke-width="1.5" stroke-dasharray="4 2"/>`;
-  s += `<text x="${rightX + 60}" y="${neutralY + 3}" fill="${PAL.txt2}" font-size="9" font-family="'Rajdhani',sans-serif" font-weight="700">NEUTRAL</text>`;
-
-  // CT line out to relay
-  const relayX = rightX + 80;
-  s += `<line x1="${cx + 14}" y1="${bridgeY}" x2="${relayX}" y2="${bridgeY}" stroke="${PAL.amber}" stroke-width="1.5"/>`;
-  s += relayBox(relayX, bridgeY - 13, '60P', 'CT-Bridge');
-
-  return s + '</svg>';
-}
-
-/* ── Public API ──────────────────────────────────────────── */
-function renderDiagram(type, containerId) {
-  const el = document.getElementById(containerId);
-  if (!el) return;
-  el.innerHTML = type === 'h-bridge' ? buildHBridgeReal() : buildYYUngroundReal();
-}
-
-window.renderDiagram = renderDiagram;
-
-</script>
-
-<script>
-// ═══════════════════════════════════════
-// FORMULAS
-// ═══════════════════════════════════════
-/**
- * public/js/formulas.js — Render engineering formulas with REAL input values
- * Shows the actual numbers users entered, plugged into formulas step by step
- */
-'use strict';
-
-// Number formatting helpers
-const F = {
-  uF:  v => Number(v).toFixed(3),
-  S:   v => (Number(v)*1e6).toFixed(3) + ' µS',
-  Hz:  v => Number(v).toFixed(0),
-  V:   v => Number(v).toFixed(2),
-  kV:  v => (Number(v)/1000).toFixed(2),
-  A:   v => Number(v).toFixed(4),
-  mA:  v => Number(v).toFixed(4),
-  Ohm: v => Number(v).toFixed(2),
-  Mvar:v => Number(v).toFixed(3),
-  raw: (v,d) => Number(v).toFixed(d===undefined?4:d)
-};
-
-const F_HZ = 50;
-const PI2F = 2 * Math.PI * F_HZ;
-
-/** Render formula step block */
-function fStep(num, title, tag, desc, ...lines) {
-  return `<div class="formula-step">
-    <div class="fs-head">
-      <div class="fs-num">${num}</div>
-      <div class="fs-title">${title}</div>
-      ${tag ? `<div class="fs-tag">${tag}</div>` : ''}
-    </div>
-    ${desc ? `<div class="fs-desc">${desc}</div>` : ''}
-    <div class="fs-formula">
-      ${lines.join('')}
-    </div>
-  </div>`;
-}
-
-const eq    = (text, cls='') => `<span class="fs-eq ${cls}">${text}</span>`;
-const sym   = text => `<span class="fs-eq sym">${text}</span>`;
-const sub   = text => `<span class="fs-eq sub">${text}</span>`;
-const final = text => `<span class="fs-eq final">${text}</span>`;
-const v     = text => `<span class="var">${text}</span>`;
-const n     = text => `<span class="num">${text}</span>`;
-const r     = text => `<span class="res">${text}</span>`;
-const op    = text => `<span class="op">${text}</span>`;
-
-/** Build YY formula breakdown */
-function buildYYFormulas(vals, m) {
-  const Vph = m.Vph;
-  const Vs = vals.systemKV * 1000;
-  const sumY1 = vals.y1.reduce((a,c)=>a+c.val,0);
-  const sumY2 = vals.y2.reduce((a,c)=>a+c.val,0);
-  const C1F = sumY1 * 1e-6;
-  const C2F = sumY2 * 1e-6;
-  const B1 = m.B1, B2 = m.B2;
-
-  // Build "27.948 + 28.024 + ..." string
-  const y1Sum = vals.y1.map(c => F.uF(c.val)).join(' + ');
-  const y2Sum = vals.y2.map(c => F.uF(c.val)).join(' + ');
-
-  let html = `<div class="formula-section">
-    <div class="formula-title"><i class="fas fa-function"></i> การคำนวณ Y-Y Ungrounded — ทีละขั้น</div>
-    <div class="formula-sub">
-      ใช้ค่า input ที่ผู้ใช้กรอกในหน้าก่อนหน้า แทนค่าลงในสูตรวิศวกรรมจริงของระบบ ${vals.systemKV} kV
-      ความถี่ ${F_HZ} Hz
-    </div>`;
-
-  // Step 1: Sum C
-  html += fStep(1,
-    'รวมค่าความจุของแต่ละกิ่ง',
-    'Σ C',
-    'นำค่าที่กรอกในแต่ละกิ่งมารวมกัน (ขนาน)',
-    sym('C₁ = ' + n('C') + '<sub>1.1</sub> ' + op('+') + ' ' + n('C') + '<sub>1.2</sub> ' + op('+') + ' ... ' + op('+') + ' ' + n('C') + '<sub>1.n</sub>'),
-    eq('C₁ = ' + n(y1Sum) + ' &nbsp; µF'),
-    final('C₁ = ' + r(F.uF(sumY1)) + ' µF'),
-    eq(''),
-    sym('C₂ = ' + n('C') + '<sub>2.1</sub> ' + op('+') + ' ' + n('C') + '<sub>2.2</sub> ' + op('+') + ' ... ' + op('+') + ' ' + n('C') + '<sub>2.n</sub>'),
-    eq('C₂ = ' + n(y2Sum) + ' &nbsp; µF'),
-    final('C₂ = ' + r(F.uF(sumY2)) + ' µF')
-  );
-
-  // Step 2: Phase voltage
-  html += fStep(2,
-    'แรงดันเฟส (Phase Voltage)',
-    'V_ph',
-    'ระบบ 3 เฟสสมดุล แรงดันเฟส = แรงดันสาย ÷ √3',
-    sym('V<sub>ph</sub> = V<sub>S</sub> / √3'),
-    eq('V<sub>ph</sub> = ' + n(F.raw(Vs,0)) + ' V ' + op('/') + ' √3'),
-    eq('V<sub>ph</sub> = ' + n(F.raw(Vs,0)) + ' ' + op('/') + ' ' + n('1.7321')),
-    final('V<sub>ph</sub> = ' + r(F.V(Vph)) + ' V ≈ ' + r(F.kV(Vph)) + ' kV')
-  );
-
-  // Step 3: Susceptance B
-  html += fStep(3,
-    'แปลงค่าความจุเป็น Susceptance',
-    'B = ωC',
-    'ความนำเชิงรีแอคทีฟของตัวเก็บประจุที่ความถี่ระบบ — ใช้แทน Reactance เพราะรวมแบบขนานได้ตรง',
-    sym('B = 2π · f · C'),
-    eq('B = 2π ' + op('×') + ' ' + n(F.Hz(F_HZ)) + ' ' + op('×') + ' C ' + op('×') + ' 10⁻⁶'),
-    eq('B = ' + n(PI2F.toFixed(4)) + ' ' + op('×') + ' C(µF) ' + op('×') + ' 10⁻⁶'),
-    eq(''),
-    eq('B<sub>1</sub> = ' + n(PI2F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumY1)) + ' ' + op('×') + ' 10⁻⁶'),
-    final('B<sub>1</sub> = ' + r(F.S(B1)) + ' &nbsp; (siemens)'),
-    eq(''),
-    eq('B<sub>2</sub> = ' + n(PI2F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumY2)) + ' ' + op('×') + ' 10⁻⁶'),
-    final('B<sub>2</sub> = ' + r(F.S(B2)) + ' &nbsp; (siemens)')
-  );
-
-  // Step 4: Vno (Millman's Theorem simplified for 2-source)
-  html += fStep(4,
-    'แรงดันที่จุด Neutral (Vno)',
-    'Millman',
-    'จากความไม่สมดุลของ B<sub>1</sub> กับ B<sub>2</sub> เกิดแรงดันเบี่ยงที่ neutral floating',
-    sym('V<sub>no</sub> = (V<sub>ph</sub> / (B₁+B₂)) · |B₁ − B₂|'),
-    eq('V<sub>no</sub> = (' + n(F.V(Vph)) + ' / (' + n((B1*1e6).toFixed(3)) + '+' + n((B2*1e6).toFixed(3)) + ')) ' + op('×') + ' |' + n((B1*1e6).toFixed(3)) + ' − ' + n((B2*1e6).toFixed(3)) + '| µS'),
-    eq('V<sub>no</sub> = (' + n(F.V(Vph)) + ' / ' + n(((B1+B2)*1e6).toFixed(3)) + ') ' + op('×') + ' ' + n((Math.abs(B1-B2)*1e6).toFixed(3))),
-    final('V<sub>no</sub> = ' + r(F.V(m.Vno)) + ' V')
-  );
-
-  // Step 5: Ino
-  const InoCls = m.Ino_mA > 10 ? 'bad' : m.Ino_mA > 1 ? 'warn' : 'good';
-  html += fStep(5,
-    'กระแสไม่สมดุลที่ Neutral (Ino)',
-    'KCL',
-    'กระแสที่รีเลย์ตรวจจับ (สำหรับตั้งค่า 59N alarm/trip)',
-    sym('I<sub>no</sub> = V<sub>no</sub> · (B₁ + B₂)'),
-    eq('I<sub>no</sub> = ' + n(F.V(m.Vno)) + ' ' + op('×') + ' ' + n(((B1+B2)*1e6).toFixed(3)) + ' µS'),
-    eq('I<sub>no</sub> = ' + n(F.A(m.Ino_mA/1000)) + ' A'),
-    final('I<sub>no</sub> = ' + r(F.mA(m.Ino_mA)) + ' mA')
-  );
-
-  // Step 6: Q
-  html += fStep(6,
-    'พลังงานรีแอคทีฟรวม (Q)',
-    'Q = V²B',
-    'กำลังที่แบงค์ผลิตได้ในระบบ — ใช้ตรวจสอบว่ายังอยู่ในพิกัด',
-    sym('Q = V<sub>ph</sub>² · (B₁ + B₂)'),
-    eq('Q = ' + n(F.V(Vph)) + '² ' + op('×') + ' ' + n(((B1+B2)*1e6).toFixed(3)) + ' µS'),
-    eq('Q = ' + n((Vph*Vph).toExponential(4)) + ' ' + op('×') + ' ' + n((B1+B2).toExponential(4))),
-    final('Q = ' + r(F.Mvar(m.Qt)) + ' Mvar')
-  );
-
-  html += '</div>';
-  return html;
-}
-
-/** Build H-Bridge formula breakdown */
-function buildHBridgeFormulas(vals, m) {
-  const Vph = m.Vph;
-  const Vs = vals.systemKV * 1000;
-
-  const sumA = vals.legs.a.reduce((a,c)=>a+c.val,0);
-  const sumB = vals.legs.b.reduce((a,c)=>a+c.val,0);
-  const sumC_ = vals.legs.c.reduce((a,c)=>a+c.val,0);
-  const sumD = vals.legs.d.reduce((a,c)=>a+c.val,0);
-
-  const aSum = vals.legs.a.map(c=>F.uF(c.val)).join(' + ');
-  const bSum = vals.legs.b.map(c=>F.uF(c.val)).join(' + ');
-  const cSum = vals.legs.c.map(c=>F.uF(c.val)).join(' + ');
-  const dSum = vals.legs.d.map(c=>F.uF(c.val)).join(' + ');
-
-  // Calc Xc for each
-  const xcA = 1 / (PI2F * sumA * 1e-6);
-  const xcB = 1 / (PI2F * sumB * 1e-6);
-  const xcC = 1 / (PI2F * sumC_ * 1e-6);
-  const xcD = 1 / (PI2F * sumD * 1e-6);
-
-  let html = `<div class="formula-section">
-    <div class="formula-title"><i class="fas fa-function"></i> การคำนวณ H-Bridge — ทีละขั้น</div>
-    <div class="formula-sub">
-      H-Bridge แบ่งเฟสเป็น 4 Legs (A·B·C·D) มี CT บน H-link ระหว่าง Leg A-B และ C-D
-      ระบบ ${vals.systemKV} kV ความถี่ ${F_HZ} Hz
-    </div>`;
-
-  // Step 1: Sum each leg
-  html += fStep(1,
-    'รวมค่าความจุของแต่ละ Leg',
-    'Σ C',
-    'แต่ละ Leg ตัวเก็บประจุต่อขนานกัน นำค่ามารวม',
-    eq('C<sub>A</sub> = ' + n(aSum) + ' = ' + r(F.uF(sumA)) + ' µF'),
-    eq('C<sub>B</sub> = ' + n(bSum) + ' = ' + r(F.uF(sumB)) + ' µF'),
-    eq('C<sub>C</sub> = ' + n(cSum) + ' = ' + r(F.uF(sumC_)) + ' µF'),
-    eq('C<sub>D</sub> = ' + n(dSum) + ' = ' + r(F.uF(sumD)) + ' µF')
-  );
-
-  // Step 2: Phase voltage
-  html += fStep(2,
-    'แรงดันเฟส',
-    'V_ph',
-    '',
-    sym('V<sub>ph</sub> = V<sub>S</sub> / √3'),
-    eq('V<sub>ph</sub> = ' + n(F.raw(Vs,0)) + ' V ' + op('/') + ' √3'),
-    final('V<sub>ph</sub> = ' + r(F.V(Vph)) + ' V')
-  );
-
-  // Step 3: Reactance Xc per leg
-  html += fStep(3,
-    'Reactance ของแต่ละ Leg',
-    'Xc = 1/ωC',
-    'แต่ละ Leg มี Xc ต่างกันตามค่าความจุ',
-    sym('X<sub>C</sub> = 1 / (2π · f · C)'),
-    eq('X<sub>C,A</sub> = 1 / (' + n(PI2F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumA)) + ' ' + op('×') + ' 10⁻⁶) = ' + r(F.Ohm(xcA)) + ' Ω'),
-    eq('X<sub>C,B</sub> = 1 / (' + n(PI2F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumB)) + ' ' + op('×') + ' 10⁻⁶) = ' + r(F.Ohm(xcB)) + ' Ω'),
-    eq('X<sub>C,C</sub> = 1 / (' + n(PI2F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumC_)) + ' ' + op('×') + ' 10⁻⁶) = ' + r(F.Ohm(xcC)) + ' Ω'),
-    eq('X<sub>C,D</sub> = 1 / (' + n(PI2F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumD)) + ' ' + op('×') + ' 10⁻⁶) = ' + r(F.Ohm(xcD)) + ' Ω')
-  );
-
-  // Step 4: xa1 and xa2
-  html += fStep(4,
-    'รวม Reactance ทั้ง branch (ต่ออนุกรม)',
-    'X_total',
-    'A กับ C ต่ออนุกรม → xa1, B กับ D ต่ออนุกรม → xa2',
-    sym('xa1 = X<sub>C,A</sub> + X<sub>C,C</sub>'),
-    eq('xa1 = ' + n(F.Ohm(xcA)) + ' + ' + n(F.Ohm(xcC)) + ' = ' + r(F.Ohm(m.xa1)) + ' Ω'),
-    eq(''),
-    sym('xa2 = X<sub>C,B</sub> + X<sub>C,D</sub>'),
-    eq('xa2 = ' + n(F.Ohm(xcB)) + ' + ' + n(F.Ohm(xcD)) + ' = ' + r(F.Ohm(m.xa2)) + ' Ω')
-  );
-
-  // Step 5: Iup, Idown
-  html += fStep(5,
-    'กระแสบนและล่าง',
-    'KVL · I=V/X',
-    'กระแสที่ไหลผ่านแต่ละ branch (ซ้าย/ขวา)',
-    sym('I<sub>up</sub> = V<sub>ph</sub> / xa1'),
-    eq('I<sub>up</sub> = ' + n(F.V(Vph)) + ' / ' + n(F.Ohm(m.xa1))),
-    final('I<sub>up</sub> = ' + r(F.A(m.Iup)) + ' A'),
-    eq(''),
-    sym('I<sub>down</sub> = V<sub>ph</sub> / xa2'),
-    eq('I<sub>down</sub> = ' + n(F.V(Vph)) + ' / ' + n(F.Ohm(m.xa2))),
-    final('I<sub>down</sub> = ' + r(F.A(m.Idown)) + ' A')
-  );
-
-  // Step 6: Iun = bridge current
-  const InoCls = m.In_mA > 10 ? 'bad' : m.In_mA > 1 ? 'warn' : 'good';
-  html += fStep(6,
-    'กระแส Bridge ไม่สมดุล (Iun / In)',
-    '60P',
-    'ผลต่างกระแสบน-ล่าง — รีเลย์ Bridge Differential ตรวจจับค่านี้ตั้ง alarm/trip',
-    sym('I<sub>un</sub> = I<sub>up</sub> − I<sub>down</sub>'),
-    eq('I<sub>un</sub> = ' + n(F.A(m.Iup)) + ' − ' + n(F.A(m.Idown))),
-    eq('I<sub>un</sub> = ' + n(F.A(m.Iun)) + ' A'),
-    eq(''),
-    final('I<sub>n</sub> = |I<sub>un</sub>| = ' + r(F.mA(m.In_mA)) + ' mA')
-  );
-
-  // Step 7: Vx
-  html += fStep(7,
-    'แรงดันที่จุด Bridge (Vx)',
-    'Voltage divider',
-    'แรงดันที่ตกคร่อม Leg ล่าง (C) — ใช้ตรวจสอบ over-voltage ของตัวที่ยังเหลือ',
-    sym('V<sub>x</sub> = V<sub>ph</sub> · (X<sub>C,C</sub> / xa1)'),
-    eq('V<sub>x</sub> = ' + n(F.V(Vph)) + ' ' + op('×') + ' (' + n(F.Ohm(xcC)) + ' / ' + n(F.Ohm(m.xa1)) + ')'),
-    final('V<sub>x</sub> = ' + r(F.V(m.Vx)) + ' V')
-  );
-
-  // Step 8: Q
-  html += fStep(8,
-    'พลังงานรีแอคทีฟรวม (Q)',
-    'Q = V²B',
-    '',
-    sym('Q = V<sub>ph</sub>² · B<sub>total</sub>'),
-    eq('Q = ' + n(F.V(Vph)) + '² ' + op('×') + ' ' + n((m.S_total*1e6).toFixed(3)) + ' µS'),
-    final('Q = ' + r(F.Mvar(m.Qt)) + ' Mvar')
-  );
-
-  html += '</div>';
-  return html;
-}
-
-window.buildYYFormulas = buildYYFormulas;
-window.buildHBridgeFormulas = buildHBridgeFormulas;
-
-</script>
-
-<script>
-// ═══════════════════════════════════════
-// UI
-// ═══════════════════════════════════════
-'use strict';
-const F2={uF:v=>isNaN(v)?'—':Number(v).toFixed(4),mA:v=>isNaN(v)?'—':Number(v).toFixed(4),S:v=>isNaN(v)?'—':(Number(v)*1e6).toFixed(3),V:v=>isNaN(v)?'—':Number(v).toFixed(2),Mvar:v=>isNaN(v)?'—':Number(v).toFixed(3),Ohm:v=>isNaN(v)?'—':Number(v).toFixed(2)};
-
-function buildEngPanelFull(title,m,topology){
-  let items=[];
-  if(topology==='h-bridge'){
-    const c=m.In_mA>10?'bad':m.In_mA>1?'warn':'good';
-    items=[
-      {l:'Σ C Left (A+C)',v:F2.uF(m.CA_top_uF+m.CA_bot_uF),u:'µF',c:'hi-blue',vc:'hi'},
-      {l:'Σ C Right (B+D)',v:F2.uF(m.CB_top_uF+m.CB_bot_uF),u:'µF',c:'hi-amber',vc:'warn'},
-      {l:'Xc Left (xa1)',v:F2.Ohm(m.xa1),u:'Ω',c:'hi-blue',vc:''},
-      {l:'Xc Right (xa2)',v:F2.Ohm(m.xa2),u:'Ω',c:'hi-amber',vc:''},
-      {l:'I_up',v:F2.mA(m.Iup),u:'A',c:'hi-blue',vc:''},
-      {l:'I_down',v:F2.mA(m.Idown),u:'A',c:'hi-amber',vc:''},
-      {l:'I_bridge (60P)',v:F2.mA(m.In_mA),u:'mA',c:'hi-red',vc:c},
-      {l:'Q รวม',v:F2.Mvar(m.Qt),u:'Mvar',c:'hi-green',vc:'good'},
-    ];
-  } else {
-    const c=m.Ino_mA>10?'bad':m.Ino_mA>1?'warn':'good';
-    items=[
-      {l:'Σ C (Y1)',v:F2.uF(m.C1_uF),u:'µF',c:'hi-blue',vc:'hi'},
-      {l:'Σ C (Y2)',v:F2.uF(m.C2_uF),u:'µF',c:'hi-amber',vc:'warn'},
-      {l:'B₁ = 2πfC₁',v:F2.S(m.B1),u:'µS',c:'hi-blue',vc:''},
-      {l:'B₂ = 2πfC₂',v:F2.S(m.B2),u:'µS',c:'hi-amber',vc:''},
-      {l:'V_no (neutral)',v:F2.V(m.Vno),u:'V',c:'hi-amber',vc:'warn'},
-      {l:'I_no (59N)',v:F2.mA(m.Ino_mA),u:'mA',c:'hi-red',vc:c},
-      {l:'Σ S = B₁+B₂',v:F2.S(m.B1+m.B2),u:'µS',c:'hi-blue',vc:''},
-      {l:'Q รวม',v:F2.Mvar(m.Qt),u:'Mvar',c:'hi-green',vc:'good'},
-    ];
-  }
-  return `<div class="eng-panel-full">
-    <div class="eng-panel-title"><i class="fas fa-calculator"></i> ${title}</div>
-    <div class="eng-grid-sym">${items.map(it=>`
-      <div class="eng-item ${it.c}">
-        <div class="ei-lbl">${it.l}</div>
-        <div class="ei-val ${it.vc}">${it.v}<span class="ei-unit">${it.u}</span></div>
-      </div>`).join('')}
-    </div>
-  </div>`;
-}
-
-function buildSolEng(m,topology){
-  if(!m) return '';
-  let items=[];
-  if(topology==='h-bridge'){
-    const c=m.In_mA>10?'bad':m.In_mA>1?'warn':'good';
-    items=[
-      {l:'Xc Left',v:F2.Ohm(m.xa1),u:'Ω',c:'hi-blue',vc:''},
-      {l:'Xc Right',v:F2.Ohm(m.xa2),u:'Ω',c:'hi-amber',vc:''},
-      {l:'I_bridge (60P)',v:F2.mA(m.In_mA),u:'mA',c:'hi-amber',vc:c},
-      {l:'Q รวม',v:F2.Mvar(m.Qt),u:'Mvar',c:'hi-green',vc:'good'},
-    ];
-  } else {
-    const c=m.Ino_mA>10?'bad':m.Ino_mA>1?'warn':'good';
-    items=[
-      {l:'Σ C Y1',v:F2.uF(m.C1_uF),u:'µF',c:'hi-blue',vc:''},
-      {l:'Σ C Y2',v:F2.uF(m.C2_uF),u:'µF',c:'hi-amber',vc:''},
-      {l:'I_no (59N)',v:F2.mA(m.Ino_mA),u:'mA',c:'hi-amber',vc:c},
-      {l:'Q รวม',v:F2.Mvar(m.Qt),u:'Mvar',c:'hi-green',vc:'good'},
-    ];
-  }
-  return `<div class="sol-eng">${items.map(it=>`
-    <div class="sol-eng-item ${it.c}">
-      <div class="sei-lbl">${it.l}</div>
-      <div class="sei-val ${it.vc}">${it.v}<span class="sei-unit">${it.u}</span></div>
-    </div>`).join('')}
-  </div>`;
-}
-
-function renderResults(vals,result){
-  const {quickResult,fullResult,engBefore}=result;
-  const topology=vals.topology;
-  const sumY1=vals.y1.reduce((a,c)=>a+c.val,0);
-  const sumY2=vals.y2.reduce((a,c)=>a+c.val,0);
-  const baseDiff=Math.abs(sumY1-sumY2);
-
-  document.getElementById('lblSide1').textContent=topology==='h-bridge'?'Σ C Left (A+C)':'Σ C (Y1)';
-  document.getElementById('lblSide2').textContent=topology==='h-bridge'?'Σ C Right (B+D)':'Σ C (Y2)';
-  document.getElementById('totalY1').textContent=sumY1.toFixed(4)+' µF';
-  document.getElementById('totalY2').textContent=sumY2.toFixed(4)+' µF';
-  document.getElementById('totalBase').textContent=baseDiff.toFixed(4)+' µF';
-  document.getElementById('topoLabel').textContent=topology==='h-bridge'?'H-Bridge (4 Legs)':'Y-Y Ungrounded';
-  document.getElementById('vsLabel').textContent=vals.systemKV+' kV';
-  document.getElementById('vphLabel').textContent=(vals.systemKV*1000/Math.sqrt(3)/1000).toFixed(2)+' kV';
-
-  // Engineering metrics
-  document.getElementById('engMetricsSection').innerHTML=
-    buildEngPanelFull('📊 ค่าวิศวกรรม — ก่อนสับเปลี่ยน',engBefore,topology);
-
-  // Formulas with real values
-  const fSec=document.getElementById('formulaSection');
-  if(typeof buildYYFormulas==='function'&&typeof buildHBridgeFormulas==='function'){
-    fSec.innerHTML=topology==='h-bridge'
-      ?buildHBridgeFormulas(vals,engBefore)
-      :buildYYFormulas(vals,engBefore);
-  }
-
-  // Quick
-  const defs=[
-    {cls:'s1',icon:'⚡',label:'1 ครั้ง',desc:'เร็วที่สุด'},
-    {cls:'s2',icon:'🔄',label:'2 ครั้ง',desc:'สมดุลขึ้น'},
-    {cls:'s3',icon:'🔧',label:'3 ครั้ง',desc:'ดีที่สุดใน Quick Mode'},
-  ];
-  document.getElementById('tabQuick').innerHTML=
-    quickResult.swaps.map((sw,i)=>buildSolCard(defs[i].cls,`${defs[i].icon} สับเปลี่ยน ${defs[i].label} — ${defs[i].desc}`,sw,true,topology)).join('');
-
-  // Full
-  const fullSw={diff:fullResult.diff,y1:fullResult.y1,y2:fullResult.y2,engAfter:fullResult.engAfter,steps:[`จัดเรียงใหม่ทั้งหมด ${fullResult.swapCount} กระป๋อง — ได้ความสมดุลสูงสุด`]};
-  document.getElementById('tabFull').innerHTML=buildSolCard('full','🏆 จัดชุดสมบูรณ์แบบ (Optimal)',fullSw,false,topology);
-
-  switchCalcView('metrics');
-  switchTab('quick');
-}
-
-function buildSolCard(cls,title,sw,showSteps,topology){
-  const dc=sw.diff<0.3?'great':sw.diff<1.0?'ok':'bad';
-  const s1=sw.y1.reduce((a,c)=>a+c.val,0);
-  const s2=sw.y2.reduce((a,c)=>a+c.val,0);
-  const steps=showSteps
-    ?`<div class="steps-box"><div class="steps-title"><i class="fas fa-list-ol"></i> ขั้นตอนหน้างาน</div>
-       ${sw.steps.map((s,i)=>`<div class="step-item"><span class="step-num">${i+1}</span><span>${s}</span></div>`).join('')}</div>`
-    :`<div class="steps-box"><div class="steps-title"><i class="fas fa-info-circle"></i> สรุปการดำเนินการ</div>
-       <div class="step-item"><span class="step-num">✓</span><span>${sw.steps[0]}</span></div></div>`;
-  return `<div class="sol-card ${cls}">
-    <div class="sol-top">
-      <div class="sol-name">${title}</div>
-      <div class="delta-badge ${dc}">ΔC = ${sw.diff.toFixed(4)} µF</div>
-    </div>
-    <div class="sol-body">
-      ${steps}
-      ${buildSolEng(sw.engAfter,topology)}
-      <div class="cap-cols">
-        <div class="cap-box">
-          <h4>${topology==='h-bridge'?'Left (A+C)':'กิ่ง Y1'} หลังแก้ไข — ${s1.toFixed(4)} µF</h4>
-          ${capList(sw.y1,topology==='h-bridge'?'left':'Y1')}
-        </div>
-        <div class="cap-box">
-          <h4>${topology==='h-bridge'?'Right (B+D)':'กิ่ง Y2'} หลังแก้ไข — ${s2.toFixed(4)} µF</h4>
-          ${capList(sw.y2,topology==='h-bridge'?'right':'Y2')}
-        </div>
-      </div>
-    </div>
-  </div>`;
-}
-
-function capList(arr,tgt){
-  return arr.slice().sort((a,b)=>b.val-a.val).map(c=>{
-    const isLeft=c.origin==='A'||c.origin==='C';
-    const isRight=c.origin==='B'||c.origin==='D';
-    const onSide=(tgt==='left'&&isLeft)||(tgt==='right'&&isRight)||(c.origin===tgt);
-    const tag=c.origin==='Spare'?'<span class="pill p-spare">จากอะไหล่</span>'
-             :!onSide?`<span class="pill p-move">ย้ายจาก ${c.origin}</span>`
-             :'<span class="pill p-stay">อยู่เดิม</span>';
-    return `<div class="ci"><span><span class="cv">${c.val.toFixed(3)}</span><span class="cid"> (${c.id})</span></span>${tag}</div>`;
-  }).join('');
-}
-
-function switchTab(name){
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
-  document.querySelector(`.tab[data-tab="${name}"]`).classList.add('active');
-  document.getElementById('tab'+name.charAt(0).toUpperCase()+name.slice(1)).classList.add('active');
-}
-
-</script>
-
-<script>
-// ═══════════════════════════════════════
-// EXPORTER
-// ═══════════════════════════════════════
-/**
- * public/js/exporter.js — Excel Export (SheetJS)
- */
-
-'use strict';
-
-function exportToExcel(data) {
-  if (typeof XLSX === 'undefined') { alert('ไม่พบ Library XLSX'); return; }
-  const wb = XLSX.utils.book_new();
-
-  // Sheet 1: Input
-  const inputRows = [
-    ['EGAT C-Bank Optimizer v3 — ข้อมูล Input'],[''],
-    ['วันที่/เวลา', data.timestamp],
-    ['รูปแบบการต่อ', data.connType === 'double-wye' ? 'Double Wye' : 'Y-Y Ungrounded'],[''],
-    ['กิ่ง Y1','','กิ่ง Y2','','Spare',''],['ID','µF','ID','µF','ID','µF'],
-  ];
-  const mx = Math.max(data.y1.length, data.y2.length, data.spare.length);
-  for (let i=0; i<mx; i++) {
-    const r1=data.y1[i]||null, r2=data.y2[i]||null, rs=data.spare[i]||null;
-    inputRows.push([r1?r1.id:'',r1?r1.val:'', r2?r2.id:'',r2?r2.val:'', rs?rs.id:'',rs?rs.val:'']);
-  }
-  const sumY1 = data.y1.reduce((a,c)=>a+c.val,0);
-  const sumY2 = data.y2.reduce((a,c)=>a+c.val,0);
-  inputRows.push([''],['รวม Y1',sumY1.toFixed(4)],['รวม Y2',sumY2.toFixed(4)],
-    ['ΔC เดิม',Math.abs(sumY1-sumY2).toFixed(4)]);
-  const wsIn = XLSX.utils.aoa_to_sheet(inputRows);
-  wsIn['!cols'] = [16,12,16,12,16,12].map(w=>({wch:w}));
-  XLSX.utils.book_append_sheet(wb, wsIn, 'Input Data');
-
-  // Quick solution sheets (1, 2, 3 swaps)
-  if (data.quickResult && data.quickResult.swaps) {
-    data.quickResult.swaps.forEach(sw => {
-      const title = `สับเปลี่ยน ${sw.swapCount} ครั้ง — ΔC = ${sw.diff.toFixed(4)} µF`;
-      XLSX.utils.book_append_sheet(wb, makeSolSheet(sw, title), `Quick ${sw.swapCount} swap`);
-    });
-  }
-
-  // Full solution sheet
-  if (data.fullResult) {
-    const fr = data.fullResult;
-    const fsw = { diff: fr.diff, y1: fr.y1, y2: fr.y2, swapCount: fr.swapCount,
-      steps: [`จัดเรียงใหม่ ${fr.swapCount} กระป๋อง`] };
-    XLSX.utils.book_append_sheet(wb, makeSolSheet(fsw, `Full Optimal — ΔC = ${fr.diff.toFixed(4)} µF`), 'Full Optimal');
-  }
-
-  XLSX.writeFile(wb, `EGAT_CBank_${data.timestamp.replace(/[\/: ,]/g,'-')}.xlsx`);
-}
-
-function makeSolSheet(sw, title) {
-  function st(c,tgt){
-    if(!c)return''; if(c.origin==='Spare')return'จากอะไหล่';
-    if(c.origin!==tgt)return'ย้ายจาก '+c.origin; return'อยู่เดิม';
-  }
-  const rows = [[title],[''],
-    ...sw.steps.map((s,i)=>[`ขั้นที่ ${i+1}`, s]),
-    [''],['ΔC หลังแก้ไข (µF)', sw.diff.toFixed(4)],[''],
-    ['กิ่ง Y1 (หลังแก้ไข)','','','','กิ่ง Y2 (หลังแก้ไข)'],
-    ['#','ID','µF','สถานะ','','#','ID','µF','สถานะ'],
-  ];
-  const ml = Math.max(sw.y1.length, sw.y2.length);
-  for(let i=0;i<ml;i++){
-    const c1=sw.y1[i]||null, c2=sw.y2[i]||null;
-    rows.push([c1?i+1:'',c1?c1.id:'',c1?c1.val:'',st(c1,'Y1'),'',
-               c2?i+1:'',c2?c2.id:'',c2?c2.val:'',st(c2,'Y2')]);
-  }
-  rows.push([''],
-    ['รวม Y1', '', sw.y1.reduce((a,c)=>a+c.val,0).toFixed(4)],
-    ['รวม Y2', '', sw.y2.reduce((a,c)=>a+c.val,0).toFixed(4)]);
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [6,14,12,18,4,6,14,12,18].map(w=>({wch:w}));
-  return ws;
-}
-
-</script>
-
-<script>
-// ═══════════════════════════════════════
-// APP — with fetch() replaced by clientCalculate()
-// ═══════════════════════════════════════
-'use strict';
-let currentConn='yy-unground', lastCalcData=null;
-
-window.addEventListener('DOMContentLoaded',()=>{
-  const saved = localStorage.getItem('cbank-theme')||'light';
-  document.documentElement.setAttribute('data-theme', saved);
-  renderDiagram('yy-unground','diagramContainer');
-  goToStep(1);
+window.addEventListener('DOMContentLoaded', () => {
+  const t = document.documentElement.getAttribute('data-theme');
+  document.getElementById('themeIcon').className = t === 'light' ? 'fas fa-moon' : 'fas fa-sun';
+  buildInputs();
 });
 
-function toggleTheme(){
-  const html = document.documentElement;
-  const next = html.getAttribute('data-theme')==='dark' ? 'light' : 'dark';
-  html.setAttribute('data-theme', next);
-  localStorage.setItem('cbank-theme', next);
-}
+// ── BUILD INPUTS ────────────────────────────────────────────────────────
+function buildInputs() {
+  const N = Math.max(1, parseInt(document.getElementById('numPairs').value) || 10);
+  const M = Math.max(0, parseInt(document.getElementById('numSpares').value) || 0);
 
-function goToStep(n){
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  document.getElementById('page'+n).classList.add('active');
-  document.querySelectorAll('.wiz-step').forEach(el=>{
-    const sn=parseInt(el.dataset.step);
-    el.classList.remove('active','completed');
-    if(sn===n) el.classList.add('active');
-    else if(sn<n) el.classList.add('completed');
-  });
-  document.querySelectorAll('.wiz-line').forEach((el,idx)=>{
-    el.classList.toggle('done', idx+1<n);
-  });
-  window.scrollTo({top:0,behavior:'smooth'});
-}
-
-function goToStep2(){
-  const labelTh={'yy-unground':'Y-Y ไม่ต่อลงดิน','h-bridge':'H-Bridge (4 Legs)'};
-  document.getElementById('confirmedType').textContent=labelTh[currentConn]||currentConn;
-  document.getElementById('labelPairs').textContent=
-    currentConn==='h-bridge'?'จำนวนตัวเก็บประจุต่อ Leg':'จำนวนตัวเก็บประจุต่อกิ่ง';
-  buildInputPanels();
-  goToStep(2);
-}
-
-function restartWizard(){
-  lastCalcData=null;
-  highlightConn(document.querySelector('.conn-opt[data-conn="yy-unground"]'));
-  goToStep(1);
-}
-
-function highlightConn(el){
-  document.querySelectorAll('.conn-opt').forEach(o=>o.classList.remove('active'));
-  el.classList.add('active');
-  currentConn=el.dataset.conn;
-  const labels={'yy-unground':'Y-Y Ungrounded','h-bridge':'H-Bridge'};
-  document.getElementById('diagramLabel').textContent=labels[currentConn]||''
-  renderDiagram(currentConn,'diagramContainer');
-}
-
-function buildInputPanels(){
-  const nP=Math.max(1,parseInt(document.getElementById('numPairs').value)||10);
-  const nS=Math.max(0,parseInt(document.getElementById('numSpares').value)||0);
-  const inputCols=document.getElementById('inputCols');
-  function rows(pfx,cnt){
-    let h='';
-    for(let i=1;i<=cnt;i++) h+=`<div class="cr"><label>${pfx}-${i}</label><input type="number" step="0.001" min="0" class="val-${pfx.toLowerCase()}" placeholder="0.000"><span class="unit">µF</span></div>`;
+  const rows = (pfx, count) => {
+    let h = '';
+    for(let i=1; i<=count; i++) {
+      h += `<div class="cr">
+              <label>${pfx}-${i}</label>
+              <input type="number" step="0.001" class="val-${pfx.toLowerCase().replace("'",'2')}" placeholder="0.000">
+              <span class="unit">µF</span>
+            </div>`;
+    }
     return h;
-  }
-  if(currentConn==='h-bridge'){
-    inputCols.innerHTML=`
-      <div class="inp-panel la"><div class="panel-hd"><i class="fas fa-circle" style="font-size:.5rem"></i>Leg A — Top-Left</div>${rows('A',nP)}</div>
-      <div class="inp-panel lb"><div class="panel-hd"><i class="fas fa-circle" style="font-size:.5rem"></i>Leg B — Top-Right</div>${rows('B',nP)}</div>
-      <div class="inp-panel lc"><div class="panel-hd"><i class="fas fa-circle" style="font-size:.5rem"></i>Leg C — Bot-Left</div>${rows('C',nP)}</div>
-      <div class="inp-panel ld"><div class="panel-hd"><i class="fas fa-circle" style="font-size:.5rem"></i>Leg D — Bot-Right</div>${rows('D',nP)}</div>
-      <div class="inp-panel spare" style="grid-column:span 2"><div class="panel-hd"><i class="fas fa-box-open"></i>อะไหล่ (Spare)</div>${rows('S',nS)}</div>`;
-    inputCols.style.gridTemplateColumns='';
-  } else {
-    inputCols.innerHTML=`
-      <div class="inp-panel y1"><div class="panel-hd"><i class="fas fa-circle" style="font-size:.5rem"></i>กิ่ง Y1</div>${rows('Y1',nP)}</div>
-      <div class="inp-panel y2"><div class="panel-hd"><i class="fas fa-circle" style="font-size:.5rem"></i>กิ่ง Y2</div>${rows('Y2',nP)}</div>
-      <div class="inp-panel spare"><div class="panel-hd"><i class="fas fa-box-open"></i>อะไหล่ (Spare)</div>${rows('S',nS)}</div>`;
-    inputCols.style.gridTemplateColumns='';
-  }
+  };
+
+  document.getElementById('divA').innerHTML = rows('A', N);
+  document.getElementById('divA2').innerHTML = rows("A'", N);
+  document.getElementById('divB').innerHTML = rows('B', N);
+  document.getElementById('divB2').innerHTML = rows("B'", N);
+  document.getElementById('divC').innerHTML = rows('C', N);
+  document.getElementById('divC2').innerHTML = rows("C'", N);
+  document.getElementById('divSpare').innerHTML = rows('S', M);
+  document.getElementById('resultsArea').style.display = 'none';
 }
 
-function getInputValues(){
-  const spare=[];
-  document.querySelectorAll('.val-s').forEach((el,k)=>{
-    const vs=parseFloat(el.value);
-    if(!isNaN(vs)&&vs>0) spare.push({id:`S-${k+1}`,val:vs,origin:'Spare',pos:k});
-  });
-  const systemKV=parseFloat(document.getElementById('systemKV').value)||69;
-  if(currentConn==='h-bridge'){
-    const legs={a:[],b:[],c:[],d:[]};
-    for(const leg of ['a','b','c','d']){
-      const els=document.querySelectorAll(`.val-${leg}`);
-      for(let i=0;i<els.length;i++){
-        const v=parseFloat(els[i].value);
-        if(isNaN(v)||v<=0){alert(`กรุณากรอกค่า Leg ${leg.toUpperCase()}-${i+1} ให้ครบ`);return null;}
-        legs[leg].push({id:`${leg.toUpperCase()}-${i+1}`,val:v,origin:leg.toUpperCase(),pos:i});
+function getInputValues() {
+  const getVals = (cls, origin) => {
+    const els = document.querySelectorAll(`.val-${cls}`);
+    let arr = [];
+    for(let i=0; i<els.length; i++) {
+      let v = parseFloat(els[i].value);
+      if(isNaN(v)) return null;
+      arr.push({ id: `${origin}-${i+1}`, val: v, origin: origin, pos: i });
+    }
+    return arr;
+  };
+
+  const a = getVals('a', 'A'), a2 = getVals('a2', "A'");
+  const b = getVals('b', 'B'), b2 = getVals('b2', "B'");
+  const c = getVals('c', 'C'), c2 = getVals('c2', "C'");
+  const spare = getVals('s', 'Spare');
+
+  if(!a||!a2||!b||!b2||!c||!c2||!spare) {
+    alert("กรุณากรอกค่า C ให้ครบทุกช่องครับ"); return null;
+  }
+  const sysVolt = parseFloat(document.getElementById('sysVolt').value) || 69;
+  return { a, b, c, a2, b2, c2, spare, sysVolt, N: a.length, M: spare.length };
+}
+
+// ── 3-PHASE CALCULATOR CORE ─────────────────────────────────────────────
+function createEvaluator(N, sysVoltKV) {
+  const V_PHASE = (sysVoltKV * 1000) / Math.sqrt(3);
+  // Vectors for A, B, C (120 degree apart)
+  const va_r = V_PHASE, va_i = 0;
+  const vb_r = V_PHASE * -0.5, vb_i = V_PHASE * -0.86602540378;
+  const vc_r = V_PHASE * -0.5, vc_i = V_PHASE * 0.86602540378;
+  const PI2F = 2 * Math.PI * 50;
+
+  return function(pool) {
+    // pool is flat array: [A, B, C, A', B', C', Spare]
+    // Calculate Impedance/Admittance per branch (assuming Series connection for high voltage banks)
+    let z = [0,0,0,0,0,0];
+    for(let g=0; g<6; g++) {
+      for(let i=0; i<N; i++) {
+        z[g] += 1 / (PI2F * pool[g*N + i].val * 1e-6);
       }
     }
-    return {topology:'h-bridge',y1:[...legs.a,...legs.c],y2:[...legs.b,...legs.d],spare,legs,systemKV};
-  } else {
-    const e1=document.querySelectorAll('.val-y1'),e2=document.querySelectorAll('.val-y2');
-    const y1=[],y2=[];
-    for(let i=0;i<e1.length;i++){
-      const v1=parseFloat(e1[i].value),v2=parseFloat(e2[i].value);
-      if(isNaN(v1)||v1<=0||isNaN(v2)||v2<=0){alert(`กรุณากรอกค่า Y1-${i+1} และ Y2-${i+1} ให้ครบ`);return null;}
-      y1.push({id:`Y1-${i+1}`,val:v1,origin:'Y1',pos:i});
-      y2.push({id:`Y2-${i+1}`,val:v2,origin:'Y2',pos:i});
+    // Admittance magnitude (Y = 1/Z)
+    const ya1=1/z[0], yb1=1/z[1], yc1=1/z[2];
+    const ya2=1/z[3], yb2=1/z[4], yc2=1/z[5];
+
+    const yA_tot = ya1 + ya2;
+    const yB_tot = yb1 + yb2;
+    const yC_tot = yc1 + yc2;
+    const Y_sum = yA_tot + yB_tot + yC_tot;
+
+    // Virtual Neutral Voltage (Vn)
+    const vn_r = (va_r * yA_tot + vb_r * yB_tot + vc_r * yC_tot) / Y_sum;
+    const vn_i = (va_i * yA_tot + vb_i * yB_tot + vc_i * yC_tot) / Y_sum;
+
+    // Unbalance Current between N1 and N2 (Ino)
+    const ict_r = (va_r - vn_r)*ya1 + (vb_r - vn_r)*yb1 + (vc_r - vn_r)*yc1;
+    const ict_i = (va_i - vn_i)*ya1 + (vb_i - vn_i)*yb1 + (vc_i - vn_i)*yc1;
+
+    return Math.sqrt(ict_r*ict_r + ict_i*ict_i) * 1000; // Return in mA
+  };
+}
+
+// ── OPTIMIZATION LOGIC ──────────────────────────────────────────────────
+function decodePool(pool, N) {
+  return {
+    a: pool.slice(0,N), b: pool.slice(N,2*N), c: pool.slice(2*N,3*N),
+    a2: pool.slice(3*N,4*N), b2: pool.slice(4*N,5*N), c2: pool.slice(5*N,6*N)
+  };
+}
+
+function getOriginName(idx, N) {
+  if(idx < 1*N) return "A";  if(idx < 2*N) return "B";  if(idx < 3*N) return "C";
+  if(idx < 4*N) return "A'"; if(idx < 5*N) return "B'"; if(idx < 6*N) return "C'";
+  return "Spare";
+}
+
+async function handleCalculate() {
+  const inputs = getInputValues();
+  if(!inputs) return;
+  const { a, b, c, a2, b2, c2, spare, sysVolt, N, M } = inputs;
+  
+  const btn = document.getElementById('btnCalc');
+  btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> กำลังวิเคราะห์ 3 เฟส...';
+
+  // Small delay to allow UI to update
+  await new Promise(r => setTimeout(r, 50));
+
+  const evalIno = createEvaluator(N, sysVolt);
+  const initPool = [...a, ...b, ...c, ...a2, ...b2, ...c2, ...spare];
+  const baseIno = evalIno(initPool);
+
+  // 1. Quick Search (1 Swap)
+  let b1Diff = baseIno, b1Pool = [...initPool], b1Text = "ค่าเดิมดีอยู่แล้ว ไม่จำเป็นต้องสับเปลี่ยน";
+  const TOTAL = 6*N + M;
+  
+  for(let i=0; i < 6*N; i++) {
+    for(let j=i+1; j < TOTAL; j++) {
+      let temp = [...initPool];
+      let t = temp[i]; temp[i] = temp[j]; temp[j] = t;
+      let diff = evalIno(temp);
+      if(diff < b1Diff) {
+        b1Diff = diff; b1Pool = temp;
+        b1Text = `สลับกระป๋อง [${initPool[i].id}] (จากฝั่ง ${getOriginName(i,N)}) กับกระป๋อง [${initPool[j].id}] (จากฝั่ง ${getOriginName(j,N)})`;
+      }
     }
-    return {topology:'yy-unground',y1,y2,spare,systemKV};
   }
-}
 
-async function handleCalculate(){
-  const vals=getInputValues();
-  if(!vals) return;
-  const btn=document.getElementById('btnCalc');
-  btn.disabled=true;
-  btn.innerHTML='<i class="fas fa-spinner fa-spin"></i>&nbsp;กำลังคำนวณ…';
-  try{
-    const {quickResult,fullResult,engBefore} = await clientCalculate(vals);
-    renderResults(vals,{quickResult,fullResult,engBefore});
-    lastCalcData={connType:currentConn,vals,quickResult,fullResult,engBefore,timestamp:new Date().toLocaleString('th-TH')};
-    document.getElementById('exportRow').style.display='block';
-    goToStep(3);
-  }catch(e){
-    alert('เกิดข้อผิดพลาด: '+e.message);
-  }finally{
-    btn.disabled=false;
-    btn.innerHTML='<i class="fas fa-cogs"></i>&nbsp;วิเคราะห์&nbsp;<i class="fas fa-arrow-right"></i>';
+  // 2. Full Search (Hill Climbing for multi-swaps)
+  let bfDiff = b1Diff, bfPool = [...b1Pool];
+  for(let iter=0; iter<300; iter++) { // 300 Restarts
+    let cur = [...initPool].sort(()=>Math.random()-0.5);
+    let improved = true;
+    while(improved) {
+      improved = false;
+      let cDiff = evalIno(cur);
+      for(let i=0; i<6*N; i++) {
+        for(let j=i+1; j<TOTAL; j++) {
+          let t=cur[i]; cur[i]=cur[j]; cur[j]=t;
+          let d = evalIno(cur);
+          if(d < cDiff) { cDiff = d; improved = true; }
+          else { t=cur[i]; cur[i]=cur[j]; cur[j]=t; } // revert
+        }
+      }
+    }
+    if(evalIno(cur) < bfDiff) { bfDiff = evalIno(cur); bfPool = [...cur]; }
   }
-}
 
-function switchCalcView(name){
-  document.querySelectorAll('.calc-action-btn').forEach(b=>b.classList.remove('active'));
-  document.querySelectorAll('.calc-view').forEach(v=>v.classList.remove('active'));
-  document.querySelector(`.calc-action-btn[data-view="${name}"]`).classList.add('active');
-  document.getElementById('view'+name.charAt(0).toUpperCase()+name.slice(1)).classList.add('active');
-  if(name==='results') switchTab('quick');
-}
+  // ── RENDER ─────────────────────────────────────────────────────────────
+  function buildList(arr, tgt) {
+    return arr.slice().sort((x,y)=>y.val - x.val).map(item => {
+      let badge = '<span class="pill p-stay">อยู่เดิม</span>';
+      if(item.origin === 'Spare') badge = '<span class="pill p-spare">หยิบจากอะไหล่</span>';
+      else if(item.origin !== tgt) badge = `<span class="pill p-move">ย้ายจาก ${item.origin}</span>`;
+      return `<div class="ci"><span><span class="cv">${item.val.toFixed(3)}</span><span class="cid"> (${item.id})</span></span>${badge}</div>`;
+    }).join('');
+  }
 
-function handleExport(){
-  if(!lastCalcData){alert('กรุณาคำนวณก่อน');return;}
-  exportToExcel(lastCalcData);
+  function renderCard(title, className, Ino, txt, pData) {
+    return `
+    <div class="sol-card ${className}">
+      <div class="sol-top">
+        <div class="sol-name">${title}</div>
+        <div class="delta-badge">Ino = ${Ino.toFixed(2)} mA</div>
+      </div>
+      <div class="sol-body">
+        <div class="step-box">
+          <div class="step-title"><i class="fas fa-tools"></i> สิ่งที่ต้องทำหน้างาน:</div>
+          <div class="step-txt">${txt}</div>
+        </div>
+        <div class="res-grid-6">
+          <div class="cap-box"><h4>Phase A (Wye 1)</h4>${buildList(pData.a, 'A')}</div>
+          <div class="cap-box"><h4>Phase B (Wye 1)</h4>${buildList(pData.b, 'B')}</div>
+          <div class="cap-box"><h4>Phase C (Wye 1)</h4>${buildList(pData.c, 'C')}</div>
+          <div class="cap-box" style="border-top-color:var(--amber);"><h4>Phase A' (Wye 2)</h4>${buildList(pData.a2, "A'")}</div>
+          <div class="cap-box" style="border-top-color:var(--amber);"><h4>Phase B' (Wye 2)</h4>${buildList(pData.b2, "B'")}</div>
+          <div class="cap-box" style="border-top-color:var(--amber);"><h4>Phase C' (Wye 2)</h4>${buildList(pData.c2, "C'")}</div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  let html = `<div style="font-size:2rem; margin-bottom:20px; font-weight:700; color:var(--txt2);">กระแส Unbalance ก่อนแก้ไข: <span style="color:var(--red);">${baseIno.toFixed(2)} mA</span></div>`;
+  
+  html += renderCard("ทางเลือก 1: สับเปลี่ยนจุดเดียว (ประหยัดเวลา)", "s1", b1Diff, b1Text, decodePool(b1Pool, N));
+  
+  let multiCount = 0;
+  for(let i=0; i<6*N; i++) { if(bfPool[i].origin !== getOriginName(i, N)) multiCount++; }
+  let bfText = `ต้องสลับและจัดเรียงกระป๋องใหม่จำนวน <b>${multiCount}</b> กระป๋อง เพื่อแลกกับจุดที่สมดุลที่สุด`;
+  
+  html += renderCard("ทางเลือก 2: จัดชุดใหญ่ (สมดุลที่สุดในทางทฤษฎี)", "full", bfDiff, bfText, decodePool(bfPool, N));
+
+  document.getElementById('renderSolutions').innerHTML = html;
+  document.getElementById('resultsArea').style.display = 'block';
+  document.getElementById('resultsArea').scrollIntoView({ behavior: 'smooth' });
+
+  btn.disabled = false; btn.innerHTML = '<i class="fas fa-calculator"></i> คำนวณหาวิธีสับเปลี่ยนที่ดีที่สุด';
 }
 </script>
-
 </body>
 </html>
