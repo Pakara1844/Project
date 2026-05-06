@@ -623,6 +623,44 @@ body {
 .yy-phase-row { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
 .yy-section .inp-panel { background:var(--bg2); }
 
+/* ── Split-pair UI ──────────────────────────────────── */
+.cr-pair { margin-bottom:7px; }
+.cr-pair.is-split .cr-main label,
+.cr-pair.is-split .cr-main input { opacity:0.55; }
+.cr-pair.is-split { background:var(--amber-soft); border-radius:6px; padding:4px 6px; margin-bottom:8px; border-left:2px solid var(--amber); }
+
+.split-toggle {
+  display:inline-flex; align-items:center; cursor:pointer;
+  width:24px; height:24px; flex-shrink:0;
+  border-radius:6px; transition:background 0.15s;
+  -webkit-tap-highlight-color:transparent;
+  margin-left:auto;
+}
+.split-toggle:hover { background:var(--bg4); }
+.split-toggle input[type="checkbox"] {
+  position:absolute; opacity:0; pointer-events:none;
+}
+.split-toggle .split-icon {
+  width:24px; height:24px; display:flex; align-items:center; justify-content:center;
+  border:1.5px solid var(--border2); border-radius:6px;
+  font-size:0.7rem; color:var(--txt3); transition:all 0.15s;
+}
+.split-toggle input[type="checkbox"]:checked ~ .split-icon {
+  background:var(--amber); color:#fff; border-color:var(--amber);
+}
+.cr-split { display:none; flex-direction:column; gap:5px; padding:6px 0 6px 14px; margin-top:3px; border-left:2px dashed var(--amber); margin-left:8px; }
+.cr-pair.is-split .cr-split { display:flex; }
+.cr-sub label { color:var(--amber); font-weight:700; }
+.cr-sub input { background:var(--bg2); border-color:var(--amber); }
+
+/* Hint banner */
+.split-hint {
+  background:var(--blue-soft); border:1px solid var(--blue);
+  border-radius:var(--r); padding:10px 14px; margin-bottom:14px;
+  font-size:0.84rem; color:var(--txt2); display:flex; align-items:flex-start; gap:10px;
+}
+.split-hint i { color:var(--blue); flex-shrink:0; margin-top:2px; }
+
 @media (max-width:980px) {
   .input-cols  { grid-template-columns:1fr; }
   .cap-cols    { grid-template-columns:1fr; }
@@ -733,6 +771,12 @@ body {
         <div class="fg" style="justify-content:flex-end;"><label>&nbsp;</label>
           <button class="btn btn-outline" onclick="buildInputPanels()" style="height:42px;"><i class="fas fa-sync-alt"></i> สร้างตาราง</button>
         </div>
+      </div>
+      <div class="split-hint">
+        <i class="fas fa-info-circle"></i>
+        <div><strong>วิธีใช้:</strong> ปกติแต่ละช่อง = 1 ชุด (คู่ที่วัดรวมกัน) — ถ้าหน้างานวัดแยก 2 ตัว ให้กดไอคอน
+        <i class="fas fa-cut" style="color:var(--amber);font-size:0.78rem"></i> ข้างช่องนั้น เพื่อกรอกค่าแยก 2 ค่า
+        <br>ตอนคำนวณ ตัวที่แยกแล้วสามารถสลับเป็นรายตัวกับ Spare ได้</div>
       </div>
       <div class="input-cols" id="inputCols"></div>
     </div>
@@ -983,6 +1027,28 @@ window._findBestFullSwap  = findBestFullSwap;
 // CLIENT-SIDE API SHIM
 // replaces fetch('/api/calculate') with direct function calls
 // ═══════════════════════════════════════
+// ═══════════════════════════════════════
+// Helpers for split-pair handling
+// ═══════════════════════════════════════
+function expandPairs(arr) {
+  // arr: array of pair objects { id, val, origin, pos, isSplit, subA?, subB? }
+  // returns flat array of individual unit objects
+  const out = [];
+  arr.forEach((p, i) => {
+    if (p.isSplit && p.subA && p.subB) {
+      out.push({ id: p.subA.id, val: p.subA.val, origin: p.origin,
+                 parentId: p.id, parentPos: p.pos, subKey: 'a', isSplit: true });
+      out.push({ id: p.subB.id, val: p.subB.val, origin: p.origin,
+                 parentId: p.id, parentPos: p.pos, subKey: 'b', isSplit: true });
+    } else {
+      // pair stays as one unit equal to its full sum
+      out.push({ id: p.id, val: p.val, origin: p.origin,
+                 parentPos: p.pos, isSplit: false });
+    }
+  });
+  return out;
+}
+
 async function clientCalculate(payload) {
   const {topology, y1, y2, spare, legs, systemKV} = payload;
   const kv = parseFloat(systemKV) || 69;
@@ -990,9 +1056,10 @@ async function clientCalculate(payload) {
 
   if (topology === 'h-bridge') {
     const {a, b, c, d} = legs;
-    engBefore = calcHBridgeMetrics(a, b, c, d, kv);
-    const leftArr = [...a, ...c];
-    const rightArr = [...b, ...d];
+    const aF=expandPairs(a), bF=expandPairs(b), cF=expandPairs(c), dF=expandPairs(d);
+    engBefore = calcHBridgeMetrics(aF, bF, cF, dF, kv);
+    const leftArr  = [...aF, ...cF];
+    const rightArr = [...bF, ...dF];
     quickResult = findBest1to3Swaps(leftArr, rightArr, spare || []);
     fullResult  = findBestFullSwap(leftArr, rightArr, spare || []);
     quickResult.swaps = quickResult.swaps.map(sw => {
@@ -1000,18 +1067,21 @@ async function clientCalculate(payload) {
       const nC = sw.y1.filter(x => !nA.includes(x));
       const nB = sw.y2.filter(x => x.origin==='B' || x.id.startsWith('B'));
       const nD = sw.y2.filter(x => !nB.includes(x));
-      sw.engAfter = calcHBridgeMetrics(nA.length?nA:a, nB.length?nB:b, nC.length?nC:c, nD.length?nD:d, kv);
+      sw.engAfter = calcHBridgeMetrics(nA.length?nA:aF, nB.length?nB:bF, nC.length?nC:cF, nD.length?nD:dF, kv);
       return sw;
     });
     const na = fullResult.y1.filter(x => x.origin==='A' || x.id.startsWith('A'));
     const nc = fullResult.y1.filter(x => !na.includes(x));
     const nb = fullResult.y2.filter(x => x.origin==='B' || x.id.startsWith('B'));
     const nd = fullResult.y2.filter(x => !nb.includes(x));
-    fullResult.engAfter = calcHBridgeMetrics(na.length?na:a, nb.length?nb:b, nc.length?nc:c, nd.length?nd:d, kv);
+    fullResult.engAfter = calcHBridgeMetrics(na.length?na:aF, nb.length?nb:bF, nc.length?nc:cF, nd.length?nd:dF, kv);
   } else {
-    engBefore   = calcYYMetrics(y1, y2, kv);
-    quickResult = findBest1to3Swaps(y1, y2, spare || []);
-    fullResult  = findBestFullSwap(y1, y2, spare || []);
+    // Expand any split pairs into individual units for swapping
+    const y1Flat = expandPairs(y1);
+    const y2Flat = expandPairs(y2);
+    engBefore   = calcYYMetrics(y1Flat, y2Flat, kv);
+    quickResult = findBest1to3Swaps(y1Flat, y2Flat, spare || []);
+    fullResult  = findBestFullSwap(y1Flat, y2Flat, spare || []);
     quickResult.swaps = quickResult.swaps.map(sw => {
       sw.engAfter = calcYYMetrics(sw.y1, sw.y2, kv);
       return sw;
@@ -1970,80 +2040,171 @@ function buildInputPanels(){
   const nP=Math.max(1,parseInt(document.getElementById('numPairs').value)||10);
   const nS=Math.max(0,parseInt(document.getElementById('numSpares').value)||0);
   const inputCols=document.getElementById('inputCols');
-  function rows(pfx,cnt){
+
+  // Pair row with split-toggle checkbox
+  function pairRows(pfx,cnt){
+    const cls = pfx.toLowerCase().replace("'",'p');
     let h='';
-    for(let i=1;i<=cnt;i++) h+=`<div class="cr"><label>${pfx}-${i}</label><input type="number" step="0.001" min="0" class="val-${pfx.toLowerCase().replace('\'','p')}" placeholder="0.000"><span class="unit">µF</span></div>`;
+    for(let i=1;i<=cnt;i++){
+      const idx = i;
+      const slotId = `slot-${cls}-${idx}`;
+      h += `<div class="cr-pair" data-slot="${slotId}">
+        <div class="cr cr-main">
+          <label>${pfx}-${idx}</label>
+          <input type="number" step="0.001" min="0"
+                 class="val-${cls} val-pair"
+                 data-slot="${slotId}" data-pfx="${pfx}" data-idx="${idx}"
+                 placeholder="0.000">
+          <span class="unit">µF</span>
+          <label class="split-toggle" title="วัดแยก 2 ตัว">
+            <input type="checkbox" class="split-cb" data-slot="${slotId}" data-pfx="${pfx}" data-idx="${idx}">
+            <span class="split-icon"><i class="fas fa-cut"></i></span>
+          </label>
+        </div>
+        <div class="cr-split" id="split-${slotId}" style="display:none;">
+          <div class="cr cr-sub">
+            <label>${pfx}-${idx}.a</label>
+            <input type="number" step="0.001" min="0" class="val-${cls}-sa val-sub" data-slot="${slotId}" placeholder="0.000">
+            <span class="unit">µF</span>
+          </div>
+          <div class="cr cr-sub">
+            <label>${pfx}-${idx}.b</label>
+            <input type="number" step="0.001" min="0" class="val-${cls}-sb val-sub" data-slot="${slotId}" placeholder="0.000">
+            <span class="unit">µF</span>
+          </div>
+        </div>
+      </div>`;
+    }
     return h;
   }
+
+  // Spare = single units (always individual, no pair logic)
+  function spareRows(cnt){
+    let h='';
+    for(let i=1;i<=cnt;i++){
+      h += `<div class="cr"><label>S-${i}</label><input type="number" step="0.001" min="0" class="val-s" placeholder="0.000"><span class="unit">µF</span></div>`;
+    }
+    return h;
+  }
+
   if(currentConn==='h-bridge'){
     inputCols.innerHTML=`
-      <div class="inp-panel la"><div class="panel-hd"><i class="fas fa-circle" style="font-size:.5rem"></i>Leg A — Top-Left</div>${rows('A',nP)}</div>
-      <div class="inp-panel lb"><div class="panel-hd"><i class="fas fa-circle" style="font-size:.5rem"></i>Leg B — Top-Right</div>${rows('B',nP)}</div>
-      <div class="inp-panel lc"><div class="panel-hd"><i class="fas fa-circle" style="font-size:.5rem"></i>Leg C — Bot-Left</div>${rows('C',nP)}</div>
-      <div class="inp-panel ld"><div class="panel-hd"><i class="fas fa-circle" style="font-size:.5rem"></i>Leg D — Bot-Right</div>${rows('D',nP)}</div>
-      <div class="inp-panel spare" style="grid-column:span 2"><div class="panel-hd"><i class="fas fa-box-open"></i>อะไหล่ (Spare)</div>${rows('S',nS)}</div>`;
+      <div class="inp-panel la"><div class="panel-hd"><i class="fas fa-circle" style="font-size:.5rem"></i>Leg A — Top-Left</div>${pairRows('A',nP)}</div>
+      <div class="inp-panel lb"><div class="panel-hd"><i class="fas fa-circle" style="font-size:.5rem"></i>Leg B — Top-Right</div>${pairRows('B',nP)}</div>
+      <div class="inp-panel lc"><div class="panel-hd"><i class="fas fa-circle" style="font-size:.5rem"></i>Leg C — Bot-Left</div>${pairRows('C',nP)}</div>
+      <div class="inp-panel ld"><div class="panel-hd"><i class="fas fa-circle" style="font-size:.5rem"></i>Leg D — Bot-Right</div>${pairRows('D',nP)}</div>
+      <div class="inp-panel spare" style="grid-column:span 2"><div class="panel-hd"><i class="fas fa-box-open"></i>อะไหล่ (Spare) — ตัวเดี่ยว</div>${spareRows(nS)}</div>`;
     inputCols.style.gridTemplateColumns='repeat(4,1fr)';
   } else {
-    // Y-Y: 3 phases × 2 sides (A,B,C | A',B',C') based on real EGAT diagram
     inputCols.innerHTML=`
       <div class="yy-section">
         <div class="yy-section-title yy-side1"><i class="fas fa-arrow-circle-right"></i> ฝั่งที่ 1 (Y1) — Phase A · B · C</div>
         <div class="yy-phase-row">
-          <div class="inp-panel y1"><div class="panel-hd">Phase A</div>${rows('A',nP)}</div>
-          <div class="inp-panel y1"><div class="panel-hd">Phase B</div>${rows('B',nP)}</div>
-          <div class="inp-panel y1"><div class="panel-hd">Phase C</div>${rows('C',nP)}</div>
+          <div class="inp-panel y1"><div class="panel-hd">Phase A</div>${pairRows('A',nP)}</div>
+          <div class="inp-panel y1"><div class="panel-hd">Phase B</div>${pairRows('B',nP)}</div>
+          <div class="inp-panel y1"><div class="panel-hd">Phase C</div>${pairRows('C',nP)}</div>
         </div>
       </div>
       <div class="yy-section">
         <div class="yy-section-title yy-side2"><i class="fas fa-arrow-circle-right"></i> ฝั่งที่ 2 (Y2) — Phase A' · B' · C'</div>
         <div class="yy-phase-row">
-          <div class="inp-panel y2"><div class="panel-hd">Phase A'</div>${rows('Ap',nP)}</div>
-          <div class="inp-panel y2"><div class="panel-hd">Phase B'</div>${rows('Bp',nP)}</div>
-          <div class="inp-panel y2"><div class="panel-hd">Phase C'</div>${rows('Cp',nP)}</div>
+          <div class="inp-panel y2"><div class="panel-hd">Phase A'</div>${pairRows("A'",nP)}</div>
+          <div class="inp-panel y2"><div class="panel-hd">Phase B'</div>${pairRows("B'",nP)}</div>
+          <div class="inp-panel y2"><div class="panel-hd">Phase C'</div>${pairRows("C'",nP)}</div>
         </div>
       </div>
       <div class="yy-section">
-        <div class="yy-section-title yy-spare"><i class="fas fa-box-open"></i> อะไหล่ (Spare)</div>
-        <div class="inp-panel spare">${rows('S',nS)}</div>
+        <div class="yy-section-title yy-spare"><i class="fas fa-box-open"></i> อะไหล่ (Spare) — ตัวเดี่ยว</div>
+        <div class="inp-panel spare">${spareRows(nS)}</div>
       </div>`;
     inputCols.style.gridTemplateColumns='1fr';
     inputCols.style.gap='14px';
   }
+
+  // Wire up split toggles
+  document.querySelectorAll('.split-cb').forEach(cb => {
+    cb.addEventListener('change', function() {
+      const slot = this.dataset.slot;
+      const splitDiv = document.getElementById('split-'+slot);
+      const mainInput = document.querySelector(`.val-pair[data-slot="${slot}"]`);
+      const pairRow = this.closest('.cr-pair');
+      if (this.checked) {
+        splitDiv.style.display = 'flex';
+        mainInput.disabled = true;
+        mainInput.placeholder = 'วัดแยก ↓';
+        pairRow.classList.add('is-split');
+      } else {
+        splitDiv.style.display = 'none';
+        mainInput.disabled = false;
+        mainInput.placeholder = '0.000';
+        pairRow.classList.remove('is-split');
+      }
+    });
+  });
 }
 
 function getInputValues(){
+  // Spare = always individual units
   const spare=[];
   document.querySelectorAll('.val-s').forEach((el,k)=>{
     const vs=parseFloat(el.value);
-    if(!isNaN(vs)&&vs>0) spare.push({id:`S-${k+1}`,val:vs,origin:'Spare',pos:k});
+    if(!isNaN(vs)&&vs>0) spare.push({id:`S-${k+1}`,val:vs,origin:'Spare',pos:k,isSplit:false});
   });
   const systemKV=parseFloat(document.getElementById('systemKV').value)||69;
+
+  // Read pair OR split values from a panel — returns array of "pair" objects
+  // Each pair object: { id, val (sum), origin, pos, isSplit, subA, subB }
+  // When split: val = subA + subB, but algorithm treats subA/subB as individuals
+  function readPairs(cls, originLabel) {
+    const out = [];
+    const mainInputs = document.querySelectorAll(`.val-${cls}.val-pair`);
+    for (let i=0; i<mainInputs.length; i++) {
+      const slotEl = mainInputs[i];
+      const slot = slotEl.dataset.slot;
+      const idx = parseInt(slotEl.dataset.idx);
+      const id = `${originLabel}-${idx}`;
+      // Check if split is checked
+      const cb = document.querySelector(`.split-cb[data-slot="${slot}"]`);
+      const isSplit = cb && cb.checked;
+      if (isSplit) {
+        const sa = parseFloat(document.querySelector(`.val-${cls}-sa[data-slot="${slot}"]`).value);
+        const sb = parseFloat(document.querySelector(`.val-${cls}-sb[data-slot="${slot}"]`).value);
+        if (isNaN(sa)||sa<=0||isNaN(sb)||sb<=0) {
+          alert(`กรุณากรอกค่า ${id}.a และ ${id}.b ให้ครบ`);
+          return null;
+        }
+        out.push({ id, val: sa+sb, origin: originLabel, pos: i, isSplit: true,
+                   subA: { id: id+'.a', val: sa }, subB: { id: id+'.b', val: sb } });
+      } else {
+        const v = parseFloat(slotEl.value);
+        if (isNaN(v)||v<=0) {
+          alert(`กรุณากรอกค่า ${id} ให้ครบ`);
+          return null;
+        }
+        out.push({ id, val: v, origin: originLabel, pos: i, isSplit: false });
+      }
+    }
+    return out;
+  }
+
   if(currentConn==='h-bridge'){
-    const legs={a:[],b:[],c:[],d:[]};
-    for(const leg of ['a','b','c','d']){
-      const els=document.querySelectorAll(`.val-${leg}`);
-      for(let i=0;i<els.length;i++){
-        const v=parseFloat(els[i].value);
-        if(isNaN(v)||v<=0){alert(`กรุณากรอกค่า Leg ${leg.toUpperCase()}-${i+1} ให้ครบ`);return null;}
-        legs[leg].push({id:`${leg.toUpperCase()}-${i+1}`,val:v,origin:leg.toUpperCase(),pos:i});
-      }
+    const labelMap={a:'A',b:'B',c:'C',d:'D'};
+    const legs={};
+    for (const leg of ['a','b','c','d']) {
+      legs[leg] = readPairs(leg, labelMap[leg]);
+      if (legs[leg]===null) return null;
     }
-    return {topology:'h-bridge',y1:[...legs.a,...legs.c],y2:[...legs.b,...legs.d],spare,legs,systemKV};
+    return { topology:'h-bridge', y1:[...legs.a,...legs.c], y2:[...legs.b,...legs.d], spare, legs, systemKV };
   } else {
-    // Y-Y: read 6 phases (A,B,C | A',B',C') and pack into y1/y2
-    const phases={a:[],b:[],c:[],ap:[],bp:[],cp:[]};
     const labelMap={a:'A',b:'B',c:'C',ap:"A'",bp:"B'",cp:"C'"};
-    for(const ph of ['a','b','c','ap','bp','cp']){
-      const els=document.querySelectorAll(`.val-${ph}`);
-      for(let i=0;i<els.length;i++){
-        const v=parseFloat(els[i].value);
-        if(isNaN(v)||v<=0){alert(`กรุณากรอกค่า Phase ${labelMap[ph]}-${i+1} ให้ครบ`);return null;}
-        phases[ph].push({id:`${labelMap[ph]}-${i+1}`,val:v,origin:labelMap[ph],pos:i});
-      }
+    const phases={};
+    for (const ph of ['a','b','c','ap','bp','cp']) {
+      phases[ph] = readPairs(ph, labelMap[ph]);
+      if (phases[ph]===null) return null;
     }
-    const y1=[...phases.a,...phases.b,...phases.c];
-    const y2=[...phases.ap,...phases.bp,...phases.cp];
-    return {topology:'yy-unground',y1,y2,spare,systemKV,phases};
+    const y1 = [...phases.a, ...phases.b, ...phases.c];
+    const y2 = [...phases.ap, ...phases.bp, ...phases.cp];
+    return { topology:'yy-unground', y1, y2, spare, systemKV, phases };
   }
 }
 
