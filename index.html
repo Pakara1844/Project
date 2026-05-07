@@ -774,9 +774,12 @@ body {
       </div>
       <div class="split-hint">
         <i class="fas fa-info-circle"></i>
-        <div><strong>วิธีใช้:</strong> ปกติแต่ละช่อง = 1 ชุด (คู่ที่วัดรวมกัน) — ถ้าหน้างานวัดแยก 2 ตัว ให้กดไอคอน
-        <i class="fas fa-cut" style="color:var(--amber);font-size:0.78rem"></i> ข้างช่องนั้น เพื่อกรอกค่าแยก 2 ค่า
-        <br>ตอนคำนวณ ตัวที่แยกแล้วสามารถสลับเป็นรายตัวกับ Spare ได้</div>
+        <div>
+          <strong>วิธีกรอกข้อมูล:</strong> แต่ละช่อง = 1 ชุด (C 2 ตัวต่อขนานกัน) — การสับเปลี่ยนทำเป็นรายตัวเสมอ<br>
+          • <strong>ไม่กดกรรไกร</strong> → กรอกค่ารวมที่วัดได้ เช่น 54 µF (ระบบแบ่ง 27+27 ให้อัตโนมัติ)<br>
+          • <strong>กดกรรไกร <i class="fas fa-cut" style="color:var(--amber)"></i></strong> → วัดแยกได้ กรอก 2 ค่าจริง เช่น 25+29 µF<br>
+          <span style="color:var(--txt3);font-size:0.8rem">Spare = ตัวเดี่ยว สลับแทนตัวใดตัวหนึ่งในชุดได้เลย</span>
+        </div>
       </div>
       <div class="input-cols" id="inputCols"></div>
     </div>
@@ -1031,19 +1034,24 @@ window._findBestFullSwap  = findBestFullSwap;
 // Helpers for split-pair handling
 // ═══════════════════════════════════════
 function expandPairs(arr) {
-  // arr: array of pair objects { id, val, origin, pos, isSplit, subA?, subB? }
-  // returns flat array of individual unit objects
+  // ทุก slot แตกเป็น 2 ตัวเสมอ (การสับเปลี่ยนทำเป็นรายตัวเท่านั้น)
+  // - กดกรรไกร (isSplit=true) → ใช้ค่า subA, subB ที่วัดแยกมา
+  // - ไม่กดกรรไกร (isSplit=false) → หาร val/2 ให้อัตโนมัติ (สมมติ 2 ตัวเท่ากัน)
   const out = [];
-  arr.forEach((p, i) => {
+  arr.forEach(p => {
     if (p.isSplit && p.subA && p.subB) {
+      // วัดแยกมา — ใช้ค่าที่รู้จริง
       out.push({ id: p.subA.id, val: p.subA.val, origin: p.origin,
-                 parentId: p.id, parentPos: p.pos, subKey: 'a', isSplit: true });
+                 parentId: p.id, parentPos: p.pos, subKey: 'a' });
       out.push({ id: p.subB.id, val: p.subB.val, origin: p.origin,
-                 parentId: p.id, parentPos: p.pos, subKey: 'b', isSplit: true });
+                 parentId: p.id, parentPos: p.pos, subKey: 'b' });
     } else {
-      // pair stays as one unit equal to its full sum
-      out.push({ id: p.id, val: p.val, origin: p.origin,
-                 parentPos: p.pos, isSplit: false });
+      // วัดรวมมา — สมมติ 2 ตัวเท่ากัน (val/2 แต่ละตัว)
+      const half = p.val / 2;
+      out.push({ id: p.id + '.a', val: half, origin: p.origin,
+                 parentId: p.id, parentPos: p.pos, subKey: 'a' });
+      out.push({ id: p.id + '.b', val: half, origin: p.origin,
+                 parentId: p.id, parentPos: p.pos, subKey: 'b' });
     }
   });
   return out;
@@ -1883,7 +1891,11 @@ function capList(arr,tgt){
     const tag=c.origin==='Spare'?'<span class="pill p-spare">จากอะไหล่</span>'
              :!onSide?`<span class="pill p-move">ย้ายจาก ${c.origin}</span>`
              :'<span class="pill p-stay">อยู่เดิม</span>';
-    return `<div class="ci"><span><span class="cv">${c.val.toFixed(3)}</span><span class="cid"> (${c.id})</span></span>${tag}</div>`;
+    // Show whether this unit came from a split pair or half-pair
+    const splitNote = c.subKey
+      ? `<span style="font-size:0.65rem;color:var(--txt3);margin-left:4px;">[ตัว ${c.subKey.toUpperCase()}]</span>`
+      : '';
+    return `<div class="ci"><span><span class="cv">${c.val.toFixed(3)}</span><span class="cid"> (${c.id})</span>${splitNote}</span>${tag}</div>`;
   }).join('');
 }
 
