@@ -624,6 +624,24 @@ body {
 .yy-section .inp-panel { background:var(--bg2); }
 
 /* ── Panel controls ─────────────────────────────────── */
+/* Ino-focused badges */
+.ino-badge {
+  font-size:0.85rem; font-weight:700; padding:6px 14px; border-radius:99px;
+  display:inline-flex; align-items:center; gap:6px;
+  font-family:var(--mono);
+}
+.ino-badge.pass { background:var(--green-soft); color:var(--green); border:1.5px solid var(--green); }
+.ino-badge.fail { background:var(--red-soft); color:var(--red); border:1.5px solid var(--red); }
+.delta-badge-mini {
+  font-family:var(--mono); font-size:0.72rem; color:var(--txt3);
+  background:var(--bg3); padding:4px 10px; border-radius:99px;
+  border:1px solid var(--border);
+}
+.sol-card.sol-pass { border-left:4px solid var(--green); }
+.sol-card.sol-fail { border-left:4px solid var(--red); opacity:0.85; }
+.sol-card.sol-pass .sol-top { background:var(--green-soft); }
+.tc-danger { color:var(--red) !important; font-weight:700; }
+.tc-safe   { color:var(--green) !important; font-weight:700; }
 /* Threshold badges */
 .thresh-badge {
   font-size:0.78rem; font-weight:700; padding:5px 12px; border-radius:99px;
@@ -839,6 +857,10 @@ body {
         <div class="tc-row"><span class="tc-lbl" id="lblSide1">Σ C (Y1)</span><span class="tc-val" id="totalY1">—</span></div>
         <div class="tc-row"><span class="tc-lbl" id="lblSide2">Σ C (Y2)</span><span class="tc-val" id="totalY2">—</span></div>
         <div class="tc-row tc-warn"><span class="tc-lbl">ΔC</span><span class="tc-val" id="totalBase">—</span></div>
+        <div class="tc-row" style="border-top:2px solid var(--border);padding-top:10px;margin-top:6px;">
+          <span class="tc-lbl" style="font-weight:700;">I<sub>no</sub> (CT) ก่อนสับ</span>
+          <span class="tc-val" id="inoBefore">—</span>
+        </div>
       </div>
       <div class="total-card system">
         <div class="tc-head"><i class="fas fa-bolt"></i> ระบบ</div>
@@ -893,25 +915,77 @@ const PI2F = 2 * Math.PI * 50; // ω = 2πf, f=50Hz
 
 function sumC(arr) { return arr.reduce((t, c) => t + c.val, 0); }
 
-/** Engineering metrics for YY topology */
+/** Engineering metrics for YY topology — per-phase unbalance, CT between N1-N2 */
 function calcYYMetrics(y1, y2, systemKV) {
-  const Vph = (systemKV * 1000) / Math.sqrt(3);          // V phase
-  const C1  = sumC(y1) * 1e-6;                           // F
-  const C2  = sumC(y2) * 1e-6;
-  const B1  = PI2F * C1;                                 // S
-  const B2  = PI2F * C2;
-  const Bt  = B1 + B2;
-  // Neutral displacement voltage (Millman, 2-source balanced)
-  const Vnx = (Vph / Bt) * (B1 - B2);                   // simplified 1-phase view
-  const Vno = Math.abs(Vnx);                              // V
-  // Neutral current
-  const Ino_A = Vno * Bt;                                // A
-  const Ino_mA = Ino_A * 1000;
+  const Vph = (systemKV * 1000) / Math.sqrt(3);          // V phase (line-to-neutral)
+
+  // Total C each side (for display)
+  const C1_uF = sumC(y1);
+  const C2_uF = sumC(y2);
+
+  // Total susceptance each side (for Q and display)
+  const B1 = PI2F * C1_uF * 1e-6;                       // S (siemens)
+  const B2 = PI2F * C2_uF * 1e-6;
+
+  // ── Per-phase unbalance calculation ──
+  // Y1 has phases: group by origin A, B, C
+  // Y2 has phases: group by origin A', B', C'
+  // Each phase's star-point unbalance current:
+  //   I_phase = Vph × |B_y1_phase - B_y2_phase|
+  // CT between N1-N2 measures sum of all phase unbalance currents
+
+  function phaseB(arr, origins) {
+    // Sum C for items matching any of the origins
+    let c = 0;
+    arr.forEach(item => {
+      const o = (item.origin || '').replace("'",'');
+      if (origins.some(org => org.replace("'",'') === o || item.origin === org)) c += item.val;
+    });
+    return PI2F * c * 1e-6;
+  }
+
+  // Phase A: Y1 origin 'A' vs Y2 origin "A'"
+  const B_y1_A = phaseB(y1, ['A']);
+  const B_y2_A = phaseB(y2, ["A'"]);
+  // Phase B: Y1 origin 'B' vs Y2 origin "B'"
+  const B_y1_B = phaseB(y1, ['B']);
+  const B_y2_B = phaseB(y2, ["B'"]);
+  // Phase C: Y1 origin 'C' vs Y2 origin "C'"
+  const B_y1_C = phaseB(y1, ['C']);
+  const B_y2_C = phaseB(y2, ["C'"]);
+
+  // Per-phase unbalance current (what each phase contributes to neutral)
+  const Ino_A_phase = Vph * Math.abs(B_y1_A - B_y2_A);
+  const Ino_B_phase = Vph * Math.abs(B_y1_B - B_y2_B);
+  const Ino_C_phase = Vph * Math.abs(B_y1_C - B_y2_C);
+
+  // Neutral voltage per phase (for display — worst case)
+  const Bt_A = B_y1_A + B_y2_A;
+  const Bt_B = B_y1_B + B_y2_B;
+  const Bt_C = B_y1_C + B_y2_C;
+  const Vno_A = Bt_A > 0 ? Vph * Math.abs(B_y1_A - B_y2_A) / Bt_A : 0;
+  const Vno_B = Bt_B > 0 ? Vph * Math.abs(B_y1_B - B_y2_B) / Bt_B : 0;
+  const Vno_C = Bt_C > 0 ? Vph * Math.abs(B_y1_C - B_y2_C) / Bt_C : 0;
+  const Vno = Math.max(Vno_A, Vno_B, Vno_C);             // worst-case phase
+
+  // Total CT current between N1-N2 (sum of per-phase contributions)
+  // In a balanced 3-phase system with 120° shift, the vector sum
+  // can be approximated as the max single-phase contribution for alarm purposes
+  // But for the CT reading (magnitude), use the sum as worst case
+  const Ino_total_A = Ino_A_phase + Ino_B_phase + Ino_C_phase;
+  const Ino_mA = Ino_total_A * 1000;                     // A → mA (×10³)
+
+  // Per-phase detail for display
+  const perPhase = {
+    A: { B_y1: B_y1_A, B_y2: B_y2_A, Ino_mA: Ino_A_phase * 1000, Vno: Vno_A },
+    B: { B_y1: B_y1_B, B_y2: B_y2_B, Ino_mA: Ino_B_phase * 1000, Vno: Vno_B },
+    C: { B_y1: B_y1_C, B_y2: B_y2_C, Ino_mA: Ino_C_phase * 1000, Vno: Vno_C },
+  };
+
   // Reactive power
-  const Q_A  = Vph * Vph * B1;                           // VAr
-  const Q_B  = Vph * Vph * B2;
-  const Qt   = (Q_A + Q_B) / 1e6;                        // Mvar
-  return { C1_uF: sumC(y1), C2_uF: sumC(y2), B1, B2, Vph, Vno, Ino_mA, Qt };
+  const Qt = (Vph * Vph * (B1 + B2)) / 1e6;             // Mvar
+
+  return { C1_uF, C2_uF, B1, B2, Vph, Vno, Ino_mA, Qt, perPhase };
 }
 
 /** Engineering metrics for H-Bridge topology */
@@ -1098,7 +1172,8 @@ async function clientCalculate(payload) {
       const nB = sw.y2.filter(x => x.origin==='B' || x.id.startsWith('B'));
       const nD = sw.y2.filter(x => !nB.includes(x));
       sw.engAfter = calcHBridgeMetrics(nA.length?nA:aF, nB.length?nB:bF, nC.length?nC:cF, nD.length?nD:dF, kv);
-      sw.underThreshold = sw.engAfter.In_mA < THRESHOLD_MA;
+      sw.Ino_mA = sw.engAfter.In_mA;
+      sw.underThreshold = sw.Ino_mA < THRESHOLD_MA;
       return sw;
     });
     const na = fullResult.y1.filter(x => x.origin==='A' || x.id.startsWith('A'));
@@ -1106,7 +1181,8 @@ async function clientCalculate(payload) {
     const nb = fullResult.y2.filter(x => x.origin==='B' || x.id.startsWith('B'));
     const nd = fullResult.y2.filter(x => !nb.includes(x));
     fullResult.engAfter = calcHBridgeMetrics(na.length?na:aF, nb.length?nb:bF, nc.length?nc:cF, nd.length?nd:dF, kv);
-    fullResult.underThreshold = fullResult.engAfter.In_mA < THRESHOLD_MA;
+    fullResult.Ino_mA = fullResult.engAfter.In_mA;
+    fullResult.underThreshold = fullResult.Ino_mA < THRESHOLD_MA;
   } else {
     const y1Flat = expandPairs(y1);
     const y2Flat = expandPairs(y2);
@@ -1115,14 +1191,16 @@ async function clientCalculate(payload) {
     fullResult  = findBestFullSwap(y1Flat, y2Flat, spare || []);
     quickResult.swaps = quickResult.swaps.map(sw => {
       sw.engAfter = calcYYMetrics(sw.y1, sw.y2, kv);
-      sw.underThreshold = sw.engAfter.Ino_mA < THRESHOLD_MA;
+      sw.Ino_mA = sw.engAfter.Ino_mA;
+      sw.underThreshold = sw.Ino_mA < THRESHOLD_MA;
       return sw;
     });
     fullResult.engAfter = calcYYMetrics(fullResult.y1, fullResult.y2, kv);
-    fullResult.underThreshold = fullResult.engAfter.Ino_mA < THRESHOLD_MA;
+    fullResult.Ino_mA = fullResult.engAfter.Ino_mA;
+    fullResult.underThreshold = fullResult.Ino_mA < THRESHOLD_MA;
   }
 
-  // Mark which quick swap is the best that meets threshold (fewest swaps)
+  // Mark which quick swap is the BEST: fewest swaps that meets Ino < 5mA
   quickResult.bestUnderThreshold = null;
   for (let i = 0; i < quickResult.swaps.length; i++) {
     if (quickResult.swaps[i].underThreshold) {
@@ -1135,6 +1213,7 @@ async function clientCalculate(payload) {
   engBefore.thresholdMA = THRESHOLD_MA;
   const beforeMA = topology==='h-bridge' ? engBefore.In_mA : engBefore.Ino_mA;
   engBefore.overThreshold = beforeMA >= THRESHOLD_MA;
+  engBefore.Ino_mA_before = beforeMA;
 
   return { quickResult, fullResult, engBefore };
 }
@@ -1796,17 +1875,24 @@ function buildEngPanelFull(title,m,topology){
       {l:'Q รวม',v:F2.Mvar(m.Qt),u:'Mvar',c:'hi-green',vc:'good'},
     ];
   } else {
-    const c=m.Ino_mA>10?'bad':m.Ino_mA>1?'warn':'good';
+    const c=m.Ino_mA>5?'bad':m.Ino_mA>1?'warn':'good';
     items=[
       {l:'Σ C (Y1)',v:F2.uF(m.C1_uF),u:'µF',c:'hi-blue',vc:'hi'},
       {l:'Σ C (Y2)',v:F2.uF(m.C2_uF),u:'µF',c:'hi-amber',vc:'warn'},
-      {l:'B₁ = 2πfC₁',v:F2.S(m.B1),u:'µS',c:'hi-blue',vc:''},
-      {l:'B₂ = 2πfC₂',v:F2.S(m.B2),u:'µS',c:'hi-amber',vc:''},
-      {l:'V_no (neutral)',v:F2.V(m.Vno),u:'V',c:'hi-amber',vc:'warn'},
-      {l:'I_no (59N)',v:F2.mA(m.Ino_mA),u:'mA',c:'hi-red',vc:c},
-      {l:'Σ S = B₁+B₂',v:F2.S(m.B1+m.B2),u:'µS',c:'hi-blue',vc:''},
-      {l:'Q รวม',v:F2.Mvar(m.Qt),u:'Mvar',c:'hi-green',vc:'good'},
+      {l:'V_no (worst phase)',v:F2.V(m.Vno),u:'V',c:'hi-amber',vc:'warn'},
+      {l:'I_no CT N1-N2',v:F2.mA(m.Ino_mA),u:'mA',c:'hi-red',vc:c},
     ];
+    // Per-phase detail
+    if (m.perPhase) {
+      const pp = m.perPhase;
+      ['A','B','C'].forEach(ph => {
+        const p = pp[ph];
+        if (!p) return;
+        const pc = p.Ino_mA>5?'bad':p.Ino_mA>1?'warn':'good';
+        items.push({l:'Phase '+ph+' Ino',v:F2.mA(p.Ino_mA),u:'mA',c:'hi-amber',vc:pc});
+      });
+    }
+    items.push({l:'Q รวม',v:F2.Mvar(m.Qt),u:'Mvar',c:'hi-green',vc:'good'});
   }
   return `<div class="eng-panel-full">
     <div class="eng-panel-title"><i class="fas fa-calculator"></i> ${title}</div>
@@ -1831,11 +1917,11 @@ function buildSolEng(m,topology){
       {l:'Q รวม',v:F2.Mvar(m.Qt),u:'Mvar',c:'hi-green',vc:'good'},
     ];
   } else {
-    const c=m.Ino_mA>10?'bad':m.Ino_mA>1?'warn':'good';
+    const c=m.Ino_mA>5?'bad':m.Ino_mA>1?'warn':'good';
     items=[
       {l:'Σ C Y1',v:F2.uF(m.C1_uF),u:'µF',c:'hi-blue',vc:''},
       {l:'Σ C Y2',v:F2.uF(m.C2_uF),u:'µF',c:'hi-amber',vc:''},
-      {l:'I_no (59N)',v:F2.mA(m.Ino_mA),u:'mA',c:'hi-amber',vc:c},
+      {l:'I_no CT (N1-N2)',v:F2.mA(m.Ino_mA),u:'mA',c:'hi-amber',vc:c},
       {l:'Q รวม',v:F2.Mvar(m.Qt),u:'Mvar',c:'hi-green',vc:'good'},
     ];
   }
@@ -1859,6 +1945,14 @@ function renderResults(vals,result){
   document.getElementById('totalY1').textContent=sumY1.toFixed(4)+' µF';
   document.getElementById('totalY2').textContent=sumY2.toFixed(4)+' µF';
   document.getElementById('totalBase').textContent=baseDiff.toFixed(4)+' µF';
+
+  // Show Ino before in the totals area
+  const inoBeforeEl = document.getElementById('inoBefore');
+  if (inoBeforeEl && engBefore) {
+    const ib = engBefore.Ino_mA_before || 0;
+    inoBeforeEl.textContent = ib.toFixed(2) + ' mA';
+    inoBeforeEl.className = 'tc-val ' + (ib >= 5 ? 'tc-danger' : 'tc-safe');
+  }
   document.getElementById('topoLabel').textContent=topology==='h-bridge'?'H-Bridge (4 Legs)':'Y-Y Ungrounded';
   document.getElementById('vsLabel').textContent=vals.systemKV+' kV';
   document.getElementById('vphLabel').textContent=(vals.systemKV*1000/Math.sqrt(3)/1000).toFixed(2)+' kV';
@@ -1877,9 +1971,9 @@ function renderResults(vals,result){
 
   // Quick
   const defs=[
-    {cls:'s1',icon:'⚡',label:'1 ครั้ง',desc:'เร็วที่สุด'},
-    {cls:'s2',icon:'🔄',label:'2 ครั้ง',desc:'สมดุลขึ้น'},
-    {cls:'s3',icon:'🔧',label:'3 ครั้ง',desc:'ดีที่สุดใน Quick Mode'},
+    {cls:'s1',icon:'⚡',label:'1 ครั้ง',desc:'สับน้อยที่สุด'},
+    {cls:'s2',icon:'🔄',label:'2 ครั้ง',desc:'ลด Ino ได้มากขึ้น'},
+    {cls:'s3',icon:'🔧',label:'3 ครั้ง',desc:'Ino ต่ำที่สุดใน Quick Mode'},
   ];
   // Mark the best swap that meets threshold
   if (quickResult.bestUnderThreshold !== null) {
@@ -1905,19 +1999,24 @@ function buildSolCard(cls,title,sw,showSteps,topology){
        ${sw.steps.map((s,i)=>`<div class="step-item"><span class="step-num">${i+1}</span><span>${s}</span></div>`).join('')}</div>`
     :`<div class="steps-box"><div class="steps-title"><i class="fas fa-info-circle"></i> สรุปการดำเนินการ</div>
        <div class="step-item"><span class="step-num">✓</span><span>${sw.steps[0]}</span></div></div>`;
-  // Threshold badge
+  // Ino badge — PRIMARY indicator
   const inoVal = sw.engAfter ? (topology==='h-bridge' ? sw.engAfter.In_mA : sw.engAfter.Ino_mA) : null;
-  const threshBadge = inoVal !== null
-    ? (inoVal < 5 ? '<span class="thresh-badge pass"><i class="fas fa-check-circle"></i> Ino < 5mA ✓</span>'
-                   : '<span class="thresh-badge fail"><i class="fas fa-exclamation-triangle"></i> Ino = '+inoVal.toFixed(2)+' mA (เกิน 5mA)</span>')
+  const inoClass = inoVal !== null ? (inoVal < 5 ? 'pass' : 'fail') : '';
+  const inoBadge = inoVal !== null
+    ? `<span class="ino-badge ${inoClass}">
+         <i class="fas fa-${inoVal<5?'check-circle':'exclamation-triangle'}"></i>
+         I<sub>no</sub> = ${inoVal.toFixed(2)} mA ${inoVal<5?'✓':'(เกิน 5mA)'}
+       </span>`
     : '';
-  const recommended = sw.underThreshold && sw.isRecommended ? '<div class="recommended-badge"><i class="fas fa-star"></i> แนะนำ — สับน้อยที่สุดที่ Ino < 5mA</div>' : '';
-  return `<div class="sol-card ${cls}">
+  const recommended = sw.underThreshold && sw.isRecommended
+    ? '<div class="recommended-badge"><i class="fas fa-star"></i> แนะนำ — สับน้อยที่สุดที่ I<sub>no</sub> < 5 mA</div>'
+    : '';
+  return `<div class="sol-card ${cls} ${sw.underThreshold?'sol-pass':'sol-fail'}">
     <div class="sol-top">
       <div class="sol-name">${title}</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        ${threshBadge}
-        <div class="delta-badge ${dc}">ΔC = ${sw.diff.toFixed(4)} µF</div>
+        ${inoBadge}
+        <span class="delta-badge-mini" title="ΔC">ΔC ${sw.diff.toFixed(3)} µF</span>
       </div>
     </div>
     ${recommended}
