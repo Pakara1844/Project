@@ -1052,25 +1052,69 @@ function applySwaps(y1, y2, spare, ops) {
   return { y1: cY1, y2: cY2, spare: cS };
 }
 
-function allSingleSwaps(y1, y2, spare) {
-  const n = y1.length, s1 = sumC(y1), s2 = sumC(y2), results = [];
+function allSingleSwaps(y1, y2, spare, baseline) {
+  // baseline = { y1: sum of locked items in Y1, y2: sum of locked items in Y2 }
+  //          AND optional: { y1ByPhase: {A:.., B:.., C:..}, y2ByPhase: {...} }
+  //          for per-phase Ino-aware diff
+  const off1 = (baseline && baseline.y1) || 0;
+  const off2 = (baseline && baseline.y2) || 0;
+  const y1Ph = (baseline && baseline.y1ByPhase) || null;
+  const y2Ph = (baseline && baseline.y2ByPhase) || null;
+
+  // If per-phase baseline exists, use Ino-aware scoring
+  // Otherwise fall back to simple |sum1 - sum2|
+  function scoreState(curY1, curY2) {
+    if (!y1Ph || !y2Ph) {
+      return Math.abs((sumC(curY1) + off1) - (sumC(curY2) + off2));
+    }
+    // Sum each phase's swappable contribution + baseline
+    const phases = ['A','B','C'];
+    let totalIno = 0;
+    for (const ph of phases) {
+      const phPrime = ph + "'";
+      let s1 = (y1Ph[ph]||0), s2 = (y2Ph[ph]||0);
+      curY1.forEach(x => { if (x.origin === ph) s1 += x.val; });
+      curY2.forEach(x => { if (x.origin === phPrime) s2 += x.val; });
+      totalIno += Math.abs(s1 - s2);
+    }
+    return totalIno;
+  }
+
+  const n = y1.length, results = [];
   for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) {
-      const d = Math.abs((s1 - y1[i].val + y2[j].val) - (s2 - y2[j].val + y1[i].val));
-      results.push({ diff: d, ops: [{ type:'exchange', i, j }], action: { type:'exchange', from:y1[i], to:y2[j] } });
+    for (let j = 0; j < y2.length; j++) {
+      // Simulate exchange
+      const t1 = y1[i], t2 = y2[j];
+      const nY1 = y1.slice(); nY1[i] = t2;
+      const nY2 = y2.slice(); nY2[j] = t1;
+      const d = scoreState(nY1, nY2);
+      results.push({ diff: d, ops: [{ type:'exchange', i, j }], action: { type:'exchange', from:t1, to:t2 } });
     }
     for (let k = 0; k < spare.length; k++) {
-      results.push({ diff: Math.abs(s1 - y1[i].val + spare[k].val - s2), ops:[{type:'replace-y1',i,k}], action:{type:'replace-y1',from:y1[i],to:spare[k]} });
-      if (i < y2.length) results.push({ diff: Math.abs(s1 - (s2 - y2[i].val + spare[k].val)), ops:[{type:'replace-y2',j:i,k}], action:{type:'replace-y2',from:y2[i],to:spare[k]} });
+      const t1 = y1[i], ts = spare[k];
+      const nY1 = y1.slice(); nY1[i] = ts;
+      const d = scoreState(nY1, y2);
+      results.push({ diff: d, ops:[{type:'replace-y1',i,k}], action:{type:'replace-y1',from:t1,to:ts} });
+    }
+  }
+  for (let j = 0; j < y2.length; j++) {
+    for (let k = 0; k < spare.length; k++) {
+      const t2 = y2[j], ts = spare[k];
+      const nY2 = y2.slice(); nY2[j] = ts;
+      const d = scoreState(y1, nY2);
+      results.push({ diff: d, ops:[{type:'replace-y2',j,k}], action:{type:'replace-y2',from:t2,to:ts} });
     }
   }
   results.sort((a, b) => a.diff - b.diff);
   return results;
 }
 
-function findBest1to3Swaps(origY1, origY2, origS) {
+function findBest1to3Swaps(origY1, origY2, origS, baseline) {
   // เปลี่ยนเป็น 2 / 4 / 6 swap levels — iterative greedy
-  const baseDiff = Math.abs(sumC(origY1) - sumC(origY2));
+  // baseline = { y1, y2 } sums of locked items (not swappable)
+  const off1 = (baseline && baseline.y1) || 0;
+  const off2 = (baseline && baseline.y2) || 0;
+  const baseDiff = Math.abs((sumC(origY1)+off1) - (sumC(origY2)+off2));
   const targets = [2, 4, 6];
   const results = [];
 
@@ -1080,7 +1124,7 @@ function findBest1to3Swaps(origY1, origY2, origS) {
     const actions = [];
 
     for (let step = 0; step < target; step++) {
-      const candidates = allSingleSwaps(curY1, curY2, curS);
+      const candidates = allSingleSwaps(curY1, curY2, curS, baseline);
       if (candidates.length === 0) break;
       const best = candidates[0];
       // Stop if no improvement
@@ -1115,8 +1159,12 @@ function findBest1to3Swaps(origY1, origY2, origS) {
   return { baseDiff, swaps: results };
 }
 
-function findBestFullSwap(origY1, origY2, origS, iterations=600) {
-  const n=origY1.length, baseDiff=Math.abs(sumC(origY1)-sumC(origY2));
+function findBestFullSwap(origY1, origY2, origS, baseline, iterations=600) {
+  // Backward-compat: if 4th arg is a number, it's iterations (old signature)
+  if (typeof baseline === 'number') { iterations = baseline; baseline = null; }
+  const off1 = (baseline && baseline.y1) || 0;
+  const off2 = (baseline && baseline.y2) || 0;
+  const n=origY1.length, baseDiff=Math.abs((sumC(origY1)+off1)-(sumC(origY2)+off2));
   let bestG={ diff:baseDiff, y1:origY1.slice(), y2:origY2.slice() };
   const pool=origY1.concat(origY2,origS);
   for (let it=0;it<iterations;it++) {
@@ -1124,20 +1172,20 @@ function findBestFullSwap(origY1, origY2, origS, iterations=600) {
     let cY1=sh.slice(0,n), cY2=sh.slice(n,n*2), cS=sh.slice(n*2);
     let imp=true;
     while (imp) {
-      imp=false; let cd=Math.abs(sumC(cY1)-sumC(cY2));
+      imp=false; let cd=Math.abs((sumC(cY1)+off1)-(sumC(cY2)+off2));
       for (let i=0;i<n;i++) {
         for (let j=0;j<n;j++) {
-          const d=Math.abs((sumC(cY1)-cY1[i].val+cY2[j].val)-(sumC(cY2)-cY2[j].val+cY1[i].val));
+          const d=Math.abs((sumC(cY1)+off1-cY1[i].val+cY2[j].val)-(sumC(cY2)+off2-cY2[j].val+cY1[i].val));
           if (d<cd){const t=cY1[i];cY1[i]=cY2[j];cY2[j]=t;cd=d;imp=true;}
         }
         for (let k=0;k<cS.length;k++) {
-          const d1=Math.abs((sumC(cY1)-cY1[i].val+cS[k].val)-sumC(cY2));
+          const d1=Math.abs((sumC(cY1)+off1-cY1[i].val+cS[k].val)-(sumC(cY2)+off2));
           if (d1<cd){const t=cY1[i];cY1[i]=cS[k];cS[k]=t;cd=d1;imp=true;}
-          if (i<cY2.length){const d2=Math.abs(sumC(cY1)-(sumC(cY2)-cY2[i].val+cS[k].val));if(d2<cd){const t=cY2[i];cY2[i]=cS[k];cS[k]=t;cd=d2;imp=true;}}
+          if (i<cY2.length){const d2=Math.abs((sumC(cY1)+off1)-(sumC(cY2)+off2-cY2[i].val+cS[k].val));if(d2<cd){const t=cY2[i];cY2[i]=cS[k];cS[k]=t;cd=d2;imp=true;}}
         }
       }
     }
-    const fd=Math.abs(sumC(cY1)-sumC(cY2));
+    const fd=Math.abs((sumC(cY1)+off1)-(sumC(cY2)+off2));
     if (fd<bestG.diff) bestG={diff:fd,y1:cY1.slice(),y2:cY2.slice()};
   }
   let sc=0;
@@ -1163,12 +1211,23 @@ window._findBestFullSwap  = findBestFullSwap;
 // Helpers for split-pair handling
 // ═══════════════════════════════════════
 function expandPairs(arr) {
-  // arr already has ÷2 applied for locked items (in readPanel)
-  // pass through with isLocked flag
-  return arr.map(p => ({
-    id: p.id, val: p.val, origin: p.origin, pos: p.pos,
-    inputVal: p.inputVal, isLocked: p.isLocked
-  }));
+  // - ถ้า isLocked (ค่ากรุ๊ป) → readPanel ÷2 แล้ว แต่ยังเป็น 1 unit รวม
+  //   ทำการแตกเป็น 2 sub-units ค่าเท่ากัน (เพื่อให้ algorithm ใช้สลับใน fallback ได้)
+  // - ถ้า !isLocked (ติ๊ก "วัดแยกตัว") → แตกเป็น 2 ตัวเหมือนกัน (priority 1 swap)
+  const out = [];
+  arr.forEach(p => {
+    const halfVal = p.val; // val from readPanel already represents per-unit value
+    // Both halves identical here. The .a / .b key distinguishes them.
+    out.push({
+      id: p.id + '.a', val: halfVal, origin: p.origin, pos: p.pos,
+      inputVal: p.inputVal, isLocked: p.isLocked, subKey: 'a', parentId: p.id
+    });
+    out.push({
+      id: p.id + '.b', val: halfVal, origin: p.origin, pos: p.pos,
+      inputVal: p.inputVal, isLocked: p.isLocked, subKey: 'b', parentId: p.id
+    });
+  });
+  return out;
 }
 
 async function clientCalculate(payload) {
@@ -1182,152 +1241,187 @@ async function clientCalculate(payload) {
     const aF=expandPairs(a), bF=expandPairs(b), cF=expandPairs(c), dF=expandPairs(d);
     engBefore = calcHBridgeMetrics(aF, bF, cF, dF, kv);
 
-    // Split into swappable (วัดแยก) vs locked (ติ๊กต่อขนาน)
-    // Outlier detection — promote items deviating ≥5% from group mean to swappable
-    const OUTLIER_TH = 0.05;
-    function markOutliersHB(arr) {
-      const locked = arr.filter(x => x.isLocked);
-      if (locked.length < 2) return;
-      const mean = locked.reduce((s,x)=>s+x.val,0) / locked.length;
-      locked.forEach(x => {
-        const dev = Math.abs(x.val - mean) / mean;
-        if (dev >= OUTLIER_TH) { x.isLocked = false; x.isOutlier = true; x.deviation = dev; }
-      });
-    }
-    markOutliersHB(aF); markOutliersHB(bF); markOutliersHB(cF); markOutliersHB(dF);
+    // Tier 1 = !isLocked (ติ๊กวัดแยก), Tier 2 = isLocked (กรุ๊ป)
+    const aT1=aF.filter(x=>!x.isLocked), aT2=aF.filter(x=>x.isLocked);
+    const bT1=bF.filter(x=>!x.isLocked), bT2=bF.filter(x=>x.isLocked);
+    const cT1=cF.filter(x=>!x.isLocked), cT2=cF.filter(x=>x.isLocked);
+    const dT1=dF.filter(x=>!x.isLocked), dT2=dF.filter(x=>x.isLocked);
 
-    const aSwap=aF.filter(x=>!x.isLocked), aLock=aF.filter(x=>x.isLocked);
-    const bSwap=bF.filter(x=>!x.isLocked), bLock=bF.filter(x=>x.isLocked);
-    const cSwap=cF.filter(x=>!x.isLocked), cLock=cF.filter(x=>x.isLocked);
-    const dSwap=dF.filter(x=>!x.isLocked), dLock=dF.filter(x=>x.isLocked);
-
-    const leftSwap  = [...aSwap, ...cSwap];
-    const rightSwap = [...bSwap, ...dSwap];
-    quickResult = findBest1to3Swaps(leftSwap, rightSwap, spare || []);
-    fullResult  = findBestFullSwap(leftSwap, rightSwap, spare || []);
-
-    function reassembleLegs(swappedLeft, swappedRight) {
+    function reassembleLegs(swappedLeft, swappedRight, useTier2) {
+      // After algo runs, items have original origin tags
       const nA = swappedLeft.filter(x => (x.origin||'').startsWith('A'));
       const nC = swappedLeft.filter(x => (x.origin||'').startsWith('C'));
       const nB = swappedRight.filter(x => (x.origin||'').startsWith('B'));
       const nD = swappedRight.filter(x => (x.origin||'').startsWith('D'));
       const spareA = swappedLeft.filter(x => x.origin==='Spare').slice();
       const spareB = swappedRight.filter(x => x.origin==='Spare').slice();
-      // Distribute spares — for simplicity stick them in their landed branch
-      const finalA = [...nA, ...aLock];
-      const finalC = [...nC, ...cLock, ...spareA];
-      const finalB = [...nB, ...bLock];
-      const finalD = [...nD, ...dLock, ...spareB];
-      return { finalA, finalB, finalC, finalD };
+      // If using Tier 2 (locked items participated), don't re-add locked back
+      const lA = useTier2 ? [] : aT2;
+      const lB = useTier2 ? [] : bT2;
+      const lC = useTier2 ? [] : cT2;
+      const lD = useTier2 ? [] : dT2;
+      return {
+        finalA: [...nA, ...lA],
+        finalC: [...nC, ...lC, ...spareA],
+        finalB: [...nB, ...lB],
+        finalD: [...nD, ...lD, ...spareB]
+      };
     }
 
+    // Tier 1: focus on "วัดแยก" items
+    const leftT1  = [...aT1, ...cT1];
+    const rightT1 = [...bT1, ...dT1];
+    quickResult = findBest1to3Swaps(leftT1, rightT1, spare || []);
+    fullResult  = findBestFullSwap(leftT1, rightT1, spare || []);
+
     quickResult.swaps = quickResult.swaps.map(sw => {
-      const {finalA, finalB, finalC, finalD} = reassembleLegs(sw.y1, sw.y2);
-      sw.engAfter = calcHBridgeMetrics(finalA, finalB, finalC, finalD, kv);
+      const f = reassembleLegs(sw.y1, sw.y2, false);
+      sw.engAfter = calcHBridgeMetrics(f.finalA, f.finalB, f.finalC, f.finalD, kv);
       sw.Ino_mA = sw.engAfter.In_mA;
       sw.underThreshold = sw.Ino_mA < THRESHOLD_MA;
-      sw.y1Full = [...sw.y1, ...aLock, ...cLock];
-      sw.y2Full = [...sw.y2, ...bLock, ...dLock];
+      sw.y1Full = [...f.finalA, ...f.finalC];
+      sw.y2Full = [...f.finalB, ...f.finalD];
+      sw.tier = 1;
       return sw;
     });
-    const f = reassembleLegs(fullResult.y1, fullResult.y2);
-    fullResult.engAfter = calcHBridgeMetrics(f.finalA, f.finalB, f.finalC, f.finalD, kv);
-    fullResult.Ino_mA = fullResult.engAfter.In_mA;
-    fullResult.underThreshold = fullResult.Ino_mA < THRESHOLD_MA;
-    fullResult.y1Full = [...fullResult.y1, ...aLock, ...cLock];
-    fullResult.y2Full = [...fullResult.y2, ...bLock, ...dLock];
+    {
+      const f = reassembleLegs(fullResult.y1, fullResult.y2, false);
+      fullResult.engAfter = calcHBridgeMetrics(f.finalA, f.finalB, f.finalC, f.finalD, kv);
+      fullResult.Ino_mA = fullResult.engAfter.In_mA;
+      fullResult.underThreshold = fullResult.Ino_mA < THRESHOLD_MA;
+      fullResult.y1Full = [...f.finalA, ...f.finalC];
+      fullResult.y2Full = [...f.finalB, ...f.finalD];
+      fullResult.tier = 1;
+    }
 
-    const nLocked = aLock.length+bLock.length+cLock.length+dLock.length;
-    const nSwap   = aSwap.length+bSwap.length+cSwap.length+dSwap.length;
-    const hbOutliers = [...aF,...bF,...cF,...dF].filter(x => x.isOutlier);
-    quickResult.lockedNote = nLocked > 0 || hbOutliers.length > 0
-      ? `ค่ากรุ๊ป ${nLocked} ตัว ไม่นำมาสลับ · ติ๊ก "วัดแยก" ${nSwap - hbOutliers.length} ตัว · Spare ${(spare||[]).length} ตัว` +
-        (hbOutliers.length > 0 ? ` · ⚠ ตรวจพบ ${hbOutliers.length} ตัวค่าห่างเฉลี่ย ≥5% → mark เป็น swappable อัตโนมัติ` : '')
+    // Tier 2 fallback if needed
+    const t1Best = quickResult.swaps[quickResult.swaps.length-1];
+    const totalT2 = aT2.length + bT2.length + cT2.length + dT2.length;
+    if (!t1Best.underThreshold && totalT2 > 0) {
+      const leftAll  = [...aT1, ...cT1, ...aT2, ...cT2];
+      const rightAll = [...bT1, ...dT1, ...bT2, ...dT2];
+      const t2Quick = findBest1to3Swaps(leftAll, rightAll, spare || []);
+      const t2Full  = findBestFullSwap(leftAll, rightAll, spare || []);
+
+      t2Quick.swaps.forEach(sw => {
+        const f = reassembleLegs(sw.y1, sw.y2, true);
+        sw.engAfter = calcHBridgeMetrics(f.finalA, f.finalB, f.finalC, f.finalD, kv);
+        sw.Ino_mA = sw.engAfter.In_mA;
+        sw.underThreshold = sw.Ino_mA < THRESHOLD_MA;
+        sw.y1Full = [...f.finalA, ...f.finalC];
+        sw.y2Full = [...f.finalB, ...f.finalD];
+        sw.tier = 2;
+      });
+      {
+        const f = reassembleLegs(t2Full.y1, t2Full.y2, true);
+        t2Full.engAfter = calcHBridgeMetrics(f.finalA, f.finalB, f.finalC, f.finalD, kv);
+        t2Full.Ino_mA = t2Full.engAfter.In_mA;
+        t2Full.underThreshold = t2Full.Ino_mA < THRESHOLD_MA;
+        t2Full.y1Full = [...f.finalA, ...f.finalC];
+        t2Full.y2Full = [...f.finalB, ...f.finalD];
+        t2Full.tier = 2;
+      }
+
+      quickResult.swaps = quickResult.swaps.map((sw, i) => {
+        const t2 = t2Quick.swaps[i];
+        return (t2.Ino_mA < sw.Ino_mA) ? t2 : sw;
+      });
+      if (t2Full.Ino_mA < fullResult.Ino_mA) Object.assign(fullResult, t2Full);
+      quickResult.fallbackUsed = true;
+    }
+
+    // Info note
+    const t1Count = aT1.length + bT1.length + cT1.length + dT1.length;
+    const t2Count = aT2.length + bT2.length + cT2.length + dT2.length;
+    quickResult.lockedNote = (t1Count + t2Count) > 0
+      ? `Tier 1 (ติ๊ก "วัดแยก"): ${t1Count/2} ชุด → ${t1Count} ตัวย่อย · Tier 2 (กรุ๊ป): ${t2Count/2} ชุด · Spare ${(spare||[]).length} ตัว` +
+        (quickResult.fallbackUsed ? ' · ⚠ Tier 1 ไม่พอ ใช้ fallback (สลับ Tier 2 ด้วย)' : '')
       : null;
-    quickResult.outliers = hbOutliers;
   } else {
     const y1Flat = expandPairs(y1);
     const y2Flat = expandPairs(y2);
     engBefore   = calcYYMetrics(y1Flat, y2Flat, kv);
 
-    // ── แยก array: swappable (วัดแยกตัว) vs locked (วัดเป็นกรุ๊ป) ──
-    // !isLocked → ติ๊ก "วัดแยกตัว" → SWAPPABLE
-    // isLocked → ค่ากรุ๊ป (ไม่ติ๊ก) → ปกติ LOCKED
-    // ── เพิ่มเงื่อนไข: ในเฟสที่ไม่ติ๊ก ตัวที่ห่างค่าเฉลี่ย ≥5% จะถูก promote เป็น swappable ──
-    const OUTLIER_THRESHOLD = 0.05; // 5%
+    // ── 2-tier swap strategy ──
+    // Tier 1: ตัวที่ติ๊ก "วัดแยกตัว" → focus swap ตรงนี้ก่อน
+    // Tier 2: ถ้า Ino ยังเกิน threshold → ขยายให้สลับตัวอื่น (locked group) ด้วย
+    const y1Tier1 = y1Flat.filter(x => !x.isLocked);
+    const y1Tier2 = y1Flat.filter(x =>  x.isLocked);
+    const y2Tier1 = y2Flat.filter(x => !x.isLocked);
+    const y2Tier2 = y2Flat.filter(x =>  x.isLocked);
 
-    function markOutliers(arr) {
-      // Group by origin (phase)
-      const groups = {};
-      arr.forEach(x => {
-        if (!x.isLocked) return; // already swappable
-        if (!groups[x.origin]) groups[x.origin] = [];
-        groups[x.origin].push(x);
-      });
-      // For each phase group, find outliers (≥5% from group mean)
-      Object.keys(groups).forEach(origin => {
-        const group = groups[origin];
-        if (group.length < 2) return;
-        const mean = group.reduce((s,x)=>s+x.val,0) / group.length;
-        group.forEach(x => {
-          const dev = Math.abs(x.val - mean) / mean;
-          if (dev >= OUTLIER_THRESHOLD) {
-            x.isLocked = false;       // promote to swappable
-            x.isOutlier = true;
-            x.deviation = dev;        // store for display
-          }
-        });
-      });
+    // ── Tier 1: focus on "วัดแยก" items + Spare ──
+    quickResult = findBest1to3Swaps(y1Tier1, y2Tier1, spare || []);
+    fullResult  = findBestFullSwap(y1Tier1, y2Tier1, spare || []);
+
+    function computeAfter(swY1, swY2) {
+      const fullY1 = [...swY1, ...y1Tier2];
+      const fullY2 = [...swY2, ...y2Tier2];
+      return { fullY1, fullY2, eng: calcYYMetrics(fullY1, fullY2, kv) };
     }
 
-    markOutliers(y1Flat);
-    markOutliers(y2Flat);
-
-    const y1Swap = y1Flat.filter(x => !x.isLocked);
-    const y1Lock = y1Flat.filter(x =>  x.isLocked);
-    const y2Swap = y2Flat.filter(x => !x.isLocked);
-    const y2Lock = y2Flat.filter(x =>  x.isLocked);
-
-    // Tag locked items for later identification when re-merging
-    y1Lock.forEach(x => x._locked = true);
-    y2Lock.forEach(x => x._locked = true);
-
-    // ── Run algorithm only on swappable items ──
-    quickResult = findBest1to3Swaps(y1Swap, y2Swap, spare || []);
-    fullResult  = findBestFullSwap(y1Swap, y2Swap, spare || []);
-
-    // ── Re-merge with locked items for final metrics calculation ──
     quickResult.swaps = quickResult.swaps.map(sw => {
-      const fullY1 = [...sw.y1, ...y1Lock];
-      const fullY2 = [...sw.y2, ...y2Lock];
-      sw.engAfter = calcYYMetrics(fullY1, fullY2, kv);
-      sw.Ino_mA = sw.engAfter.Ino_mA;
+      const r = computeAfter(sw.y1, sw.y2);
+      sw.engAfter = r.eng;
+      sw.Ino_mA = r.eng.Ino_mA;
       sw.underThreshold = sw.Ino_mA < THRESHOLD_MA;
-      // store full lists for display
-      sw.y1Full = fullY1;
-      sw.y2Full = fullY2;
+      sw.y1Full = r.fullY1; sw.y2Full = r.fullY2;
+      sw.tier = 1;
       return sw;
     });
 
-    const fullY1F = [...fullResult.y1, ...y1Lock];
-    const fullY2F = [...fullResult.y2, ...y2Lock];
-    fullResult.engAfter = calcYYMetrics(fullY1F, fullY2F, kv);
-    fullResult.Ino_mA = fullResult.engAfter.Ino_mA;
+    const fullR = computeAfter(fullResult.y1, fullResult.y2);
+    fullResult.engAfter = fullR.eng;
+    fullResult.Ino_mA = fullR.eng.Ino_mA;
     fullResult.underThreshold = fullResult.Ino_mA < THRESHOLD_MA;
-    fullResult.y1Full = fullY1F;
-    fullResult.y2Full = fullY2F;
+    fullResult.y1Full = fullR.fullY1;
+    fullResult.y2Full = fullR.fullY2;
+    fullResult.tier = 1;
+
+    // ── Tier 2 FALLBACK ──
+    // If best Tier 1 solution still exceeds threshold AND there are locked items,
+    // expand search space to include locked items too
+    const tier1Best = quickResult.swaps[quickResult.swaps.length - 1];
+    const needFallback = !tier1Best.underThreshold && (y1Tier2.length + y2Tier2.length) > 0;
+    if (needFallback) {
+      const y1All = [...y1Tier1, ...y1Tier2];
+      const y2All = [...y2Tier1, ...y2Tier2];
+      const t2Quick = findBest1to3Swaps(y1All, y2All, spare || []);
+      const t2Full  = findBestFullSwap(y1All, y2All, spare || []);
+
+      t2Quick.swaps.forEach(sw => {
+        sw.engAfter = calcYYMetrics(sw.y1, sw.y2, kv);
+        sw.Ino_mA = sw.engAfter.Ino_mA;
+        sw.underThreshold = sw.Ino_mA < THRESHOLD_MA;
+        sw.y1Full = sw.y1; sw.y2Full = sw.y2;
+        sw.tier = 2;
+      });
+      t2Full.engAfter = calcYYMetrics(t2Full.y1, t2Full.y2, kv);
+      t2Full.Ino_mA = t2Full.engAfter.Ino_mA;
+      t2Full.underThreshold = t2Full.Ino_mA < THRESHOLD_MA;
+      t2Full.y1Full = t2Full.y1; t2Full.y2Full = t2Full.y2;
+      t2Full.tier = 2;
+
+      // Replace each quick swap with tier-2 version if it gives lower Ino
+      quickResult.swaps = quickResult.swaps.map((sw, i) => {
+        const t2 = t2Quick.swaps[i];
+        return (t2.Ino_mA < sw.Ino_mA) ? t2 : sw;
+      });
+      if (t2Full.Ino_mA < fullResult.Ino_mA) {
+        Object.assign(fullResult, t2Full);
+      }
+      quickResult.fallbackUsed = true;
+    }
 
     // Info note
-    // Count outliers from each side
-    const y1Outliers = y1Flat.filter(x => x.isOutlier);
-    const y2Outliers = y2Flat.filter(x => x.isOutlier);
-    const totalOutliers = y1Outliers.length + y2Outliers.length;
-
-    quickResult.lockedNote = (y1Lock.length + y2Lock.length) > 0 || totalOutliers > 0
-      ? `ค่ากรุ๊ป ${y1Lock.length + y2Lock.length} ตัว ไม่นำมาสลับ · ติ๊ก "วัดแยก" ${y1Swap.length + y2Swap.length - totalOutliers} ตัว · Spare ${(spare||[]).length} ตัว` +
-        (totalOutliers > 0 ? ` · ⚠ ตรวจพบ ${totalOutliers} ตัวค่าห่างเฉลี่ย ≥5% → mark เป็น swappable อัตโนมัติ` : '')
+    // Build info note
+    const tier1Count = y1Tier1.length + y2Tier1.length;
+    const tier2Count = y1Tier2.length + y2Tier2.length;
+    const sCount = (spare||[]).length;
+    quickResult.lockedNote = (tier1Count + tier2Count) > 0
+      ? `Tier 1 (ติ๊ก "วัดแยก"): ${tier1Count/2} ชุด → ${tier1Count} ตัวย่อย · Tier 2 (กรุ๊ป): ${tier2Count/2} ชุด · Spare ${sCount} ตัว` +
+        (quickResult.fallbackUsed ? ' · ⚠ Tier 1 ไม่พอ ใช้ fallback (สลับ Tier 2 ด้วย)' : '')
       : null;
-    quickResult.outliers = [...y1Outliers, ...y2Outliers];
   }
 
   // Mark which quick swap is the BEST: fewest swaps that meets Ino < 5mA
