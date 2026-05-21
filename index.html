@@ -697,6 +697,32 @@ body {
 .par-toggle span { white-space:nowrap; }
 .par-toggle input:checked ~ span { color:var(--amber); font-weight:700; }
 
+/* Per-slot split toggle button (scissors) */
+.split-btn {
+  width: 26px; height: 26px; padding: 0;
+  border: 1.5px solid var(--border2); border-radius: 6px;
+  background: var(--bg2); color: var(--txt3);
+  cursor: pointer; font-size: 0.7rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
+}
+.split-btn:hover { background: var(--amber-soft); color: var(--amber); border-color: var(--amber); }
+.split-btn.on { background: var(--amber); color: #fff; border-color: var(--amber); }
+
+.cr-slot { margin-bottom: 7px; }
+.cr-slot.has-split { background: var(--amber-soft); border-radius: 6px; padding: 4px 6px; border-left: 2px solid var(--amber); }
+.cr-main-row { display: flex; align-items: center; gap: 8px; }
+.cr-split-pair {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 6px 0 6px 14px; margin-top: 4px;
+  border-left: 2px dashed var(--amber); margin-left: 12px;
+}
+.cr-sub label { color: var(--amber); font-weight: 700; }
+.cr-sub input { background: var(--bg2); border-color: var(--amber); }
+
+
 /* ── Split-pair UI ──────────────────────────────────── */
 .cr-pair { margin-bottom:7px; }
 .cr-pair.is-split .cr-main label,
@@ -849,7 +875,9 @@ body {
         <i class="fas fa-info-circle"></i>
         <div>
           <strong>วิธีกรอก:</strong> กรอกจำนวนช่องของแต่ละกิ่ง/leg แยกกัน → กดสร้าง → กรอกค่า C<br>
-          • <strong>ติ๊ก ☑ "วัดแยกตัว"</strong> = ค่าที่กรอกถูกแยกวัดทีละตัว → algorithm จะสลับเฉพาะตัวเหล่านี้<br>          • <strong>ไม่ติ๊ก</strong> = ค่ากรุ๊ป (วัดรวม) → ระบบ ÷2 ใช้คำนวณ Ino แต่ไม่นำมาสลับ<br>
+          • <strong>☑ ต่อขนาน (ระดับฝั่ง)</strong> = ทั้งฝั่งนี้ C ต่อขนานคู่ → ระบบ ÷2 ค่าทุกตัวอัตโนมัติ<br>
+          • <strong>✂ กรรไกร (รายตัว)</strong> = แค่ตัวนี้วัดแยกได้ → ขยายเป็น 2 ช่อง กรอกค่าจริง (override ÷2)<br>
+          • Algorithm จะสลับ <strong>เฉพาะตัวที่กดกรรไกร + Spare</strong> ก่อน — ถ้า Ino ยังเกิน 5mA จึงขยายไปสลับตัวอื่น
           • <strong>Spare = ตัวเดี่ยวเสมอ</strong> — การสับเปลี่ยนทำเป็นรายตัว ถ้า Ino > 5mA ระบบจะหาทางลดให้ต่ำกว่า 5mA
         </div>
       </div>
@@ -1088,13 +1116,14 @@ function allSingleSwaps(y1, y2, spare, baseline) {
       const nY1 = y1.slice(); nY1[i] = t2;
       const nY2 = y2.slice(); nY2[j] = t1;
       const d = scoreState(nY1, nY2);
-      results.push({ diff: d, ops: [{ type:'exchange', i, j }], action: { type:'exchange', from:t1, to:t2 } });
+      const touchesOutlier = !!(t1.isOutlier || t2.isOutlier);
+      results.push({ diff: d, touchesOutlier, ops: [{ type:'exchange', i, j }], action: { type:'exchange', from:t1, to:t2 } });
     }
     for (let k = 0; k < spare.length; k++) {
       const t1 = y1[i], ts = spare[k];
       const nY1 = y1.slice(); nY1[i] = ts;
       const d = scoreState(nY1, y2);
-      results.push({ diff: d, ops:[{type:'replace-y1',i,k}], action:{type:'replace-y1',from:t1,to:ts} });
+      results.push({ diff: d, touchesOutlier: !!t1.isOutlier, ops:[{type:'replace-y1',i,k}], action:{type:'replace-y1',from:t1,to:ts} });
     }
   }
   for (let j = 0; j < y2.length; j++) {
@@ -1102,10 +1131,17 @@ function allSingleSwaps(y1, y2, spare, baseline) {
       const t2 = y2[j], ts = spare[k];
       const nY2 = y2.slice(); nY2[j] = ts;
       const d = scoreState(y1, nY2);
-      results.push({ diff: d, ops:[{type:'replace-y2',j,k}], action:{type:'replace-y2',from:t2,to:ts} });
+      results.push({ diff: d, touchesOutlier: !!t2.isOutlier, ops:[{type:'replace-y2',j,k}], action:{type:'replace-y2',from:t2,to:ts} });
     }
   }
-  results.sort((a, b) => a.diff - b.diff);
+  // Sort: primary = lowest resulting imbalance; tiebreaker = prefer swaps that
+  // move a flagged outlier (Rule 2 prioritization). Tolerance avoids reordering
+  // genuinely better swaps just because they don't touch an outlier.
+  results.sort((a, b) => {
+    if (Math.abs(a.diff - b.diff) > 1e-6) return a.diff - b.diff;
+    if (a.touchesOutlier !== b.touchesOutlier) return a.touchesOutlier ? -1 : 1;
+    return 0;
+  });
   return results;
 }
 
@@ -1210,24 +1246,116 @@ window._findBestFullSwap  = findBestFullSwap;
 // ═══════════════════════════════════════
 // Helpers for split-pair handling
 // ═══════════════════════════════════════
-function expandPairs(arr) {
-  // - ถ้า isLocked (ค่ากรุ๊ป) → readPanel ÷2 แล้ว แต่ยังเป็น 1 unit รวม
-  //   ทำการแตกเป็น 2 sub-units ค่าเท่ากัน (เพื่อให้ algorithm ใช้สลับใน fallback ได้)
-  // - ถ้า !isLocked (ติ๊ก "วัดแยกตัว") → แตกเป็น 2 ตัวเหมือนกัน (priority 1 swap)
-  const out = [];
-  arr.forEach(p => {
-    const halfVal = p.val; // val from readPanel already represents per-unit value
-    // Both halves identical here. The .a / .b key distinguishes them.
-    out.push({
-      id: p.id + '.a', val: halfVal, origin: p.origin, pos: p.pos,
-      inputVal: p.inputVal, isLocked: p.isLocked, subKey: 'a', parentId: p.id
-    });
-    out.push({
-      id: p.id + '.b', val: halfVal, origin: p.origin, pos: p.pos,
-      inputVal: p.inputVal, isLocked: p.isLocked, subKey: 'b', parentId: p.id
+// ═══════════════════════════════════════════════════════
+// MODE-BASED OUTLIER DETECTION (Rule 2)
+// For non-parallel groups: find the mode (most frequent value) of all C units
+// on a side, then flag units deviating ≥ DEV_THRESHOLD from the mode.
+// Flagged units are promoted to swappable (Tier 1) and prioritized.
+// ═══════════════════════════════════════════════════════
+function findModeReference(values, roundTo = 0.1) {
+  // values: array of numbers (µF)
+  if (!values.length) return null;
+  // Bucket by rounded value to find the most frequent reading
+  const buckets = {};
+  values.forEach(v => {
+    const key = (Math.round(v / roundTo) * roundTo).toFixed(3);
+    if (!buckets[key]) buckets[key] = [];
+    buckets[key].push(v);
+  });
+  // Find the bucket with the most members
+  let bestKey = null, bestCount = 0;
+  Object.keys(buckets).forEach(k => {
+    if (buckets[k].length > bestCount) { bestCount = buckets[k].length; bestKey = k; }
+  });
+  if (bestCount >= 2) {
+    // Genuine mode exists — use average of actual values in that bucket
+    const members = buckets[bestKey];
+    return members.reduce((s, x) => s + x, 0) / members.length;
+  }
+  // No repeated value → fall back to median (outlier-resistant)
+  const sorted = values.slice().sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+// Promote high-deviation NON-PARALLEL units to swappable + flag as outlier.
+// Operates per-phase (origin). Only acts on items that are plain single units
+// (not scissored, not locked-parallel) — i.e. "Non-Parallel Groups".
+function markModeOutliers(flatArr, devThreshold = 0.05) {
+  // Group plain single units by origin (phase)
+  const groups = {};
+  flatArr.forEach(x => {
+    // Plain non-parallel single unit: not split-derived, not locked
+    const isPlainSingle = !x.isLocked && !x.subKey && x.swapGranularity !== 'pair';
+    if (!isPlainSingle) return;
+    (groups[x.origin] = groups[x.origin] || []).push(x);
+  });
+  const outliers = [];
+  Object.keys(groups).forEach(origin => {
+    const grp = groups[origin];
+    if (grp.length < 2) return;
+    const mode = findModeReference(grp.map(x => x.val));
+    if (!mode) return;
+    grp.forEach(x => {
+      const dev = Math.abs(x.val - mode) / mode;
+      if (dev >= devThreshold) {
+        x.isOutlier = true;
+        x.deviation = dev;
+        x.modeRef = mode;
+        x.priorityScore = dev;   // higher deviation → higher priority
+        outliers.push(x);
+      }
     });
   });
+  return outliers;
+}
+
+function expandPairs(arr) {
+  // Logic for algorithm swap granularity:
+  // - isSplit=true (scissors-marked)  → individual units (Tier 1 priority)
+  // - isLocked=true (side-parallel, no scissors) → keep as PAIR for Tier 2 (swap both together)
+  // - isLocked=false (no parallel) → individual unit
+  const out = [];
+  arr.forEach(p => {
+    if (p.isSplit) {
+      // Scissors-marked: individual swappable units (Tier 1)
+      out.push({...p, parentId: p.id.replace(/\.[ab]$/, ''), swapGranularity: 'individual'});
+    } else if (p.isLocked) {
+      // Locked group: ÷2 applied → in Tier 2, swap as PAIR (not individually)
+      // Mark both sub-units with same pairId so algorithm knows to swap them together
+      const pairId = 'pair-' + p.id;
+      out.push({
+        id: p.id + '.a', val: p.val, origin: p.origin, pos: p.pos,
+        inputVal: p.inputVal, isLocked: true, subKey: 'a', parentId: p.id,
+        pairId, swapGranularity: 'pair'
+      });
+      out.push({
+        id: p.id + '.b', val: p.val, origin: p.origin, pos: p.pos,
+        inputVal: p.inputVal, isLocked: true, subKey: 'b', parentId: p.id,
+        pairId, swapGranularity: 'pair'
+      });
+    } else {
+      // Single real unit (no parallel) — swap individually
+      out.push({
+        id: p.id, val: p.val, origin: p.origin, pos: p.pos,
+        inputVal: p.inputVal, isLocked: false, parentId: p.id, swapGranularity: 'individual'
+      });
+    }
+  });
   return out;
+}
+
+// Helper: group pair-granularity items before passing to swap algorithm
+function prepareTier2Array(arr) {
+  // Tier 2 fallback: locked items are swapped INDIVIDUALLY (ทีละตัว),
+  // not as pairs. Each sub-unit is its own swappable item.
+  // Pass through unchanged so the algorithm treats each as a single unit.
+  return arr.slice();
+}
+
+// Helper: pass-through (no pair packing to unpack)
+function unpackTier2Result(arr) {
+  return arr.slice();
 }
 
 async function clientCalculate(payload) {
@@ -1240,6 +1368,9 @@ async function clientCalculate(payload) {
     const {a, b, c, d} = legs;
     const aF=expandPairs(a), bF=expandPairs(b), cF=expandPairs(c), dF=expandPairs(d);
     engBefore = calcHBridgeMetrics(aF, bF, cF, dF, kv);
+
+    // Rule 2: mode-based outlier detection per leg (non-parallel groups)
+    markModeOutliers(aF); markModeOutliers(bF); markModeOutliers(cF); markModeOutliers(dF);
 
     // Tier 1 = !isLocked (ติ๊กวัดแยก), Tier 2 = isLocked (กรุ๊ป)
     const aT1=aF.filter(x=>!x.isLocked), aT2=aF.filter(x=>x.isLocked);
@@ -1298,12 +1429,18 @@ async function clientCalculate(payload) {
     const t1Best = quickResult.swaps[quickResult.swaps.length-1];
     const totalT2 = aT2.length + bT2.length + cT2.length + dT2.length;
     if (!t1Best.underThreshold && totalT2 > 0) {
-      const leftAll  = [...aT1, ...cT1, ...aT2, ...cT2];
-      const rightAll = [...bT1, ...dT1, ...bT2, ...dT2];
+      // Prepare Tier 2 — swap locked items individually (ทีละตัว)
+      const aT2P = prepareTier2Array(aT2), bT2P = prepareTier2Array(bT2);
+      const cT2P = prepareTier2Array(cT2), dT2P = prepareTier2Array(dT2);
+      const leftAll  = [...aT1, ...cT1, ...aT2P, ...cT2P];
+      const rightAll = [...bT1, ...dT1, ...bT2P, ...dT2P];
       const t2Quick = findBest1to3Swaps(leftAll, rightAll, spare || []);
       const t2Full  = findBestFullSwap(leftAll, rightAll, spare || []);
 
+      // Unpack pairs before reassembly
       t2Quick.swaps.forEach(sw => {
+        sw.y1 = unpackTier2Result(sw.y1);
+        sw.y2 = unpackTier2Result(sw.y2);
         const f = reassembleLegs(sw.y1, sw.y2, true);
         sw.engAfter = calcHBridgeMetrics(f.finalA, f.finalB, f.finalC, f.finalD, kv);
         sw.Ino_mA = sw.engAfter.In_mA;
@@ -1313,6 +1450,8 @@ async function clientCalculate(payload) {
         sw.tier = 2;
       });
       {
+        t2Full.y1 = unpackTier2Result(t2Full.y1);
+        t2Full.y2 = unpackTier2Result(t2Full.y2);
         const f = reassembleLegs(t2Full.y1, t2Full.y2, true);
         t2Full.engAfter = calcHBridgeMetrics(f.finalA, f.finalB, f.finalC, f.finalD, kv);
         t2Full.Ino_mA = t2Full.engAfter.In_mA;
@@ -1341,6 +1480,11 @@ async function clientCalculate(payload) {
     const y1Flat = expandPairs(y1);
     const y2Flat = expandPairs(y2);
     engBefore   = calcYYMetrics(y1Flat, y2Flat, kv);
+
+    // ── Rule 2: mode-based outlier detection for non-parallel groups ──
+    // Flag units deviating ≥5% from the per-phase mode; these are prioritized.
+    const y1ModeOutliers = markModeOutliers(y1Flat);
+    const y2ModeOutliers = markModeOutliers(y2Flat);
 
     // ── 2-tier swap strategy ──
     // Tier 1: ตัวที่ติ๊ก "วัดแยกตัว" → focus swap ตรงนี้ก่อน
@@ -1380,22 +1524,30 @@ async function clientCalculate(payload) {
 
     // ── Tier 2 FALLBACK ──
     // If best Tier 1 solution still exceeds threshold AND there are locked items,
-    // expand search space to include locked items too
+    // expand search space to swap locked items individually (ทีละตัว)
     const tier1Best = quickResult.swaps[quickResult.swaps.length - 1];
     const needFallback = !tier1Best.underThreshold && (y1Tier2.length + y2Tier2.length) > 0;
     if (needFallback) {
-      const y1All = [...y1Tier1, ...y1Tier2];
-      const y2All = [...y2Tier1, ...y2Tier2];
+      // Prepare Tier 2 arrays — each locked sub-unit swappable individually
+      const y1T2Prepared = prepareTier2Array(y1Tier2);
+      const y2T2Prepared = prepareTier2Array(y2Tier2);
+      const y1All = [...y1Tier1, ...y1T2Prepared];
+      const y2All = [...y2Tier1, ...y2T2Prepared];
       const t2Quick = findBest1to3Swaps(y1All, y2All, spare || []);
       const t2Full  = findBestFullSwap(y1All, y2All, spare || []);
 
+      // Unpack pair results back to individual items for metrics calc
       t2Quick.swaps.forEach(sw => {
+        sw.y1 = unpackTier2Result(sw.y1);
+        sw.y2 = unpackTier2Result(sw.y2);
         sw.engAfter = calcYYMetrics(sw.y1, sw.y2, kv);
         sw.Ino_mA = sw.engAfter.Ino_mA;
         sw.underThreshold = sw.Ino_mA < THRESHOLD_MA;
         sw.y1Full = sw.y1; sw.y2Full = sw.y2;
         sw.tier = 2;
       });
+      t2Full.y1 = unpackTier2Result(t2Full.y1);
+      t2Full.y2 = unpackTier2Result(t2Full.y2);
       t2Full.engAfter = calcYYMetrics(t2Full.y1, t2Full.y2, kv);
       t2Full.Ino_mA = t2Full.engAfter.Ino_mA;
       t2Full.underThreshold = t2Full.Ino_mA < THRESHOLD_MA;
@@ -1414,12 +1566,13 @@ async function clientCalculate(payload) {
     }
 
     // Info note
-    // Build info note
     const tier1Count = y1Tier1.length + y2Tier1.length;
     const tier2Count = y1Tier2.length + y2Tier2.length;
     const sCount = (spare||[]).length;
+    const outlierCount = y1ModeOutliers.length + y2ModeOutliers.length;
     quickResult.lockedNote = (tier1Count + tier2Count) > 0
       ? `Tier 1 (ติ๊ก "วัดแยก"): ${tier1Count/2} ชุด → ${tier1Count} ตัวย่อย · Tier 2 (กรุ๊ป): ${tier2Count/2} ชุด · Spare ${sCount} ตัว` +
+        (outlierCount > 0 ? ` · 🎯 พบ ${outlierCount} ตัวห่างจาก mode ≥5% (จัดลำดับสลับก่อน)` : '') +
         (quickResult.fallbackUsed ? ' · ⚠ Tier 1 ไม่พอ ใช้ fallback (สลับ Tier 2 ด้วย)' : '')
       : null;
   }
@@ -2280,9 +2433,9 @@ function capList(arr,tgt){
     const splitNote = c.subKey
       ? `<span style="font-size:0.65rem;color:var(--txt3);margin-left:4px;">[ตัว ${c.subKey.toUpperCase()}]</span>`
       : '';
-    // Outlier indicator: this item deviates ≥5% from group mean
+    // Outlier indicator: this item deviates ≥5% from the per-phase mode
     const outlierTag = c.isOutlier
-      ? `<span class="pill p-outlier" title="ห่างเฉลี่ย ${(c.deviation*100).toFixed(1)}%"><i class="fas fa-bullseye"></i> outlier</span>`
+      ? `<span class="pill p-outlier" title="ห่างจาก mode ${(c.deviation*100).toFixed(1)}%${c.modeRef?` (mode≈${c.modeRef.toFixed(2)}µF)`:''}"><i class="fas fa-bullseye"></i> outlier</span>`
       : '';
     return `<div class="ci ${c.isOutlier?'is-outlier':''}"><span><span class="cv">${c.val.toFixed(3)}</span><span class="cid"> (${c.id})</span>${splitNote}</span><span style="display:flex;gap:4px;align-items:center;">${outlierTag}${tag}</span></div>`;
   }).join('');
@@ -2495,22 +2648,22 @@ function buildInputArea() {
         <div class="input-cols" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;">
           <div class="inp-panel la">
             <div class="panel-hd">Leg A — Top-Left</div>
-            <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntA" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('A')"><label class="par-toggle"><input type="checkbox" id="parA"><span>☑ วัดแยกตัว (สลับได้)</span></label></div>
+            <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntA" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('A')"><label class="par-toggle"><input type="checkbox" id="parA"><span>☑ ต่อขนาน (÷2 ค่าทุกตัว)</span></label></div>
             <div id="panelA"></div>
           </div>
           <div class="inp-panel lb">
             <div class="panel-hd">Leg B — Top-Right</div>
-            <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntB" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('B')"><label class="par-toggle"><input type="checkbox" id="parB"><span>☑ วัดแยกตัว (สลับได้)</span></label></div>
+            <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntB" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('B')"><label class="par-toggle"><input type="checkbox" id="parB"><span>☑ ต่อขนาน (÷2 ค่าทุกตัว)</span></label></div>
             <div id="panelB"></div>
           </div>
           <div class="inp-panel lc">
             <div class="panel-hd">Leg C — Bot-Left</div>
-            <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntC" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('C')"><label class="par-toggle"><input type="checkbox" id="parC"><span>☑ วัดแยกตัว (สลับได้)</span></label></div>
+            <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntC" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('C')"><label class="par-toggle"><input type="checkbox" id="parC"><span>☑ ต่อขนาน (÷2 ค่าทุกตัว)</span></label></div>
             <div id="panelC"></div>
           </div>
           <div class="inp-panel ld">
             <div class="panel-hd">Leg D — Bot-Right</div>
-            <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntD" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('D')"><label class="par-toggle"><input type="checkbox" id="parD"><span>☑ วัดแยกตัว (สลับได้)</span></label></div>
+            <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntD" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('D')"><label class="par-toggle"><input type="checkbox" id="parD"><span>☑ ต่อขนาน (÷2 ค่าทุกตัว)</span></label></div>
             <div id="panelD"></div>
           </div>
           <div class="inp-panel spare" style="grid-column:1/-1;">
@@ -2521,6 +2674,14 @@ function buildInputArea() {
         </div>`;
     }
     ['A','B','C','D'].forEach(p => rebuildPanel(p));
+    // H-Bridge: attach scissors visibility listeners
+    [['parA','a'],['parB','b'],['parC','c'],['parD','d']].forEach(([cbId, cls]) => {
+      const cb = document.getElementById(cbId);
+      if (cb) {
+        cb.onchange = () => updateScissorsVisibility(cbId, cls);
+        updateScissorsVisibility(cbId, cls); // init
+      }
+    });
     rebuildPanel('S');
   } else {
     // Y-Y: 6 phases (A,B,C,A',B',C') + spare
@@ -2528,7 +2689,7 @@ function buildInputArea() {
       area.innerHTML = `
         <div class="yy-section">
           <div class="yy-section-title yy-side1"><i class="fas fa-arrow-circle-right"></i> ฝั่งที่ 1 (Y1)
-            <label class="par-toggle" style="margin-left:auto;"><input type="checkbox" id="parY1"><span>☑ วัดแยกตัว (สลับได้)</span></label>
+            <label class="par-toggle" style="margin-left:auto;"><input type="checkbox" id="parY1"><span>☑ ต่อขนาน (÷2 ค่าทุกตัว)</span></label>
           </div>
           <div class="yy-phase-row">
             <div class="inp-panel y1"><div class="panel-hd">Phase A</div>
@@ -2544,7 +2705,7 @@ function buildInputArea() {
         </div>
         <div class="yy-section">
           <div class="yy-section-title yy-side2"><i class="fas fa-arrow-circle-right"></i> ฝั่งที่ 2 (Y2)
-            <label class="par-toggle" style="margin-left:auto;"><input type="checkbox" id="parY2"><span>☑ วัดแยกตัว (สลับได้)</span></label>
+            <label class="par-toggle" style="margin-left:auto;"><input type="checkbox" id="parY2"><span>☑ ต่อขนาน (÷2 ค่าทุกตัว)</span></label>
           </div>
           <div class="yy-phase-row">
             <div class="inp-panel y2"><div class="panel-hd">Phase A'</div>
@@ -2565,6 +2726,19 @@ function buildInputArea() {
         </div>`;
     }
     ['A','B','C','Ap','Bp','Cp'].forEach(p => rebuildPanel(p));
+    // Attach listeners to side-level checkboxes for scissors visibility
+    ['parY1', 'parY2'].forEach(cbId => {
+      const cb = document.getElementById(cbId);
+      if (cb) {
+        cb.onchange = () => {
+          const cls = cbId === 'parY1' ? ['a','b','c'] : ['ap','bp','cp'];
+          cls.forEach(c => updateScissorsVisibility(cbId, c));
+        };
+        // Initialize visibility on load
+        const cls = cbId === 'parY1' ? ['a','b','c'] : ['ap','bp','cp'];
+        cls.forEach(c => updateScissorsVisibility(cbId, c));
+      }
+    });
     rebuildPanel('S');
   }
 }
@@ -2578,15 +2752,32 @@ function rebuildPanel(key) {
   const container = document.getElementById('panel' + key);
   if (!container) return;
 
-  // Save existing values
+  // Save existing values & split states
   const saved = {};
-  container.querySelectorAll('input[type="number"]').forEach(inp => {
+  const savedSplit = {};
+  const savedA = {};
+  const savedB = {};
+  container.querySelectorAll('input.val-main').forEach(inp => {
     if (inp.value) saved[inp.dataset.idx] = inp.value;
+  });
+  container.querySelectorAll('input.split-a').forEach(inp => {
+    if (inp.value) savedA[inp.dataset.idx] = inp.value;
+  });
+  container.querySelectorAll('input.split-b').forEach(inp => {
+    if (inp.value) savedB[inp.dataset.idx] = inp.value;
+  });
+  container.querySelectorAll('input.split-toggle-cb').forEach(cb => {
+    if (cb.checked) savedSplit[cb.dataset.idx] = true;
+  });
+  // Plain spare/legacy
+  container.querySelectorAll('input.val-s, input.val-' + pfx.toLowerCase().replace("'",'p')).forEach(inp => {
+    if (inp.value && !inp.classList.contains('val-main')) saved[inp.dataset.idx] = inp.value;
   });
 
   const cls = pfx.toLowerCase().replace("'",'p');
   let h = '';
   if (key === 'S') {
+    // Spare: plain rows
     for (let i = 1; i <= cnt; i++) {
       h += `<div class="cr"><label>S-${i}</label>
         <input type="number" step="0.001" min="0" class="val-s" data-idx="${i}"
@@ -2594,14 +2785,96 @@ function rebuildPanel(key) {
         <span class="unit">µF</span></div>`;
     }
   } else {
+    // Phase / Leg panels with split-toggle button (visible only when side-parallel checked)
     for (let i = 1; i <= cnt; i++) {
-      h += `<div class="cr"><label>${pfx}-${i}</label>
-        <input type="number" step="0.001" min="0" class="val-${cls}" data-pfx="${pfx}" data-idx="${i}"
-               value="${saved[String(i)]||''}" placeholder="0.000" inputmode="decimal">
-        <span class="unit">µF</span></div>`;
+      const isSplit = savedSplit[String(i)] || false;
+      const slotId = `slot-${cls}-${i}`;
+      h += `<div class="cr-slot split-slot-${cls}" data-slot="${slotId}">
+        <div class="cr cr-main-row">
+          <label>${pfx}-${i}</label>
+          <input type="number" step="0.001" min="0"
+                 class="val-${cls} val-main"
+                 data-pfx="${pfx}" data-idx="${i}"
+                 value="${saved[String(i)]||''}" placeholder="0.000" inputmode="decimal"
+                 ${isSplit ? 'disabled style="opacity:0.4"' : ''}>
+          <span class="unit">µF</span>
+          <button type="button" class="split-btn split-btn-${cls} ${isSplit?'on':''}"
+                  data-slot="${slotId}" data-idx="${i}" data-cls="${cls}" data-pfx="${pfx}"
+                  title="วัดแยก 2 ตัว"
+                  onclick="toggleSplit('${cls}', ${i})"
+                  style="display:none;">
+            <i class="fas fa-cut"></i>
+          </button>
+        </div>
+        <div class="cr-split-pair" id="splitpair-${cls}-${i}" style="display:${isSplit?'flex':'none'};">
+          <div class="cr cr-sub">
+            <label>${pfx}-${i}.a</label>
+            <input type="number" step="0.001" min="0"
+                   class="val-${cls}-a val-sub split-a"
+                   data-pfx="${pfx}" data-idx="${i}" data-sub="a"
+                   value="${savedA[String(i)]||''}" placeholder="0.000" inputmode="decimal">
+            <span class="unit">µF</span>
+          </div>
+          <div class="cr cr-sub">
+            <label>${pfx}-${i}.b</label>
+            <input type="number" step="0.001" min="0"
+                   class="val-${cls}-b val-sub split-b"
+                   data-pfx="${pfx}" data-idx="${i}" data-sub="b"
+                   value="${savedB[String(i)]||''}" placeholder="0.000" inputmode="decimal">
+            <span class="unit">µF</span>
+          </div>
+        </div>
+      </div>`;
     }
   }
   container.innerHTML = h;
+}
+
+// Toggle split mode for a single slot
+// Show/hide scissors buttons based on side-level parallel checkbox
+function updateScissorsVisibility(checkboxId, targetCls) {
+  const cb = document.getElementById(checkboxId);
+  const isChecked = cb && cb.checked;
+  const btns = document.querySelectorAll('.split-btn-' + targetCls);
+  btns.forEach(btn => {
+    btn.style.display = isChecked ? 'inline-flex' : 'none';
+    // If unchecking side-level, close all scissors in this group
+    if (!isChecked && btn.classList.contains('on')) {
+      const cls = btn.dataset.cls;
+      const idx = btn.dataset.idx;
+      toggleSplit(cls, idx); // close it
+    }
+  });
+}
+
+function toggleSplit(cls, idx) {
+  const mainInput = document.querySelector(`.val-${cls}.val-main[data-idx="${idx}"]`);
+  const splitPair = document.getElementById(`splitpair-${cls}-${idx}`);
+  const btn = document.querySelector(`.split-btn[data-cls="${cls}"][data-idx="${idx}"]`);
+  if (!mainInput || !splitPair || !btn) return;
+
+  const isNowOpen = splitPair.style.display === 'flex';
+  if (isNowOpen) {
+    // Close split
+    splitPair.style.display = 'none';
+    mainInput.disabled = false;
+    mainInput.style.opacity = '';
+    btn.classList.remove('on');
+  } else {
+    // Open split — pre-fill .a and .b each with half of main value if main has value
+    const mainVal = parseFloat(mainInput.value);
+    if (!isNaN(mainVal) && mainVal > 0) {
+      const half = (mainVal / 2).toFixed(3);
+      const aInp = document.querySelector(`.val-${cls}-a[data-idx="${idx}"]`);
+      const bInp = document.querySelector(`.val-${cls}-b[data-idx="${idx}"]`);
+      if (aInp && !aInp.value) aInp.value = half;
+      if (bInp && !bInp.value) bInp.value = half;
+    }
+    splitPair.style.display = 'flex';
+    mainInput.disabled = true;
+    mainInput.style.opacity = '0.4';
+    btn.classList.add('on');
+  }
 }
 
 // Legacy alias
@@ -2627,26 +2900,55 @@ function getInputValues(){
   }
 
   // Read values from a panel
-  // measuredSep=true  → ค่าคือตัวเดี่ยว (ไม่ ÷2), swappable
-  // measuredSep=false → ค่าเป็นกรุ๊ป (÷2 → ค่าต่อตัว), locked
-  function readPanel(cls, originLabel, measuredSep) {
+  // sideParallel=true (Y1/Y2 หรือ Leg ติ๊ก "ต่อขนาน") → ค่าจะถูก ÷2 (locked)
+  // sideParallel=false (ไม่ติ๊ก side-level)         → ค่าคือตัวเดียวจริง (swappable)
+  // Per-slot split (กรรไกร ✂️) overrides: ถ้าติ๊กกรรไกร → ใช้ค่า .a + .b แยก (swappable)
+  function readPanel(cls, originLabel, sideParallel) {
     const out = [];
-    const els = document.querySelectorAll('.val-' + cls);
-    for (let i = 0; i < els.length; i++) {
-      const v = parseFloat(els[i].value);
-      if (isNaN(v) || v <= 0) {
-        alert('กรุณากรอกค่า ' + originLabel + '-' + (i+1) + ' ให้ครบ');
-        return null;
+    // Look at all main rows
+    const mainInputs = document.querySelectorAll('.val-' + cls + '.val-main');
+    for (let i = 0; i < mainInputs.length; i++) {
+      const slotIdx = i + 1;
+      // Check if this slot has split toggle ON
+      const splitBtn = document.querySelector(`.split-btn[data-cls="${cls}"][data-idx="${slotIdx}"]`);
+      const isSplit = splitBtn && splitBtn.classList.contains('on');
+      if (isSplit) {
+        // Scissors ON → read .a and .b as 2 separate units
+        // If side-parallel is ticked, the entered values represent parallel C → ÷2 each
+        const aEl = document.querySelector(`.val-${cls}-a[data-idx="${slotIdx}"]`);
+        const bEl = document.querySelector(`.val-${cls}-b[data-idx="${slotIdx}"]`);
+        const va = parseFloat(aEl ? aEl.value : '');
+        const vb = parseFloat(bEl ? bEl.value : '');
+        if (isNaN(va)||va<=0||isNaN(vb)||vb<=0) {
+          alert('กรุณากรอกค่า ' + originLabel + '-' + slotIdx + '.a และ .b ให้ครบ');
+          return null;
+        }
+        // Apply ÷2 if side-parallel (values entered are for parallel pairs)
+        const realVa = sideParallel ? va / 2 : va;
+        const realVb = sideParallel ? vb / 2 : vb;
+        // These are swappable (measured items)
+        out.push({
+          id: originLabel+'-'+slotIdx+'.a', val: realVa, origin: originLabel, pos: i,
+          inputVal: va, isLocked: false, isSplit: true, parentSlot: slotIdx, subKey: 'a'
+        });
+        out.push({
+          id: originLabel+'-'+slotIdx+'.b', val: realVb, origin: originLabel, pos: i,
+          inputVal: vb, isLocked: false, isSplit: true, parentSlot: slotIdx, subKey: 'b'
+        });
+      } else {
+        // Use main input value
+        const v = parseFloat(mainInputs[i].value);
+        if (isNaN(v) || v <= 0) {
+          alert('กรุณากรอกค่า ' + originLabel + '-' + slotIdx + ' ให้ครบ');
+          return null;
+        }
+        // Apply ÷2 only if side-level "parallel" is ticked AND this slot is NOT split
+        const realVal = sideParallel ? v / 2 : v;
+        out.push({
+          id: originLabel+'-'+slotIdx, val: realVal, origin: originLabel, pos: i,
+          inputVal: v, isLocked: sideParallel  // side-level parallel → locked group
+        });
       }
-      const realVal = measuredSep ? v : v / 2;
-      out.push({
-        id: originLabel+'-'+(i+1),
-        val: realVal,
-        origin: originLabel,
-        pos: i,
-        inputVal: v,
-        isLocked: !measuredSep  // not measured separately → locked (group)
-      });
     }
     return out;
   }
