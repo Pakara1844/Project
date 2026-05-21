@@ -1145,6 +1145,155 @@ function allSingleSwaps(y1, y2, spare, baseline) {
   return results;
 }
 
+// ═══════════════════════════════════════════════════════
+// PHASE-AWARE YY SWAP (fixes Ino mismatch + "Ino unchanged" bugs)
+// Unbalance is corrected WITHIN each phase: A(Y1)↔A'(Y2), B↔B', C↔C'.
+// A capacitor never leaves its phase, so its origin tag stays valid and
+// calcYYMetrics computes per-phase Ino correctly. The optimizer minimizes
+// each phase's |B_y1 - B_y2| (i.e. that phase's Ino), summed across phases.
+// ═══════════════════════════════════════════════════════
+function phaseOf(item, isY2) {
+  // Normalize origin to plain phase letter (strip prime). Spare has no phase.
+  if (!item || item.origin === 'Spare') return null;
+  return (item.origin || '').replace("'", '');
+}
+
+function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline) {
+  // lockedBaseline: { y1ByPhase:{A,B,C}, y2ByPhase:{A,B,C} } sums of locked C per phase
+  const PHASES = ['A', 'B', 'C'];
+  const targets = [2, 4, 6];
+
+  // Bucket swappable units by phase
+  function bucket(arr) {
+    const m = { A: [], B: [], C: [] };
+    arr.forEach(x => { const p = phaseOf(x); if (m[p]) m[p].push(x); });
+    return m;
+  }
+  const y1ByPhase = bucket(y1Swap);
+  const y2ByPhase = bucket(y2Swap);
+  const lockY1 = (lockedBaseline && lockedBaseline.y1ByPhase) || { A:0, B:0, C:0 };
+  const lockY2 = (lockedBaseline && lockedBaseline.y2ByPhase) || { A:0, B:0, C:0 };
+
+  // Spare can go to any phase; we let each phase optimization see all spares,
+  // but a spare consumed in one phase is removed from the shared pool.
+  let sparePool = (spare || []).slice();
+
+  const results = [];
+  for (const target of targets) {
+    // Work on copies per phase
+    const curY1 = { A: y1ByPhase.A.slice(), B: y1ByPhase.B.slice(), C: y1ByPhase.C.slice() };
+    const curY2 = { A: y2ByPhase.A.slice(), B: y2ByPhase.B.slice(), C: y2ByPhase.C.slice() };
+    let curSpare = sparePool.slice();
+    const actions = [];
+
+    // Per-phase imbalance: |(sumY1_phase + lockedY1_phase) - (sumY2_phase + lockedY2_phase)|
+    function phaseImbalance(ph) {
+      const s1 = sumC(curY1[ph]) + (lockY1[ph] || 0);
+      const s2 = sumC(curY2[ph]) + (lockY2[ph] || 0);
+      return Math.abs(s1 - s2);
+    }
+    function totalImbalance() {
+      return PHASES.reduce((t, ph) => t + phaseImbalance(ph), 0);
+    }
+
+    let guard = 0;
+    while (actions.length < target && guard < 200) {
+      guard++;
+      // Find the single best same-phase swap across all phases
+      let best = null; // {phase, type, i, j/k, newImb, action}
+      for (const ph of PHASES) {
+        const a1 = curY1[ph], a2 = curY2[ph];
+        const baseImb = totalImbalance();
+        // exchange within phase: a1[i] <-> a2[j]
+        for (let i = 0; i < a1.length; i++) {
+          for (let j = 0; j < a2.length; j++) {
+            const s1 = sumC(a1) - a1[i].val + a2[j].val + (lockY1[ph]||0);
+            const s2 = sumC(a2) - a2[j].val + a1[i].val + (lockY2[ph]||0);
+            const newPhImb = Math.abs(s1 - s2);
+            const otherImb = baseImb - phaseImbalance(ph);
+            const newTotal = otherImb + newPhImb;
+            if (!best || newTotal < best.newImb - 1e-12 ||
+               (Math.abs(newTotal - best.newImb) <= 1e-12 && (a1[i].isOutlier || a2[j].isOutlier) && !best.touchesOutlier)) {
+              best = { phase: ph, type: 'exchange', i, j, newImb: newTotal,
+                       touchesOutlier: !!(a1[i].isOutlier || a2[j].isOutlier),
+                       action: { type:'exchange', from:a1[i], to:a2[j] } };
+            }
+          }
+        }
+        // replace from spare into Y1[ph] or Y2[ph]
+        for (let i = 0; i < a1.length; i++) {
+          for (let k = 0; k < curSpare.length; k++) {
+            const s1 = sumC(a1) - a1[i].val + curSpare[k].val + (lockY1[ph]||0);
+            const s2 = sumC(a2) + (lockY2[ph]||0);
+            const newTotal = (totalImbalance() - phaseImbalance(ph)) + Math.abs(s1 - s2);
+            if (!best || newTotal < best.newImb - 1e-12) {
+              best = { phase: ph, type: 'replace-y1', i, k, newImb: newTotal,
+                       touchesOutlier: !!a1[i].isOutlier,
+                       action: { type:'replace-y1', from:a1[i], to:curSpare[k] } };
+            }
+          }
+        }
+        for (let j = 0; j < a2.length; j++) {
+          for (let k = 0; k < curSpare.length; k++) {
+            const s1 = sumC(a1) + (lockY1[ph]||0);
+            const s2 = sumC(a2) - a2[j].val + curSpare[k].val + (lockY2[ph]||0);
+            const newTotal = (totalImbalance() - phaseImbalance(ph)) + Math.abs(s1 - s2);
+            if (!best || newTotal < best.newImb - 1e-12) {
+              best = { phase: ph, type: 'replace-y2', j, k, newImb: newTotal,
+                       touchesOutlier: !!a2[j].isOutlier,
+                       action: { type:'replace-y2', from:a2[j], to:curSpare[k] } };
+            }
+          }
+        }
+      }
+      if (!best) break;
+      if (best.newImb >= totalImbalance() - 1e-9) break; // no improvement
+      // Apply best. Reassign origin tags so a unit landing in a phase slot
+      // is correctly attributed to that phase by calcYYMetrics.
+      const ph = best.phase;
+      const tagY1 = ph;          // e.g. 'A'
+      const tagY2 = ph + "'";    // e.g. "A'"
+      if (best.type === 'exchange') {
+        const t = curY1[ph][best.i];
+        curY1[ph][best.i] = curY2[ph][best.j];
+        curY2[ph][best.j] = t;
+        // Retag both moved units to their new side/phase
+        curY1[ph][best.i] = Object.assign({}, curY1[ph][best.i], { origin: tagY1 });
+        curY2[ph][best.j] = Object.assign({}, curY2[ph][best.j], { origin: tagY2 });
+      } else if (best.type === 'replace-y1') {
+        const removed = curY1[ph][best.i];
+        const incoming = curSpare[best.k];
+        curY1[ph][best.i] = Object.assign({}, incoming, { origin: tagY1 });
+        curSpare[best.k] = Object.assign({}, removed, { origin: 'Spare' });
+      } else if (best.type === 'replace-y2') {
+        const removed = curY2[ph][best.j];
+        const incoming = curSpare[best.k];
+        curY2[ph][best.j] = Object.assign({}, incoming, { origin: tagY2 });
+        curSpare[best.k] = Object.assign({}, removed, { origin: 'Spare' });
+      }
+      actions.push(best.action);
+    }
+
+    const finalY1 = [...curY1.A, ...curY1.B, ...curY1.C];
+    const finalY2 = [...curY2.A, ...curY2.B, ...curY2.C];
+    results.push({
+      swapCount: target,
+      actualSwaps: actions.length,
+      diff: totalImbalance(),
+      y1: finalY1,
+      y2: finalY2,
+      spare: curSpare,
+      steps: actions.length ? actions.map(describeSwap) : ['ไม่มีการสับเปลี่ยนที่ลด Ino ได้']
+    });
+  }
+  const baseDiff = PHASES.reduce((t, ph) => {
+    const s1 = sumC(y1ByPhase[ph]) + (lockY1[ph]||0);
+    const s2 = sumC(y2ByPhase[ph]) + (lockY2[ph]||0);
+    return t + Math.abs(s1 - s2);
+  }, 0);
+  return { baseDiff, swaps: results };
+}
+
 function findBest1to3Swaps(origY1, origY2, origS, baseline) {
   // เปลี่ยนเป็น 2 / 4 / 6 swap levels — iterative greedy
   // baseline = { y1, y2 } sums of locked items (not swappable)
@@ -1495,8 +1644,18 @@ async function clientCalculate(payload) {
     const y2Tier2 = y2Flat.filter(x =>  x.isLocked);
 
     // ── Tier 1: focus on "วัดแยก" items + Spare ──
-    quickResult = findBest1to3Swaps(y1Tier1, y2Tier1, spare || []);
-    fullResult  = findBestFullSwap(y1Tier1, y2Tier1, spare || []);
+    // Build per-phase baseline from locked (Tier 2) items so the optimizer
+    // minimizes the ACTUAL per-phase Ino (matching calcYYMetrics & Excel).
+    function sumLockedByPhase(arr, prime) {
+      const m = { A: 0, B: 0, C: 0 };
+      arr.forEach(x => { const p = (x.origin||'').replace("'",''); if (m[p] !== undefined) m[p] += x.val; });
+      return m;
+    }
+    const lockedBaseline = {
+      y1ByPhase: sumLockedByPhase(y1Tier2, false),
+      y2ByPhase: sumLockedByPhase(y2Tier2, true)
+    };
+    quickResult = findPhaseAwareYYSwaps(y1Tier1, y2Tier1, spare || [], lockedBaseline);
 
     function computeAfter(swY1, swY2) {
       const fullY1 = [...swY1, ...y1Tier2];
@@ -1514,53 +1673,39 @@ async function clientCalculate(payload) {
       return sw;
     });
 
-    const fullR = computeAfter(fullResult.y1, fullResult.y2);
-    fullResult.engAfter = fullR.eng;
-    fullResult.Ino_mA = fullR.eng.Ino_mA;
-    fullResult.underThreshold = fullResult.Ino_mA < THRESHOLD_MA;
-    fullResult.y1Full = fullR.fullY1;
-    fullResult.y2Full = fullR.fullY2;
-    fullResult.tier = 1;
+    // "Full optimal" = the best (6-swap) phase-aware result
+    fullResult = Object.assign({}, quickResult.swaps[quickResult.swaps.length - 1]);
+    fullResult.swapCount = fullResult.actualSwaps;
 
     // ── Tier 2 FALLBACK ──
     // If best Tier 1 solution still exceeds threshold AND there are locked items,
-    // expand search space to swap locked items individually (ทีละตัว)
+    // include the locked (grouped) items as swappable too — still phase-aware,
+    // still individual swaps.
     const tier1Best = quickResult.swaps[quickResult.swaps.length - 1];
     const needFallback = !tier1Best.underThreshold && (y1Tier2.length + y2Tier2.length) > 0;
     if (needFallback) {
-      // Prepare Tier 2 arrays — each locked sub-unit swappable individually
-      const y1T2Prepared = prepareTier2Array(y1Tier2);
-      const y2T2Prepared = prepareTier2Array(y2Tier2);
-      const y1All = [...y1Tier1, ...y1T2Prepared];
-      const y2All = [...y2Tier1, ...y2T2Prepared];
-      const t2Quick = findBest1to3Swaps(y1All, y2All, spare || []);
-      const t2Full  = findBestFullSwap(y1All, y2All, spare || []);
+      // Now everything is swappable: no locked baseline offset
+      const y1All = [...y1Tier1, ...y1Tier2];
+      const y2All = [...y2Tier1, ...y2Tier2];
+      const t2 = findPhaseAwareYYSwaps(y1All, y2All, spare || [], { y1ByPhase:{A:0,B:0,C:0}, y2ByPhase:{A:0,B:0,C:0} });
 
-      // Unpack pair results back to individual items for metrics calc
-      t2Quick.swaps.forEach(sw => {
-        sw.y1 = unpackTier2Result(sw.y1);
-        sw.y2 = unpackTier2Result(sw.y2);
+      t2.swaps.forEach(sw => {
         sw.engAfter = calcYYMetrics(sw.y1, sw.y2, kv);
         sw.Ino_mA = sw.engAfter.Ino_mA;
         sw.underThreshold = sw.Ino_mA < THRESHOLD_MA;
         sw.y1Full = sw.y1; sw.y2Full = sw.y2;
         sw.tier = 2;
       });
-      t2Full.y1 = unpackTier2Result(t2Full.y1);
-      t2Full.y2 = unpackTier2Result(t2Full.y2);
-      t2Full.engAfter = calcYYMetrics(t2Full.y1, t2Full.y2, kv);
-      t2Full.Ino_mA = t2Full.engAfter.Ino_mA;
-      t2Full.underThreshold = t2Full.Ino_mA < THRESHOLD_MA;
-      t2Full.y1Full = t2Full.y1; t2Full.y2Full = t2Full.y2;
-      t2Full.tier = 2;
 
-      // Replace each quick swap with tier-2 version if it gives lower Ino
+      // For each level, keep whichever (Tier 1 vs Tier 2) gives lower Ino
       quickResult.swaps = quickResult.swaps.map((sw, i) => {
-        const t2 = t2Quick.swaps[i];
-        return (t2.Ino_mA < sw.Ino_mA) ? t2 : sw;
+        const cand = t2.swaps[i];
+        return (cand && cand.Ino_mA < sw.Ino_mA) ? cand : sw;
       });
-      if (t2Full.Ino_mA < fullResult.Ino_mA) {
-        Object.assign(fullResult, t2Full);
+      const t2Best = t2.swaps[t2.swaps.length - 1];
+      if (t2Best && t2Best.Ino_mA < fullResult.Ino_mA) {
+        fullResult = Object.assign({}, t2Best);
+        fullResult.swapCount = t2Best.actualSwaps;
       }
       quickResult.fallbackUsed = true;
     }
@@ -2063,27 +2208,44 @@ function buildYYFormulas(vals, m) {
     final('B<sub>2</sub> = ' + r(F.S(B2)) + ' &nbsp; (siemens)')
   );
 
-  // Step 4: Vno (Millman's Theorem simplified for 2-source)
+  // Step 4: Per-phase susceptance + Ino (matches calcYYMetrics exactly)
+  const pp = m.perPhase || {};
+  function phaseRows() {
+    let rows = [];
+    ['A','B','C'].forEach(ph => {
+      const p = pp[ph];
+      if (!p) return;
+      const b1 = (p.B_y1*1e6), b2 = (p.B_y2*1e6);
+      const dB = Math.abs(b1 - b2);
+      rows.push(
+        eq(`<b>เฟส ${ph}:</b> B<sub>Y1,${ph}</sub> = ` + n(b1.toFixed(3)) + ' µS, &nbsp; B<sub>Y2,' + ph + '</sub> = ' + n(b2.toFixed(3)) + ' µS'),
+        eq(`&nbsp;&nbsp;&nbsp; I<sub>no,${ph}</sub> = V<sub>ph</sub> × |B<sub>Y1</sub> − B<sub>Y2</sub>| = ` + n(F.V(Vph)) + ' × ' + n(dB.toFixed(3)) + ' µS'),
+        final(`&nbsp;&nbsp;&nbsp; I<sub>no,${ph}</sub> = ` + r(F.mA(p.Ino_mA)) + ' mA')
+      );
+    });
+    return rows;
+  }
   html += fStep(4,
-    'แรงดันที่จุด Neutral (Vno)',
-    'Millman',
-    'จากความไม่สมดุลของ B<sub>1</sub> กับ B<sub>2</sub> เกิดแรงดันเบี่ยงที่ neutral floating',
-    sym('V<sub>no</sub> = (V<sub>ph</sub> / (B₁+B₂)) · |B₁ − B₂|'),
-    eq('V<sub>no</sub> = (' + n(F.V(Vph)) + ' / (' + n((B1*1e6).toFixed(3)) + '+' + n((B2*1e6).toFixed(3)) + ')) ' + op('×') + ' |' + n((B1*1e6).toFixed(3)) + ' − ' + n((B2*1e6).toFixed(3)) + '| µS'),
-    eq('V<sub>no</sub> = (' + n(F.V(Vph)) + ' / ' + n(((B1+B2)*1e6).toFixed(3)) + ') ' + op('×') + ' ' + n((Math.abs(B1-B2)*1e6).toFixed(3))),
-    final('V<sub>no</sub> = ' + r(F.V(m.Vno)) + ' V')
+    'กระแสไม่สมดุลของแต่ละเฟส ที่ ground point',
+    'I_no,phase = V_ph · |B_Y1 − B_Y2|',
+    'คิดทีละเฟส: แต่ละเฟสมีกิ่ง Y1 และ Y2 ของตัวเอง ความต่างของ susceptance ทำให้เกิดกระแสไหลที่จุด neutral ของเฟสนั้น',
+    sym('B<sub>phase</sub> = 2π · f · C<sub>phase</sub>'),
+    sym('I<sub>no,phase</sub> = V<sub>ph</sub> · |B<sub>Y1,phase</sub> − B<sub>Y2,phase</sub>|'),
+    eq(''),
+    ...phaseRows()
   );
 
-  // Step 5: Ino
-  const InoCls = m.Ino_mA > 10 ? 'bad' : m.Ino_mA > 1 ? 'warn' : 'good';
+  // Step 5: Sum at CT (N1-N2)
+  const InoA = pp.A ? pp.A.Ino_mA : 0;
+  const InoB = pp.B ? pp.B.Ino_mA : 0;
+  const InoC = pp.C ? pp.C.Ino_mA : 0;
   html += fStep(5,
-    'กระแสไม่สมดุลที่ Neutral (Ino)',
-    'KCL',
-    'กระแสที่รีเลย์ตรวจจับ (สำหรับตั้งค่า 59N alarm/trip)',
-    sym('I<sub>no</sub> = V<sub>no</sub> · (B₁ + B₂)'),
-    eq('I<sub>no</sub> = ' + n(F.V(m.Vno)) + ' ' + op('×') + ' ' + n(((B1+B2)*1e6).toFixed(3)) + ' µS'),
-    eq('I<sub>no</sub> = ' + n(F.A(m.Ino_mA/1000)) + ' A'),
-    final('I<sub>no</sub> = ' + r(F.mA(m.Ino_mA)) + ' mA')
+    'กระแสรวมที่ CT (ระหว่าง N1-N2)',
+    'I_no,CT = Σ I_no,phase',
+    'CT ที่คล้องระหว่าง neutral ทั้งสองฝั่งจะอ่านผลรวมของกระแสไม่สมดุลทุกเฟส — ค่านี้คือค่าที่ใช้ตั้ง 60P/59N alarm (เกณฑ์ 5 mA)',
+    sym('I<sub>no,CT</sub> = I<sub>no,A</sub> + I<sub>no,B</sub> + I<sub>no,C</sub>'),
+    eq('I<sub>no,CT</sub> = ' + n(InoA.toFixed(3)) + ' + ' + n(InoB.toFixed(3)) + ' + ' + n(InoC.toFixed(3)) + ' mA'),
+    final('I<sub>no,CT</sub> = ' + r(F.mA(m.Ino_mA)) + ' mA' + (m.Ino_mA < 5 ? ' ✓ (< 5 mA)' : ' ⚠ (≥ 5 mA)'))
   );
 
   // Step 6: Q
@@ -2362,11 +2524,28 @@ function renderResults(vals,result){
     ? `<div class="locked-note"><i class="fas fa-lock"></i> ${quickResult.lockedNote}</div>`
     : '';
   document.getElementById('tabQuick').innerHTML = lockedBanner +
-    quickResult.swaps.map((sw,i)=>buildSolCard(defs[i].cls,`${defs[i].icon} สับเปลี่ยน ${defs[i].label} — ${defs[i].desc}`,sw,true,topology)).join('');
+    quickResult.swaps.map((sw,i)=>{
+      const target = [2,4,6][i];
+      const actual = (sw.actualSwaps != null) ? sw.actualSwaps : target;
+      // Show actual count; note when fewer swaps than target were enough
+      let label;
+      if (actual === 0) {
+        label = `${defs[i].icon} ลองสับสูงสุด ${target} ครั้ง — ไม่มีการสับที่ช่วยลด Ino`;
+      } else if (actual < target) {
+        label = `${defs[i].icon} สับ ${actual} ครั้ง (พอแล้ว — ตั้งเป้า ${target}) — ${defs[i].desc}`;
+      } else {
+        label = `${defs[i].icon} สับเปลี่ยน ${actual} ครั้ง — ${defs[i].desc}`;
+      }
+      return buildSolCard(defs[i].cls, label, sw, true, topology);
+    }).join('');
 
   // Full
-  const fullSw={diff:fullResult.diff,y1:fullResult.y1,y2:fullResult.y2,y1Full:fullResult.y1Full,y2Full:fullResult.y2Full,engAfter:fullResult.engAfter,underThreshold:fullResult.underThreshold,steps:[`จัดเรียงใหม่ทั้งหมด ${fullResult.swapCount} กระป๋อง — ได้ความสมดุลสูงสุด`]};
-  document.getElementById('tabFull').innerHTML = lockedBanner + buildSolCard('full','🏆 จัดชุดสมบูรณ์แบบ (Optimal)',fullSw,false,topology);
+  const fullSteps = (fullResult.steps && fullResult.steps.length)
+    ? fullResult.steps
+    : [`จัดเรียงใหม่ ${fullResult.swapCount||fullResult.actualSwaps||0} ครั้ง — ได้ Ino ต่ำสุด`];
+  const fullSw={diff:fullResult.diff,y1:fullResult.y1,y2:fullResult.y2,y1Full:fullResult.y1Full,y2Full:fullResult.y2Full,engAfter:fullResult.engAfter,underThreshold:fullResult.underThreshold,actualSwaps:fullResult.actualSwaps,steps:fullSteps};
+  const fullTitle = `🏆 ดีที่สุด — สับ ${fullResult.actualSwaps!=null?fullResult.actualSwaps:(fullResult.swapCount||0)} ครั้ง (Ino ต่ำสุด)`;
+  document.getElementById('tabFull').innerHTML = lockedBanner + buildSolCard('full',fullTitle,fullSw,true,topology);
 
   switchCalcView('metrics');
   switchTab('quick');
