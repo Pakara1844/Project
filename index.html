@@ -1002,8 +1002,8 @@ function calcYYMetrics(y1, y2, systemKV) {
   const CA1 = phaseC(y1, ['A']),  CB1 = phaseC(y1, ['B']),  CC1 = phaseC(y1, ['C']);
   const CA2 = phaseC(y2, ["A'"]), CB2 = phaseC(y2, ["B'"]), CC2 = phaseC(y2, ["C'"]);
 
-  // Susceptances (siemens)
-  const toS = c => 2 * Math.PI * F_HZ * c / 1e6;
+  // Susceptances (siemens). PI2F = 2π·f is declared in this same script block.
+  const toS = c => PI2F * c / 1e6;
   const S1 = toS(CA1), S2 = toS(CB1), S3 = toS(CC1);   // wye-1 A,B,C
   const S4 = toS(CA2), S5 = toS(CB2), S6 = toS(CC2);   // wye-2 A,B,C
   const sumS = S1 + S2 + S3 + S4 + S5 + S6;
