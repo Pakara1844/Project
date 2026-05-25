@@ -795,7 +795,7 @@ body {
         <i class="fas fa-moon icon-dark"></i>
         <i class="fas fa-sun icon-light"></i>
       </button>
-      <div class="ver-badge">v5.0</div>
+      <div class="ver-badge">v5.3</div>
     </div>
   </header>
 
@@ -935,7 +935,7 @@ body {
     <div class="calc-view" id="viewFormulas"><div id="formulaSection"></div></div>
     <div class="calc-view" id="viewResults">
       <div class="tab-bar">
-        <button class="tab" data-tab="quick" onclick="switchTab('quick')"><i class="fas fa-bolt"></i>&nbsp;Quick Mode (2–6 สับ)</button>
+        <button class="tab" data-tab="quick" onclick="switchTab('quick')"><i class="fas fa-bolt"></i>&nbsp;Quick Mode (อัตโนมัติ + 2/4/6)</button>
         <button class="tab" data-tab="full" onclick="switchTab('full')"><i class="fas fa-magic"></i>&nbsp;Full Optimal</button>
       </div>
       <div id="tabQuick" class="tab-panel"></div>
@@ -991,13 +991,18 @@ function calcYYMetrics(y1, y2, systemKV) {
   const VphV  = (systemKV * 1000) / Math.sqrt(3); // V — for any legacy display use
 
   // Capacitance per phase per wye (µF). origin A/B/C = wye-1, A'/B'/C' = wye-2.
+  // PHYSICAL MODEL: within each phase the capacitor units are in SERIES, so the
+  // effective phase capacitance = 1 / Σ(1/Cᵢ)  — matching the EGAT Excel
+  // "C-Bank Arrangement" sheet (Cphase = 1/(ΣBC)). This is NOT a parallel sum.
   function phaseC(arr, origins) {
-    let c = 0;
+    let invSum = 0, n = 0;
     arr.forEach(item => {
       const o = (item.origin || '').replace("'", '');
-      if (origins.some(org => org.replace("'", '') === o || item.origin === org)) c += item.val;
+      if (origins.some(org => org.replace("'", '') === o || item.origin === org)) {
+        if (item.val > 0) { invSum += 1 / item.val; n++; }
+      }
     });
-    return c;
+    return invSum > 0 ? 1 / invSum : 0;   // series combination
   }
   const CA1 = phaseC(y1, ['A']),  CB1 = phaseC(y1, ['B']),  CC1 = phaseC(y1, ['C']);
   const CA2 = phaseC(y2, ["A'"]), CB2 = phaseC(y2, ["B'"]), CC2 = phaseC(y2, ["C'"]);
@@ -2101,8 +2106,8 @@ const F = {
   raw: (v,d) => Number(v).toFixed(d===undefined?4:d)
 };
 
-const F_HZ = 50;
-const PI2F = 2 * Math.PI * F_HZ;
+const F_HZ = 50;                 // system frequency (Hz)
+const PI2F = 2 * Math.PI * 50;   // ω = 2πf, self-contained (no cross-block dep)
 
 /** Render formula step block */
 function fStep(num, title, tag, desc, ...lines) {
@@ -2205,10 +2210,11 @@ function buildYYFormulas(vals, m) {
     return rows;
   }
   html += fStep(4,
-    'ความนำ Susceptance ของแต่ละเฟส (S = 2πf·C)',
-    'S = 2π · f · C',
-    'แปลงค่าความจุแต่ละเฟสของทั้งสองกิ่ง (Y1: S₁S₂S₃, Y2: S₄S₅S₆) เป็น susceptance หน่วยซีเมนส์',
-    sym('S<sub>k</sub> = 2π · f · C<sub>k</sub> / 10⁶'),
+    'ความจุรวมต่อเฟส (อนุกรม) → Susceptance',
+    'Cphase = 1/Σ(1/Cᵢ),  S = 2πf·Cphase',
+    'ตัวเก็บประจุในแต่ละเฟสต่อแบบอนุกรม จึงรวมเป็น Cphase = 1/Σ(1/Cᵢ) (ไม่ใช่บวกตรง) แล้วแปลงเป็น susceptance — ตรงกับ Excel แผ่น C-Bank Arrangement',
+    sym('C<sub>phase</sub> = 1 / Σ(1/C<sub>i</sub>)  &nbsp;(อนุกรม)'),
+    sym('S = 2π · f · C<sub>phase</sub> / 10⁶'),
     eq(''),
     ...susRows()
   );
@@ -2407,14 +2413,15 @@ function buildEngPanelFull(title,m,topology){
   } else {
     const c=m.Ino_mA>5?'bad':m.Ino_mA>1?'warn':'good';
     items=[
-      {l:'Σ C (Y1)',v:F2.uF(m.C1_uF),u:'µF',c:'hi-blue',vc:'hi'},
-      {l:'Σ C (Y2)',v:F2.uF(m.C2_uF),u:'µF',c:'hi-amber',vc:'warn'},
+      {l:'C เฟส A (อนุกรม Y1/Y2)',v:(m.perPhase.A.C1).toFixed(3)+' / '+(m.perPhase.A.C2).toFixed(3),u:'µF',c:'hi-blue',vc:''},
+      {l:'C เฟส B (อนุกรม Y1/Y2)',v:(m.perPhase.B.C1).toFixed(3)+' / '+(m.perPhase.B.C2).toFixed(3),u:'µF',c:'hi-blue',vc:''},
+      {l:'C เฟส C (อนุกรม Y1/Y2)',v:(m.perPhase.C.C1).toFixed(3)+' / '+(m.perPhase.C.C2).toFixed(3),u:'µF',c:'hi-blue',vc:''},
     ];
     // Susceptance per phase (siemens) — wye-1 vs wye-2
     if (m.perPhase && m.S) {
       const Spairs = [['A','S1','S4'],['B','S2','S5'],['C','S3','S6']];
       Spairs.forEach(([ph,k1,k2]) => {
-        items.push({l:'S '+ph+' (Y1/Y2)',v:(m.S[k1]*1000).toFixed(3)+' / '+(m.S[k2]*1000).toFixed(3),u:'mS',c:'hi-blue',vc:''});
+        items.push({l:'S '+ph+' (Y1/Y2)',v:(m.S[k1]*1000).toFixed(3)+' / '+(m.S[k2]*1000).toFixed(3),u:'mS',c:'hi-amber',vc:''});
       });
     }
     items.push({l:'V_no (เฟสเซอร์)',v:F2.V(m.Vno),u:'V',c:'hi-amber',vc:'warn'});
@@ -2496,37 +2503,55 @@ function renderResults(vals,result){
       :buildYYFormulas(vals,engBefore);
   }
 
-  // Quick
-  const defs=[
-    {cls:'s1',icon:'⚡',label:'2 ครั้ง',desc:'สับน้อย'},
-    {cls:'s2',icon:'🔄',label:'4 ครั้ง',desc:'สมดุลขึ้น'},
-    {cls:'s3',icon:'🔧',label:'6 ครั้ง',desc:'Ino ต่ำที่สุดใน Quick Mode'},
-  ];
-  // Mark the best swap that meets threshold
+  // ── Quick Mode = AUTO: fewest swaps that reach the lowest Ino ──
+  // The 2/4/6 cards are explicit fixed-count options the field worker can pick.
   if (quickResult.bestUnderThreshold !== null) {
     quickResult.swaps[quickResult.bestUnderThreshold].isRecommended = true;
   }
-  // Show locked note if any
   const lockedBanner = quickResult.lockedNote
     ? `<div class="locked-note"><i class="fas fa-lock"></i> ${quickResult.lockedNote}</div>`
     : '';
-  document.getElementById('tabQuick').innerHTML = lockedBanner +
-    quickResult.swaps.map((sw,i)=>{
-      const target = [2,4,6][i];
-      const actual = (sw.actualSwaps != null) ? sw.actualSwaps : target;
-      // Show actual count; note when fewer swaps than target were enough
-      let label;
-      if (actual === 0) {
-        label = `${defs[i].icon} ลองสับสูงสุด ${target} ครั้ง — ไม่มีการสับที่ช่วยลด Ino`;
-      } else if (actual < target) {
-        label = `${defs[i].icon} สับ ${actual} ครั้ง (พอแล้ว — ตั้งเป้า ${target}) — ${defs[i].desc}`;
-      } else {
-        label = `${defs[i].icon} สับเปลี่ยน ${actual} ครั้ง — ${defs[i].desc}`;
-      }
-      return buildSolCard(defs[i].cls, label, sw, true, topology);
-    }).join('');
 
-  // Full
+  // Find the AUTO best: the swap option with lowest Ino, using fewest swaps to get there.
+  // (If 2 swaps already reaches the minimum Ino, don't show 4 or 6 as "better".)
+  let autoIdx = 0, autoIno = Infinity, autoSwaps = Infinity;
+  quickResult.swaps.forEach((sw,i)=>{
+    const ino = sw.Ino_mA != null ? sw.Ino_mA : (sw.engAfter ? (topology==='h-bridge'?sw.engAfter.In_mA:sw.engAfter.Ino_mA) : Infinity);
+    const ns = sw.actualSwaps != null ? sw.actualSwaps : [2,4,6][i];
+    // prefer lower Ino; tie-break on fewer actual swaps
+    if (ino < autoIno - 1e-6 || (Math.abs(ino-autoIno)<=1e-6 && ns < autoSwaps)) {
+      autoIno = ino; autoSwaps = ns; autoIdx = i;
+    }
+  });
+  const autoSw = quickResult.swaps[autoIdx];
+  const autoTitle = `⭐ Quick Mode (อัตโนมัติ) — สับ ${autoSw.actualSwaps} ครั้ง ได้ Ino ต่ำสุด`;
+  const autoCard = buildSolCard('s1', autoTitle, Object.assign({}, autoSw, {isRecommended:true}), true, topology);
+
+  const fixedDefs=[
+    {cls:'s2',icon:'2️⃣',n:2,desc:'สับ 2 ครั้ง'},
+    {cls:'s2',icon:'4️⃣',n:4,desc:'สับ 4 ครั้ง'},
+    {cls:'s3',icon:'6️⃣',n:6,desc:'สับ 6 ครั้ง'},
+  ];
+  const fixedCards = quickResult.swaps.map((sw,i)=>{
+    const target=[2,4,6][i];
+    const actual=(sw.actualSwaps!=null)?sw.actualSwaps:target;
+    let label;
+    if (actual===0) label = `${fixedDefs[i].icon} ตัวเลือก ${target} ครั้ง — ไม่มีการสับที่ช่วยลด Ino`;
+    else if (actual<target) label = `${fixedDefs[i].icon} ตัวเลือก ${target} ครั้ง (ใช้จริง ${actual} ครั้งก็พอ)`;
+    else label = `${fixedDefs[i].icon} ตัวเลือก ${target} ครั้ง`;
+    return buildSolCard(fixedDefs[i].cls, label, sw, true, topology);
+  }).join('');
+
+  const quickIntro = `<div class="locked-note" style="background:var(--green-soft,#e8f5e9);border-color:var(--green,#4caf50);">
+    <i class="fas fa-bolt"></i> <b>Quick Mode</b> เลือกการสับที่ทำให้ Ino ต่ำสุดโดยใช้จำนวนครั้งน้อยที่สุดให้อัตโนมัติ ·
+    ด้านล่างเป็นตัวเลือกแบบกำหนดจำนวน 2 / 4 / 6 ครั้ง ให้หน้างานเลือกใช้ได้เลย</div>`;
+
+  document.getElementById('tabQuick').innerHTML = lockedBanner + quickIntro + autoCard +
+    `<div style="margin:18px 0 8px;font-weight:700;color:var(--txt2,#555);font-size:0.95rem;">
+      <i class="fas fa-hand-pointer"></i> ตัวเลือกแบบกำหนดจำนวนครั้ง (เลือกได้ตามสะดวกหน้างาน)</div>` +
+    fixedCards;
+
+  // Full tab = same auto-best (kept for compatibility / Excel export)
   const fullSteps = (fullResult.steps && fullResult.steps.length)
     ? fullResult.steps
     : [`จัดเรียงใหม่ ${fullResult.swapCount||fullResult.actualSwaps||0} ครั้ง — ได้ Ino ต่ำสุด`];
