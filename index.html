@@ -795,7 +795,7 @@ body {
         <i class="fas fa-moon icon-dark"></i>
         <i class="fas fa-sun icon-light"></i>
       </button>
-      <div class="ver-badge">v5.3</div>
+      <div class="ver-badge">v5.4</div>
     </div>
   </header>
 
@@ -2154,18 +2154,29 @@ function buildYYFormulas(vals, m) {
       ความถี่ ${F_HZ} Hz
     </div>`;
 
-  // Step 1: Sum C
+  // Step 1: Per-phase series capacitance (matches calcYYMetrics)
+  const pp0 = m.perPhase || {};
+  function seriesRows() {
+    let rows = [];
+    [['A','C1'],['B','C1'],['C','C1']].forEach(([ph]) => {
+      const p = pp0[ph]; if (!p) return;
+      // count units per phase per wye
+      const n1 = vals.y1.filter(x=>(x.origin||'').replace("'","")===ph).length;
+      const n2 = vals.y2.filter(x=>(x.origin||'').replace("'","")===ph).length;
+      rows.push(
+        eq(`<b>เฟส ${ph}:</b> Y1 มี ${n1} ตัว → C<sub>Y1</sub> = 1/Σ(1/Cᵢ) = ` + n(p.C1.toFixed(4)) + ' µF, &nbsp; ' +
+           `Y2 มี ${n2} ตัว → C<sub>Y2</sub> = ` + n(p.C2.toFixed(4)) + ' µF')
+      );
+    });
+    return rows;
+  }
   html += fStep(1,
-    'รวมค่าความจุของแต่ละกิ่ง',
-    'Σ C',
-    'นำค่าที่กรอกในแต่ละกิ่งมารวมกัน (ขนาน)',
-    sym('C₁ = ' + n('C') + '<sub>1.1</sub> ' + op('+') + ' ' + n('C') + '<sub>1.2</sub> ' + op('+') + ' ... ' + op('+') + ' ' + n('C') + '<sub>1.n</sub>'),
-    eq('C₁ = ' + n(y1Sum) + ' &nbsp; µF'),
-    final('C₁ = ' + r(F.uF(sumY1)) + ' µF'),
+    'ความจุรวมต่อเฟส (ต่ออนุกรม)',
+    'Cphase = 1/Σ(1/Cᵢ)',
+    'ตัวเก็บประจุในแต่ละเฟสต่อแบบอนุกรม จึงรวมด้วย Cphase = 1/Σ(1/Cᵢ) — ไม่ใช่บวกตรงๆ (ตรงกับ Excel C-Bank Arrangement)',
+    sym('C<sub>phase</sub> = 1 / ( 1/C₁ + 1/C₂ + ... + 1/C<sub>n</sub> )'),
     eq(''),
-    sym('C₂ = ' + n('C') + '<sub>2.1</sub> ' + op('+') + ' ' + n('C') + '<sub>2.2</sub> ' + op('+') + ' ... ' + op('+') + ' ' + n('C') + '<sub>2.n</sub>'),
-    eq('C₂ = ' + n(y2Sum) + ' &nbsp; µF'),
-    final('C₂ = ' + r(F.uF(sumY2)) + ' µF')
+    ...seriesRows()
   );
 
   // Step 2: Phase voltage
@@ -2175,25 +2186,9 @@ function buildYYFormulas(vals, m) {
     'ระบบ 3 เฟสสมดุล แรงดันเฟส = แรงดันสาย ÷ √3',
     sym('V<sub>ph</sub> = V<sub>S</sub> / √3'),
     eq('V<sub>ph</sub> = ' + n(F.raw(Vs,0)) + ' V ' + op('/') + ' √3'),
-    eq('V<sub>ph</sub> = ' + n(F.raw(Vs,0)) + ' ' + op('/') + ' ' + n('1.7321')),
     final('V<sub>ph</sub> = ' + r(F.V(Vph)) + ' V ≈ ' + r(F.kV(Vph)) + ' kV')
   );
-
-  // Step 3: Susceptance B
-  html += fStep(3,
-    'แปลงค่าความจุเป็น Susceptance',
-    'B = ωC',
-    'ความนำเชิงรีแอคทีฟของตัวเก็บประจุที่ความถี่ระบบ — ใช้แทน Reactance เพราะรวมแบบขนานได้ตรง',
-    sym('B = 2π · f · C'),
-    eq('B = 2π ' + op('×') + ' ' + n(F.Hz(F_HZ)) + ' ' + op('×') + ' C ' + op('×') + ' 10⁻⁶'),
-    eq('B = ' + n(PI2F.toFixed(4)) + ' ' + op('×') + ' C(µF) ' + op('×') + ' 10⁻⁶'),
-    eq(''),
-    eq('B<sub>1</sub> = ' + n(PI2F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumY1)) + ' ' + op('×') + ' 10⁻⁶'),
-    final('B<sub>1</sub> = ' + r(F.S(B1)) + ' &nbsp; (siemens)'),
-    eq(''),
-    eq('B<sub>2</sub> = ' + n(PI2F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumY2)) + ' ' + op('×') + ' 10⁻⁶'),
-    final('B<sub>2</sub> = ' + r(F.S(B2)) + ' &nbsp; (siemens)')
-  );
+  // (Step 3 parallel-susceptance removed — Step 4 computes per-phase S directly)
 
   // Step 4: Per-phase susceptance (siemens), wye-1 = S1,S2,S3 / wye-2 = S4,S5,S6
   const S = m.S || {};
