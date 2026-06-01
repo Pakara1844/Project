@@ -15,6 +15,14 @@
       document.documentElement.setAttribute('data-theme', t);
     })();
   </script>
+  <!-- ==== theme-init.js ==== -->
+  <script>
+(function(){
+      const t = localStorage.getItem('cbank-theme') || 'light';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+
+  </script>
   <style>
 /* ============================================================
    EGAT C-Bank Optimizer v5 — Modern Dual-Theme UI
@@ -632,6 +640,32 @@ body {
 }
 .ino-badge.pass { background:var(--green-soft); color:var(--green); border:1.5px solid var(--green); }
 .ino-badge.fail { background:var(--red-soft); color:var(--red); border:1.5px solid var(--red); }
+.ino-badge small { font-size:0.72rem; font-weight:600; opacity:0.85; }
+
+/* ── Big before → after result summary (field-worker friendly) ── */
+.result-summary {
+  border-radius:var(--r); padding:18px 16px; margin-bottom:18px;
+  border:2px solid var(--border); text-align:center;
+  display:flex; flex-direction:column; align-items:center; gap:12px;
+}
+.result-summary.rs-pass { background:var(--green-soft); border-color:var(--green); }
+.result-summary.rs-fail { background:var(--red-soft);   border-color:var(--red); }
+.rs-verdict {
+  font-size:1.5rem; font-weight:800; display:flex; align-items:center; gap:10px;
+}
+.rs-pass .rs-verdict { color:var(--green); }
+.rs-fail .rs-verdict { color:var(--red); }
+.rs-flow { display:flex; align-items:center; gap:18px; flex-wrap:wrap; justify-content:center; }
+.rs-cell { display:flex; flex-direction:column; gap:2px; min-width:110px; }
+.rs-cap { font-size:0.78rem; color:var(--txt2); font-weight:600; }
+.rs-num {
+  font-family:var(--mono); font-size:1.9rem; font-weight:800; line-height:1;
+}
+.rs-num span { font-size:0.85rem; font-weight:600; margin-left:3px; opacity:0.8; }
+.rs-num.rs-safe   { color:var(--green); }
+.rs-num.rs-danger { color:var(--red); }
+.rs-arrow { font-size:1.4rem; color:var(--txt3); }
+.rs-note { font-size:0.8rem; color:var(--txt2); }
 .delta-badge-mini {
   font-family:var(--mono); font-size:0.72rem; color:var(--txt3);
   background:var(--bg3); padding:4px 10px; border-radius:99px;
@@ -795,7 +829,7 @@ body {
         <i class="fas fa-moon icon-dark"></i>
         <i class="fas fa-sun icon-light"></i>
       </button>
-      <div class="ver-badge">v5.4</div>
+      <div class="ver-badge">v5.5</div>
     </div>
   </header>
 
@@ -877,8 +911,8 @@ body {
           <strong>วิธีกรอก:</strong> กรอกจำนวนช่องของแต่ละกิ่ง/leg แยกกัน → กดสร้าง → กรอกค่า C<br>
           • <strong>☑ ต่อขนาน (ระดับฝั่ง)</strong> = ทั้งฝั่งนี้ C ต่อขนานคู่ → ระบบ ÷2 ค่าทุกตัวอัตโนมัติ<br>
           • <strong>✂ กรรไกร (รายตัว)</strong> = แค่ตัวนี้วัดแยกได้ → ขยายเป็น 2 ช่อง กรอกค่าจริง (override ÷2)<br>
-          • Algorithm จะสลับ <strong>เฉพาะตัวที่กดกรรไกร + Spare</strong> ก่อน — ถ้า Ino ยังเกิน 5mA จึงขยายไปสลับตัวอื่น
-          • <strong>Spare = ตัวเดี่ยวเสมอ</strong> — การสับเปลี่ยนทำเป็นรายตัว ถ้า Ino > 5mA ระบบจะหาทางลดให้ต่ำกว่า 5mA
+          • Algorithm จะสลับ <strong>เฉพาะตัวที่กดกรรไกร + Spare</strong> ก่อน — ถ้า Ino ยังเกิน 50mA จึงขยายไปสลับตัวอื่น
+          • <strong>Spare = ตัวเดี่ยวเสมอ</strong> — การสับเปลี่ยนทำเป็นรายตัว ถ้า Ino > 50mA ระบบจะหาทางลดให้ต่ำกว่า 50mA
         </div>
       </div>
 
@@ -949,7 +983,21 @@ body {
 
 </div>
 
-<script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  <!-- ==== calculator.js ==== -->
+  <script>
 // ═══════════════════════════════════════
 // CALCULATOR (server-side logic, now client-side)
 // ═══════════════════════════════════════
@@ -960,6 +1008,11 @@ body {
 'use strict';
 
 const PI2F = 2 * Math.PI * 50; // ω = 2πf, f=50Hz
+
+// CT relay-alarm threshold (mA). Single source of truth — UI, formulas and the
+// swap optimizer all read this so the "pass/fail" line is consistent everywhere.
+const ALARM_MA = 50.0;
+if (typeof window !== 'undefined') window.ALARM_MA = ALARM_MA;
 
 function sumC(arr) { return arr.reduce((t, c) => t + c.val, 0); }
 
@@ -1176,14 +1229,23 @@ function phaseOf(item, isY2) {
 }
 
 function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, lockedY1Arr, lockedY2Arr) {
-  // Scores candidates by the ACTUAL phasor Ino (calcYYMetrics), matching Excel.
-  // lockedY1Arr / lockedY2Arr = the locked (non-swappable) units, included in
-  // every Ino evaluation but never moved.
+  // BEAM SEARCH over swap sequences, scored by the ACTUAL phasor Ino
+  // (calcYYMetrics — matches Excel exactly). Replaces the old single-step
+  // greedy, which got stuck in local minima: there are many real banks where
+  // NO single swap lowers Ino but a PAIR of swaps does. Greedy returned "no
+  // swap" in ~1 of 4 random unbalanced banks (the "ไม่สลับทั้งที่มีตัวเลือกดีกว่า"
+  // bug). Beam search keeps the best `BEAM` partial solutions at every depth so
+  // it can move *through* a temporarily-worse state to reach a better one.
+  //
+  // lockedY1Arr / lockedY2Arr = locked (non-swappable) units, always included in
+  // each Ino evaluation but never moved. Swaps stay WITHIN a phase (A↔A', …) or
+  // pull from the Spare pool, so a capacitor never leaves its phase.
   const PHASES = ['A', 'B', 'C'];
   const targets = [2, 4, 6];
   const kv = systemKV || 69;
   const lockY1 = lockedY1Arr || [];
   const lockY2 = lockedY2Arr || [];
+  const MAXDEPTH = 6;
 
   function bucket(arr) {
     const m = { A: [], B: [], C: [] };
@@ -1192,92 +1254,120 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   }
   const y1ByPhase = bucket(y1Swap);
   const y2ByPhase = bucket(y2Swap);
-  let sparePool = (spare || []).slice();
+  const sparePool = (spare || []).slice();
 
-  // Evaluate real Ino for a candidate set of per-phase arrays
+  // Adaptive search width. When the candidate space is small we keep ALL depth-1
+  // states so the 2-swap optimum is found EXACTLY (the budget the field worker
+  // uses most); otherwise we cap to keep one calculation well under a second.
+  const nSingles = PHASES.reduce((t, ph) =>
+    t + y1ByPhase[ph].length * y2ByPhase[ph].length +
+    (y1ByPhase[ph].length + y2ByPhase[ph].length) * sparePool.length, 0);
+  const small = nSingles <= 200;
+  const KEEP1 = small ? Math.max(nSingles, 1) : 60;
+  const BEAM  = small ? 40 : 24;
+
   function inoOf(cY1, cY2) {
     const fullY1 = [...cY1.A, ...cY1.B, ...cY1.C, ...lockY1];
     const fullY2 = [...cY2.A, ...cY2.B, ...cY2.C, ...lockY2];
     return calcYYMetrics(fullY1, fullY2, kv).Ino_mA;
   }
-
   const baseIno = inoOf(y1ByPhase, y2ByPhase);
 
-  const results = [];
-  for (const target of targets) {
-    const curY1 = { A: y1ByPhase.A.slice(), B: y1ByPhase.B.slice(), C: y1ByPhase.C.slice() };
-    const curY2 = { A: y2ByPhase.A.slice(), B: y2ByPhase.B.slice(), C: y2ByPhase.C.slice() };
-    let curSpare = sparePool.slice();
-    const actions = [];
-    let curIno = baseIno;
-
-    let guard = 0;
-    while (actions.length < target && guard < 300) {
-      guard++;
-      let best = null; // {ino, apply(), action, touchesOutlier}
-
-      // Helper to test a candidate by cloning, applying, scoring
-      function consider(ph, type, i, j, k, fromItem, toItem) {
-        // Build trial copies for the affected phase only
-        const t1 = curY1[ph].slice(), t2 = curY2[ph].slice();
-        const tS = curSpare.slice();
-        const tagY1 = ph, tagY2 = ph + "'";
-        if (type === 'exchange') {
-          const tmp = t1[i]; t1[i] = Object.assign({}, t2[j], {origin:tagY1});
-          t2[j] = Object.assign({}, tmp, {origin:tagY2});
-        } else if (type === 'replace-y1') {
-          const removed = t1[i]; t1[i] = Object.assign({}, tS[k], {origin:tagY1});
-          tS[k] = Object.assign({}, removed, {origin:'Spare'});
-        } else if (type === 'replace-y2') {
-          const removed = t2[j]; t2[j] = Object.assign({}, tS[k], {origin:tagY2});
-          tS[k] = Object.assign({}, removed, {origin:'Spare'});
-        }
-        const trialY1 = Object.assign({}, curY1, {[ph]: t1});
-        const trialY2 = Object.assign({}, curY2, {[ph]: t2});
-        const ino = inoOf(trialY1, trialY2);
-        const touchesOutlier = !!((fromItem && fromItem.isOutlier) || (toItem && toItem.isOutlier));
-        const better = !best || ino < best.ino - 1e-9 ||
-          (Math.abs(ino - best.ino) <= 1e-9 && touchesOutlier && !best.touchesOutlier);
-        if (better) {
-          best = { ino, touchesOutlier, ph, type, i, j, k, t1, t2, tS,
-                   action: { type, from: fromItem, to: toItem } };
-        }
-      }
-
-      for (const ph of PHASES) {
-        const a1 = curY1[ph], a2 = curY2[ph];
-        for (let i = 0; i < a1.length; i++) {
-          for (let j = 0; j < a2.length; j++) consider(ph, 'exchange', i, j, null, a1[i], a2[j]);
-          for (let k = 0; k < curSpare.length; k++) consider(ph, 'replace-y1', i, null, k, a1[i], curSpare[k]);
-        }
-        for (let j = 0; j < a2.length; j++) {
-          for (let k = 0; k < curSpare.length; k++) consider(ph, 'replace-y2', null, j, k, a2[j], curSpare[k]);
-        }
-      }
-
-      if (!best) break;
-      if (best.ino >= curIno - 1e-6) break; // no meaningful improvement
-      // Commit
-      curY1[best.ph] = best.t1;
-      curY2[best.ph] = best.t2;
-      curSpare = best.tS;
-      curIno = best.ino;
-      actions.push(best.action);
-    }
-
-    const finalY1 = [...curY1.A, ...curY1.B, ...curY1.C];
-    const finalY2 = [...curY2.A, ...curY2.B, ...curY2.C];
-    results.push({
-      swapCount: target,
-      actualSwaps: actions.length,
-      diff: curIno,            // now = Ino in mA
-      Ino_mA: curIno,
-      y1: finalY1,
-      y2: finalY2,
-      spare: curSpare,
-      steps: actions.length ? actions.map(describeSwap) : ['ไม่มีการสับเปลี่ยนที่ลด Ino ได้']
-    });
+  function sig(st) {
+    const f = a => a.map(u => u.val.toFixed(4)).join(',');
+    return f(st.y1.A) + '|' + f(st.y1.B) + '|' + f(st.y1.C) + '#' +
+           f(st.y2.A) + '|' + f(st.y2.B) + '|' + f(st.y2.C) + '@' +
+           st.spare.map(u => u.val.toFixed(4)).sort().join(',');
   }
+  function clone(st) {
+    return {
+      y1: { A: st.y1.A.slice(), B: st.y1.B.slice(), C: st.y1.C.slice() },
+      y2: { A: st.y2.A.slice(), B: st.y2.B.slice(), C: st.y2.C.slice() },
+      spare: st.spare.slice(), actions: st.actions.slice(),
+      ino: st.ino, touched: st.touched
+    };
+  }
+  // All single-swap children of a state (in-phase exchange + spare replacement).
+  function expand(st) {
+    const kids = [];
+    for (const ph of PHASES) {
+      const a1 = st.y1[ph], a2 = st.y2[ph], tag1 = ph, tag2 = ph + "'";
+      for (let i = 0; i < a1.length; i++) {
+        for (let j = 0; j < a2.length; j++) {
+          const c = clone(st), u1 = a1[i], u2 = a2[j];
+          c.y1[ph] = a1.slice(); c.y2[ph] = a2.slice();
+          c.y1[ph][i] = Object.assign({}, u2, { origin: tag1 });
+          c.y2[ph][j] = Object.assign({}, u1, { origin: tag2 });
+          c.ino = inoOf(c.y1, c.y2);
+          c.touched = st.touched || !!(u1.isOutlier || u2.isOutlier);
+          c.actions.push({ type: 'exchange', from: u1, to: u2 });
+          kids.push(c);
+        }
+        for (let k = 0; k < st.spare.length; k++) {
+          const c = clone(st), removed = a1[i], sp = st.spare[k];
+          c.y1[ph] = a1.slice();
+          c.y1[ph][i] = Object.assign({}, sp, { origin: tag1 });
+          c.spare = st.spare.slice();
+          c.spare[k] = Object.assign({}, removed, { origin: 'Spare' });
+          c.ino = inoOf(c.y1, c.y2);
+          c.touched = st.touched || !!(removed.isOutlier || sp.isOutlier);
+          c.actions.push({ type: 'replace-y1', from: removed, to: sp });
+          kids.push(c);
+        }
+      }
+      for (let j = 0; j < a2.length; j++) {
+        for (let k = 0; k < st.spare.length; k++) {
+          const c = clone(st), removed = a2[j], sp = st.spare[k];
+          c.y2[ph] = a2.slice();
+          c.y2[ph][j] = Object.assign({}, sp, { origin: tag2 });
+          c.spare = st.spare.slice();
+          c.spare[k] = Object.assign({}, removed, { origin: 'Spare' });
+          c.ino = inoOf(c.y1, c.y2);
+          c.touched = st.touched || !!(removed.isOutlier || sp.isOutlier);
+          c.actions.push({ type: 'replace-y2', from: removed, to: sp });
+          kids.push(c);
+        }
+      }
+    }
+    return kids;
+  }
+
+  const init = {
+    y1: { A: y1ByPhase.A.slice(), B: y1ByPhase.B.slice(), C: y1ByPhase.C.slice() },
+    y2: { A: y2ByPhase.A.slice(), B: y2ByPhase.B.slice(), C: y2ByPhase.C.slice() },
+    spare: sparePool.slice(), actions: [], ino: baseIno, touched: false
+  };
+  // bestByDepth[d] = best state reachable using AT MOST d swaps (monotonic).
+  const bestByDepth = [init];
+  let beam = [init];
+  const seen = new Set([sig(init)]);
+  for (let d = 1; d <= MAXDEPTH; d++) {
+    let kids = [];
+    for (const st of beam) kids = kids.concat(expand(st));
+    const uniq = [];
+    for (const k of kids) { const s = sig(k); if (!seen.has(s)) { seen.add(s); uniq.push(k); } }
+    // Lower Ino first; tie-break prefers swaps that move a flagged outlier (Rule 2).
+    uniq.sort((a, b) => (a.ino - b.ino) || ((b.touched ? 1 : 0) - (a.touched ? 1 : 0)));
+    beam = uniq.slice(0, d === 1 ? KEEP1 : BEAM);
+    let bd = bestByDepth[d - 1];
+    if (uniq.length && uniq[0].ino < bd.ino - 1e-9) bd = uniq[0];
+    bestByDepth[d] = bd;
+    if (!beam.length) { for (let dd = d + 1; dd <= MAXDEPTH; dd++) bestByDepth[dd] = bd; break; }
+  }
+
+  const results = targets.map(target => {
+    const bs = bestByDepth[Math.min(target, MAXDEPTH)];
+    return {
+      swapCount: target,
+      actualSwaps: bs.actions.length,
+      diff: bs.ino,            // = Ino in mA
+      Ino_mA: bs.ino,
+      y1: [...bs.y1.A, ...bs.y1.B, ...bs.y1.C],
+      y2: [...bs.y2.A, ...bs.y2.B, ...bs.y2.C],
+      spare: bs.spare,
+      steps: bs.actions.length ? bs.actions.map(describeSwap) : ['ไม่มีการสับเปลี่ยนที่ลด Ino ได้']
+    };
+  });
   return { baseDiff: baseIno, baseIno, swaps: results };
 }
 
@@ -1497,7 +1587,7 @@ function unpackTier2Result(arr) {
 async function clientCalculate(payload) {
   const {topology, y1, y2, spare, legs, systemKV} = payload;
   const kv = parseFloat(systemKV) || 69;
-  const THRESHOLD_MA = 5.0;  // CT alarm threshold
+  const THRESHOLD_MA = ALARM_MA;  // CT alarm threshold (see ALARM_MA at top)
   let quickResult, fullResult, engBefore;
 
   if (topology === 'h-bridge') {
@@ -1726,9 +1816,11 @@ async function clientCalculate(payload) {
 
   return { quickResult, fullResult, engBefore };
 }
-</script>
 
-<script>
+  </script>
+
+  <!-- ==== diagrams.js ==== -->
+  <script>
 // ═══════════════════════════════════════
 // DIAGRAMS
 // ═══════════════════════════════════════
@@ -2080,9 +2172,10 @@ function renderDiagram(type, containerId) {
 
 window.renderDiagram = renderDiagram;
 
-</script>
+  </script>
 
-<script>
+  <!-- ==== formulas.js ==== -->
+  <script>
 // ═══════════════════════════════════════
 // FORMULAS
 // ═══════════════════════════════════════
@@ -2237,7 +2330,7 @@ function buildYYFormulas(vals, m) {
     sym('I<sub>ny</sub> = V<sub>ph</sub>·[S₁sin0 + S₂sin(−120°) + S₃sin(120°)] − (S₁+S₂+S₃)·V<sub>ny</sub>'),
     eq('I<sub>nx</sub> = ' + n(Inx.toExponential(4)) + ', &nbsp; I<sub>ny</sub> = ' + n(Iny.toExponential(4))),
     sym('I<sub>no</sub> = √(I<sub>nx</sub>² + I<sub>ny</sub>²) · 10⁶'),
-    final('I<sub>no</sub> = ' + r(F.mA(m.Ino_mA)) + ' mA' + (m.Ino_mA < 5 ? ' ✓ (< 5 mA)' : ' ⚠ (≥ 5 mA)'))
+    final('I<sub>no</sub> = ' + r(F.mA(m.Ino_mA)) + ' mA' + (function(){var A=(window.ALARM_MA||50);return m.Ino_mA < A ? ' ✓ (< '+A+' mA)' : ' ⚠ (≥ '+A+' mA)';})())
   );
 
   // Step 6: Q
@@ -2382,14 +2475,17 @@ function buildHBridgeFormulas(vals, m) {
 window.buildYYFormulas = buildYYFormulas;
 window.buildHBridgeFormulas = buildHBridgeFormulas;
 
-</script>
+  </script>
 
-<script>
+  <!-- ==== ui.js ==== -->
+  <script>
 // ═══════════════════════════════════════
 // UI
 // ═══════════════════════════════════════
 'use strict';
 const F2={uF:v=>isNaN(v)?'—':Number(v).toFixed(4),mA:v=>isNaN(v)?'—':Number(v).toFixed(4),S:v=>isNaN(v)?'—':(Number(v)*1e6).toFixed(3),V:v=>isNaN(v)?'—':Number(v).toFixed(2),Mvar:v=>isNaN(v)?'—':Number(v).toFixed(3),Ohm:v=>isNaN(v)?'—':Number(v).toFixed(2)};
+// Relay-alarm threshold (mA) — comes from calculator.js (single source of truth)
+const ALARM = (typeof window!=='undefined' && window.ALARM_MA) || 50;
 
 function buildEngPanelFull(title,m,topology){
   let items=[];
@@ -2406,7 +2502,7 @@ function buildEngPanelFull(title,m,topology){
       {l:'Q รวม',v:F2.Mvar(m.Qt),u:'Mvar',c:'hi-green',vc:'good'},
     ];
   } else {
-    const c=m.Ino_mA>5?'bad':m.Ino_mA>1?'warn':'good';
+    const c=m.Ino_mA>=ALARM?'bad':m.Ino_mA>=ALARM*0.2?'warn':'good';
     items=[
       {l:'C เฟส A (อนุกรม Y1/Y2)',v:(m.perPhase.A.C1).toFixed(3)+' / '+(m.perPhase.A.C2).toFixed(3),u:'µF',c:'hi-blue',vc:''},
       {l:'C เฟส B (อนุกรม Y1/Y2)',v:(m.perPhase.B.C1).toFixed(3)+' / '+(m.perPhase.B.C2).toFixed(3),u:'µF',c:'hi-blue',vc:''},
@@ -2446,7 +2542,7 @@ function buildSolEng(m,topology){
       {l:'Q รวม',v:F2.Mvar(m.Qt),u:'Mvar',c:'hi-green',vc:'good'},
     ];
   } else {
-    const c=m.Ino_mA>5?'bad':m.Ino_mA>1?'warn':'good';
+    const c=m.Ino_mA>=ALARM?'bad':m.Ino_mA>=ALARM*0.2?'warn':'good';
     items=[
       {l:'Σ C Y1',v:F2.uF(m.C1_uF),u:'µF',c:'hi-blue',vc:''},
       {l:'Σ C Y2',v:F2.uF(m.C2_uF),u:'µF',c:'hi-amber',vc:''},
@@ -2480,7 +2576,7 @@ function renderResults(vals,result){
   if (inoBeforeEl && engBefore) {
     const ib = engBefore.Ino_mA_before || 0;
     inoBeforeEl.textContent = ib.toFixed(2) + ' mA';
-    inoBeforeEl.className = 'tc-val ' + (ib >= 5 ? 'tc-danger' : 'tc-safe');
+    inoBeforeEl.className = 'tc-val ' + (ib >= ALARM ? 'tc-danger' : 'tc-safe');
   }
   document.getElementById('topoLabel').textContent=topology==='h-bridge'?'H-Bridge (4 Legs)':'Y-Y Ungrounded';
   document.getElementById('vsLabel').textContent=vals.systemKV+' kV';
@@ -2522,6 +2618,30 @@ function renderResults(vals,result){
   const autoTitle = `⭐ Quick Mode (อัตโนมัติ) — สับ ${autoSw.actualSwaps} ครั้ง ได้ Ino ต่ำสุด`;
   const autoCard = buildSolCard('s1', autoTitle, Object.assign({}, autoSw, {isRecommended:true}), true, topology);
 
+  // ── Big before → after summary banner (field-worker friendly) ──
+  const inoBeforeVal = (engBefore && engBefore.Ino_mA_before) || 0;
+  const inoAfterVal = autoSw.Ino_mA != null ? autoSw.Ino_mA : inoBeforeVal;
+  const afterPass = inoAfterVal < ALARM;
+  const summaryBanner = `
+    <div class="result-summary ${afterPass?'rs-pass':'rs-fail'}">
+      <div class="rs-verdict">
+        <i class="fas fa-${afterPass?'circle-check':'triangle-exclamation'}"></i>
+        ${afterPass?'ผ่าน':'ยังไม่ผ่าน'}
+      </div>
+      <div class="rs-flow">
+        <div class="rs-cell">
+          <div class="rs-cap">ก่อนสับ</div>
+          <div class="rs-num ${inoBeforeVal>=ALARM?'rs-danger':'rs-safe'}">${inoBeforeVal.toFixed(2)}<span>mA</span></div>
+        </div>
+        <i class="fas fa-arrow-right rs-arrow"></i>
+        <div class="rs-cell">
+          <div class="rs-cap">หลังสับ ${autoSw.actualSwaps} ครั้ง</div>
+          <div class="rs-num ${afterPass?'rs-safe':'rs-danger'}">${inoAfterVal.toFixed(2)}<span>mA</span></div>
+        </div>
+      </div>
+      <div class="rs-note">เกณฑ์รีเลย์: I<sub>no</sub> ต้องต่ำกว่า ${ALARM} mA</div>
+    </div>`;
+
   const fixedDefs=[
     {cls:'s2',icon:'2️⃣',n:2,desc:'สับ 2 ครั้ง'},
     {cls:'s2',icon:'4️⃣',n:4,desc:'สับ 4 ครั้ง'},
@@ -2541,7 +2661,7 @@ function renderResults(vals,result){
     <i class="fas fa-bolt"></i> <b>Quick Mode</b> เลือกการสับที่ทำให้ Ino ต่ำสุดโดยใช้จำนวนครั้งน้อยที่สุดให้อัตโนมัติ ·
     ด้านล่างเป็นตัวเลือกแบบกำหนดจำนวน 2 / 4 / 6 ครั้ง ให้หน้างานเลือกใช้ได้เลย</div>`;
 
-  document.getElementById('tabQuick').innerHTML = lockedBanner + quickIntro + autoCard +
+  document.getElementById('tabQuick').innerHTML = summaryBanner + lockedBanner + quickIntro + autoCard +
     `<div style="margin:18px 0 8px;font-weight:700;color:var(--txt2,#555);font-size:0.95rem;">
       <i class="fas fa-hand-pointer"></i> ตัวเลือกแบบกำหนดจำนวนครั้ง (เลือกได้ตามสะดวกหน้างาน)</div>` +
     fixedCards;
@@ -2572,15 +2692,17 @@ function buildSolCard(cls,title,sw,showSteps,topology){
        <div class="step-item"><span class="step-num">✓</span><span>${sw.steps[0]}</span></div></div>`;
   // Ino badge — PRIMARY indicator
   const inoVal = sw.engAfter ? (topology==='h-bridge' ? sw.engAfter.In_mA : sw.engAfter.Ino_mA) : null;
-  const inoClass = inoVal !== null ? (inoVal < 5 ? 'pass' : 'fail') : '';
+  const pass = inoVal !== null && inoVal < ALARM;
+  const inoClass = inoVal !== null ? (pass ? 'pass' : 'fail') : '';
   const inoBadge = inoVal !== null
     ? `<span class="ino-badge ${inoClass}">
-         <i class="fas fa-${inoVal<5?'check-circle':'exclamation-triangle'}"></i>
-         I<sub>no</sub> = ${inoVal.toFixed(2)} mA ${inoVal<5?'✓':'(เกิน 5mA)'}
+         <i class="fas fa-${pass?'check-circle':'exclamation-triangle'}"></i>
+         ${pass?'ผ่าน':'ไม่ผ่าน'} · I<sub>no</sub> = ${inoVal.toFixed(2)} mA
+         <small>${pass?`(< ${ALARM} mA)`:`(เกิน ${ALARM} mA)`}</small>
        </span>`
     : '';
   const recommended = sw.underThreshold && sw.isRecommended
-    ? '<div class="recommended-badge"><i class="fas fa-star"></i> แนะนำ — สับน้อยที่สุดที่ I<sub>no</sub> < 5 mA</div>'
+    ? `<div class="recommended-badge"><i class="fas fa-star"></i> แนะนำ — สับน้อยที่สุดที่ I<sub>no</sub> < ${ALARM} mA</div>`
     : '';
   return `<div class="sol-card ${cls} ${sw.underThreshold?'sol-pass':'sol-fail'}">
     <div class="sol-top">
@@ -2634,9 +2756,10 @@ function switchTab(name){
   document.getElementById('tab'+name.charAt(0).toUpperCase()+name.slice(1)).classList.add('active');
 }
 
-</script>
+  </script>
 
-<script>
+  <!-- ==== exporter.js ==== -->
+  <script>
 // ═══════════════════════════════════════
 // EXPORTER
 // ═══════════════════════════════════════
@@ -2714,9 +2837,10 @@ function makeSolSheet(sw, title) {
   return ws;
 }
 
-</script>
+  </script>
 
-<script>
+  <!-- ==== app.js ==== -->
+  <script>
 // ═══════════════════════════════════════
 // APP — with fetch() replaced by clientCalculate()
 // ═══════════════════════════════════════
@@ -3165,7 +3289,7 @@ function getInputValues(){
 }
 
 // ═══════════════════════════════════════════════════════
-// CALCULATE — target: Ino < 5mA with minimum swaps
+// CALCULATE — target: Ino < 50mA (ALARM_MA) with minimum swaps
 // ═══════════════════════════════════════════════════════
 async function handleCalculate(){
   const vals=getInputValues();
@@ -3199,7 +3323,7 @@ function handleExport(){
   if(!lastCalcData){alert('กรุณาคำนวณก่อน');return;}
   exportToExcel(lastCalcData);
 }
-</script>
 
+  </script>
 </body>
 </html>
