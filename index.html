@@ -829,7 +829,7 @@ body {
         <i class="fas fa-moon icon-dark"></i>
         <i class="fas fa-sun icon-light"></i>
       </button>
-      <div class="ver-badge">v5.7</div>
+      <div class="ver-badge">v5.8</div>
     </div>
   </header>
 
@@ -3151,15 +3151,8 @@ function toggleSplit(cls, idx) {
     mainInput.style.opacity = '';
     btn.classList.remove('on');
   } else {
-    // Open split — pre-fill .a and .b each with half of main value if main has value
-    const mainVal = parseFloat(mainInput.value);
-    if (!isNaN(mainVal) && mainVal > 0) {
-      const half = (mainVal / 2).toFixed(3);
-      const aInp = document.querySelector(`.val-${cls}-a[data-idx="${idx}"]`);
-      const bInp = document.querySelector(`.val-${cls}-b[data-idx="${idx}"]`);
-      if (aInp && !aInp.value) aInp.value = half;
-      if (bInp && !bInp.value) bInp.value = half;
-    }
+    // Open split — NO auto-fill, NO ÷2. The technician types the two real
+    // measured values; the slot then uses va+vb (parallel sum) directly.
     splitPair.style.display = 'flex';
     mainInput.disabled = true;
     mainInput.style.opacity = '0.4';
