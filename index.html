@@ -829,7 +829,7 @@ body {
         <i class="fas fa-moon icon-dark"></i>
         <i class="fas fa-sun icon-light"></i>
       </button>
-      <div class="ver-badge">v5.5</div>
+      <div class="ver-badge">v5.7</div>
     </div>
   </header>
 
@@ -909,8 +909,8 @@ body {
         <i class="fas fa-info-circle"></i>
         <div>
           <strong>วิธีกรอก:</strong> กรอกจำนวนช่องของแต่ละกิ่ง/leg แยกกัน → กดสร้าง → กรอกค่า C<br>
-          • <strong>☑ ต่อขนาน (ระดับฝั่ง)</strong> = ทั้งฝั่งนี้ C ต่อขนานคู่ → ระบบ ÷2 ค่าทุกตัวอัตโนมัติ<br>
-          • <strong>✂ กรรไกร (รายตัว)</strong> = แค่ตัวนี้วัดแยกได้ → ขยายเป็น 2 ช่อง กรอกค่าจริง (override ÷2)<br>
+          • <strong>☑ ต่อขนาน (ระดับฝั่ง)</strong> = ช่องในฝั่งนี้เป็นคู่ขนาน → กรอก<strong>ค่ารวมของช่าง</strong>ได้เลย (ไม่ ÷2) ระบบจะล็อกเป็น Tier 2 + โชว์ปุ่มกรรไกร<br>
+          • <strong>✂ กรรไกร (รายตัว)</strong> = วัดแยก 2 ตัวในช่องนี้ → กรอก va, vb ระบบใช้<strong>ผลรวม va+vb</strong> เป็นค่าช่อง (Tier 1 สลับได้)<br>
           • Algorithm จะสลับ <strong>เฉพาะตัวที่กดกรรไกร + Spare</strong> ก่อน — ถ้า Ino ยังเกิน 50mA จึงขยายไปสลับตัวอื่น
           • <strong>Spare = ตัวเดี่ยวเสมอ</strong> — การสับเปลี่ยนทำเป็นรายตัว ถ้า Ino > 50mA ระบบจะหาทางลดให้ต่ำกว่า 50mA
         </div>
@@ -1537,38 +1537,16 @@ function markModeOutliers(flatArr, devThreshold = 0.05) {
 }
 
 function expandPairs(arr) {
-  // Logic for algorithm swap granularity:
-  // - isSplit=true (scissors-marked)  → individual units (Tier 1 priority)
-  // - isLocked=true (side-parallel, no scissors) → keep as PAIR for Tier 2 (swap both together)
-  // - isLocked=false (no parallel) → individual unit
-  const out = [];
-  arr.forEach(p => {
-    if (p.isSplit) {
-      // Scissors-marked: individual swappable units (Tier 1)
-      out.push({...p, parentId: p.id.replace(/\.[ab]$/, ''), swapGranularity: 'individual'});
-    } else if (p.isLocked) {
-      // Locked group: ÷2 applied → in Tier 2, swap as PAIR (not individually)
-      // Mark both sub-units with same pairId so algorithm knows to swap them together
-      const pairId = 'pair-' + p.id;
-      out.push({
-        id: p.id + '.a', val: p.val, origin: p.origin, pos: p.pos,
-        inputVal: p.inputVal, isLocked: true, subKey: 'a', parentId: p.id,
-        pairId, swapGranularity: 'pair'
-      });
-      out.push({
-        id: p.id + '.b', val: p.val, origin: p.origin, pos: p.pos,
-        inputVal: p.inputVal, isLocked: true, subKey: 'b', parentId: p.id,
-        pairId, swapGranularity: 'pair'
-      });
-    } else {
-      // Single real unit (no parallel) — swap individually
-      out.push({
-        id: p.id, val: p.val, origin: p.origin, pos: p.pos,
-        inputVal: p.inputVal, isLocked: false, parentId: p.id, swapGranularity: 'individual'
-      });
-    }
-  });
-  return out;
+  // NO ÷2, NO splitting. Every slot is ONE unit whose value = the slot's combined
+  // (parallel) capacitance — scissors slot = va+vb, plain/parallel slot = entered
+  // value as-is. This makes a parallel pair contribute as a single series element
+  // in calcYYMetrics (physically correct) and keeps scissors / locked / plain slots
+  // all on the same scale. `isLocked` still routes parallel-but-not-scissored slots
+  // to Tier 2 (swapped only as a fallback); scissors + plain stay Tier 1.
+  return arr.map(p => Object.assign({}, p, {
+    parentId: p.id,
+    swapGranularity: 'individual'
+  }));
 }
 
 // Helper: group pair-granularity items before passing to swap algorithm
@@ -1699,7 +1677,7 @@ async function clientCalculate(payload) {
     const t1Count = aT1.length + bT1.length + cT1.length + dT1.length;
     const t2Count = aT2.length + bT2.length + cT2.length + dT2.length;
     quickResult.lockedNote = (t1Count + t2Count) > 0
-      ? `Tier 1 (ติ๊ก "วัดแยก"): ${t1Count/2} ชุด → ${t1Count} ตัวย่อย · Tier 2 (กรุ๊ป): ${t2Count/2} ชุด · Spare ${(spare||[]).length} ตัว` +
+      ? `Tier 1 (ติ๊ก "วัดแยก"): ${t1Count} ตัว · Tier 2 (กรุ๊ป): ${t2Count} ตัว · Spare ${(spare||[]).length} ตัว` +
         (quickResult.fallbackUsed ? ' · ⚠ Tier 1 ไม่พอ ใช้ fallback (สลับ Tier 2 ด้วย)' : '')
       : null;
   } else {
@@ -1793,7 +1771,7 @@ async function clientCalculate(payload) {
     const sCount = (spare||[]).length;
     const outlierCount = y1ModeOutliers.length + y2ModeOutliers.length;
     quickResult.lockedNote = (tier1Count + tier2Count) > 0
-      ? `Tier 1 (ติ๊ก "วัดแยก"): ${tier1Count/2} ชุด → ${tier1Count} ตัวย่อย · Tier 2 (กรุ๊ป): ${tier2Count/2} ชุด · Spare ${sCount} ตัว` +
+      ? `Tier 1 (ติ๊ก "วัดแยก"): ${tier1Count} ตัว · Tier 2 (กรุ๊ป): ${tier2Count} ตัว · Spare ${sCount} ตัว` +
         (outlierCount > 0 ? ` · 🎯 พบ ${outlierCount} ตัวห่างจาก mode ≥5% (จัดลำดับสลับก่อน)` : '') +
         (quickResult.fallbackUsed ? ' · ⚠ Tier 1 ไม่พอ ใช้ fallback (สลับ Tier 2 ด้วย)' : '')
       : null;
@@ -2740,7 +2718,9 @@ function capList(arr,tgt){
              :'<span class="pill p-stay">อยู่เดิม</span>';
     const splitNote = c.subKey
       ? `<span style="font-size:0.65rem;color:var(--txt3);margin-left:4px;">[ตัว ${c.subKey.toUpperCase()}]</span>`
-      : '';
+      : (c.measuredA != null && c.measuredB != null
+          ? `<span style="font-size:0.65rem;color:var(--txt3);margin-left:4px;">[วัดแยก ${c.measuredA.toFixed(2)}+${c.measuredB.toFixed(2)}]</span>`
+          : '');
     // Outlier indicator: this item deviates ≥5% from the per-phase mode
     const outlierTag = c.isOutlier
       ? `<span class="pill p-outlier" title="ห่างจาก mode ${(c.deviation*100).toFixed(1)}%${c.modeRef?` (mode≈${c.modeRef.toFixed(2)}µF)`:''}"><i class="fas fa-bullseye"></i> outlier</span>`
@@ -2958,22 +2938,22 @@ function buildInputArea() {
         <div class="input-cols" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;">
           <div class="inp-panel la">
             <div class="panel-hd">Leg A — Top-Left</div>
-            <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntA" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('A')"><label class="par-toggle"><input type="checkbox" id="parA"><span>☑ ต่อขนาน (÷2 ค่าทุกตัว)</span></label></div>
+            <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntA" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('A')"><label class="par-toggle"><input type="checkbox" id="parA"><span>☑ ต่อขนาน (ล็อกเป็น Tier 2)</span></label></div>
             <div id="panelA"></div>
           </div>
           <div class="inp-panel lb">
             <div class="panel-hd">Leg B — Top-Right</div>
-            <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntB" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('B')"><label class="par-toggle"><input type="checkbox" id="parB"><span>☑ ต่อขนาน (÷2 ค่าทุกตัว)</span></label></div>
+            <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntB" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('B')"><label class="par-toggle"><input type="checkbox" id="parB"><span>☑ ต่อขนาน (ล็อกเป็น Tier 2)</span></label></div>
             <div id="panelB"></div>
           </div>
           <div class="inp-panel lc">
             <div class="panel-hd">Leg C — Bot-Left</div>
-            <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntC" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('C')"><label class="par-toggle"><input type="checkbox" id="parC"><span>☑ ต่อขนาน (÷2 ค่าทุกตัว)</span></label></div>
+            <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntC" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('C')"><label class="par-toggle"><input type="checkbox" id="parC"><span>☑ ต่อขนาน (ล็อกเป็น Tier 2)</span></label></div>
             <div id="panelC"></div>
           </div>
           <div class="inp-panel ld">
             <div class="panel-hd">Leg D — Bot-Right</div>
-            <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntD" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('D')"><label class="par-toggle"><input type="checkbox" id="parD"><span>☑ ต่อขนาน (÷2 ค่าทุกตัว)</span></label></div>
+            <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntD" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('D')"><label class="par-toggle"><input type="checkbox" id="parD"><span>☑ ต่อขนาน (ล็อกเป็น Tier 2)</span></label></div>
             <div id="panelD"></div>
           </div>
           <div class="inp-panel spare" style="grid-column:1/-1;">
@@ -2999,7 +2979,7 @@ function buildInputArea() {
       area.innerHTML = `
         <div class="yy-section">
           <div class="yy-section-title yy-side1"><i class="fas fa-arrow-circle-right"></i> ฝั่งที่ 1 (Y1)
-            <label class="par-toggle" style="margin-left:auto;"><input type="checkbox" id="parY1"><span>☑ ต่อขนาน (÷2 ค่าทุกตัว)</span></label>
+            <label class="par-toggle" style="margin-left:auto;"><input type="checkbox" id="parY1"><span>☑ ต่อขนาน (ล็อกเป็น Tier 2)</span></label>
           </div>
           <div class="yy-phase-row">
             <div class="inp-panel y1"><div class="panel-hd">Phase A</div>
@@ -3015,7 +2995,7 @@ function buildInputArea() {
         </div>
         <div class="yy-section">
           <div class="yy-section-title yy-side2"><i class="fas fa-arrow-circle-right"></i> ฝั่งที่ 2 (Y2)
-            <label class="par-toggle" style="margin-left:auto;"><input type="checkbox" id="parY2"><span>☑ ต่อขนาน (÷2 ค่าทุกตัว)</span></label>
+            <label class="par-toggle" style="margin-left:auto;"><input type="checkbox" id="parY2"><span>☑ ต่อขนาน (ล็อกเป็น Tier 2)</span></label>
           </div>
           <div class="yy-phase-row">
             <div class="inp-panel y2"><div class="panel-hd">Phase A'</div>
@@ -3201,18 +3181,19 @@ function getInputValues(){
   });
   const systemKV=parseFloat(document.getElementById('systemKV').value)||69;
 
-  // Check if "measured separately" is ticked for a side
-  // ticked = วัดแยก = swappable
-  // unticked = กรุ๊ป = locked (÷2 applied)
+  // Returns whether the side-level "ต่อขนาน" checkbox is ticked.
+  // ticked  = ช่องในฝั่งนี้เป็นคู่ขนาน → ล็อกเป็น Tier 2 (สลับเป็น fallback) + โชว์กรรไกร
+  // unticked = ช่องเดี่ยว → Tier 1 (สลับได้เลย).  ** ไม่มีการ ÷2 ในทั้งสองกรณี **
   function isMeasuredSeparately(checkboxId) {
     const cb = document.getElementById(checkboxId);
     return cb && cb.checked;
   }
 
-  // Read values from a panel
-  // sideParallel=true (Y1/Y2 หรือ Leg ติ๊ก "ต่อขนาน") → ค่าจะถูก ÷2 (locked)
-  // sideParallel=false (ไม่ติ๊ก side-level)         → ค่าคือตัวเดียวจริง (swappable)
-  // Per-slot split (กรรไกร ✂️) overrides: ถ้าติ๊กกรรไกร → ใช้ค่า .a + .b แยก (swappable)
+  // Read values from a panel — NO ÷2 anywhere; the entered number is the slot's
+  // combined (parallel) capacitance = one unit/series element.
+  // sideParallel=true  (ติ๊ก "ต่อขนาน")  → slot ถูก lock (Tier 2 สลับเป็น fallback) + โชว์ปุ่มกรรไกร
+  // sideParallel=false (ไม่ติ๊ก)          → slot สลับได้ (Tier 1)
+  // Per-slot กรรไกร ✂️: วัดแยก 2 ตัว → ใช้ผลรวม va+vb เป็นหน่วยเดียว (Tier 1, swappable)
   function readPanel(cls, originLabel, sideParallel) {
     const out = [];
     // Look at all main rows
@@ -3223,8 +3204,9 @@ function getInputValues(){
       const splitBtn = document.querySelector(`.split-btn[data-cls="${cls}"][data-idx="${slotIdx}"]`);
       const isSplit = splitBtn && splitBtn.classList.contains('on');
       if (isSplit) {
-        // Scissors ON → read .a and .b as 2 separate units
-        // If side-parallel is ticked, the entered values represent parallel C → ÷2 each
+        // วัดแยก (กรรไกร): ช่างวัดค่าจริงของคู่ขนานทั้งสองตัว (.a และ .b)
+        // → ค่าความจุของช่องนี้ = ผลรวมแบบขนาน va + vb  (ไม่ ÷2 เพราะเป็นค่าจริงอยู่แล้ว)
+        // เป็น "หน่วยเดียว" ที่สับเปลี่ยนได้ (Tier 1) — สับทั้งช่อง ไม่แยก .a/.b
         const aEl = document.querySelector(`.val-${cls}-a[data-idx="${slotIdx}"]`);
         const bEl = document.querySelector(`.val-${cls}-b[data-idx="${slotIdx}"]`);
         const va = parseFloat(aEl ? aEl.value : '');
@@ -3233,30 +3215,24 @@ function getInputValues(){
           alert('กรุณากรอกค่า ' + originLabel + '-' + slotIdx + '.a และ .b ให้ครบ');
           return null;
         }
-        // Apply ÷2 if side-parallel (values entered are for parallel pairs)
-        const realVa = sideParallel ? va / 2 : va;
-        const realVb = sideParallel ? vb / 2 : vb;
-        // These are swappable (measured items)
+        const slotVal = va + vb;   // parallel sum — NO ÷2 (override side-level ÷2)
         out.push({
-          id: originLabel+'-'+slotIdx+'.a', val: realVa, origin: originLabel, pos: i,
-          inputVal: va, isLocked: false, isSplit: true, parentSlot: slotIdx, subKey: 'a'
-        });
-        out.push({
-          id: originLabel+'-'+slotIdx+'.b', val: realVb, origin: originLabel, pos: i,
-          inputVal: vb, isLocked: false, isSplit: true, parentSlot: slotIdx, subKey: 'b'
+          id: originLabel+'-'+slotIdx, val: slotVal, origin: originLabel, pos: i,
+          inputVal: slotVal, isLocked: false, isSplit: true, parentSlot: slotIdx,
+          measuredA: va, measuredB: vb
         });
       } else {
-        // Use main input value
+        // Use main input value AS-IS (no ÷2). The entered number is the slot's
+        // combined capacitance = one series element. "ต่อขนาน" only marks the slot
+        // as locked (Tier 2 / swap as fallback only) and reveals the scissors UI.
         const v = parseFloat(mainInputs[i].value);
         if (isNaN(v) || v <= 0) {
           alert('กรุณากรอกค่า ' + originLabel + '-' + slotIdx + ' ให้ครบ');
           return null;
         }
-        // Apply ÷2 only if side-level "parallel" is ticked AND this slot is NOT split
-        const realVal = sideParallel ? v / 2 : v;
         out.push({
-          id: originLabel+'-'+slotIdx, val: realVal, origin: originLabel, pos: i,
-          inputVal: v, isLocked: sideParallel  // side-level parallel → locked group
+          id: originLabel+'-'+slotIdx, val: v, origin: originLabel, pos: i,
+          inputVal: v, isLocked: sideParallel  // side-level parallel → locked group (Tier 2)
         });
       }
     }
