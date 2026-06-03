@@ -829,7 +829,7 @@ body {
         <i class="fas fa-moon icon-dark"></i>
         <i class="fas fa-sun icon-light"></i>
       </button>
-      <div class="ver-badge">v5.8</div>
+      <div class="ver-badge">v5.9</div>
     </div>
   </header>
 
@@ -1229,17 +1229,25 @@ function phaseOf(item, isY2) {
 }
 
 function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, lockedY1Arr, lockedY2Arr) {
-  // BEAM SEARCH over swap sequences, scored by the ACTUAL phasor Ino
-  // (calcYYMetrics — matches Excel exactly). Replaces the old single-step
-  // greedy, which got stuck in local minima: there are many real banks where
-  // NO single swap lowers Ino but a PAIR of swaps does. Greedy returned "no
-  // swap" in ~1 of 4 random unbalanced banks (the "ไม่สลับทั้งที่มีตัวเลือกดีกว่า"
-  // bug). Beam search keeps the best `BEAM` partial solutions at every depth so
-  // it can move *through* a temporarily-worse state to reach a better one.
+  // Two complementary searches, scored by the ACTUAL phasor Ino (calcYYMetrics):
   //
-  // lockedY1Arr / lockedY2Arr = locked (non-swappable) units, always included in
-  // each Ino evaluation but never moved. Swaps stay WITHIN a phase (A↔A', …) or
-  // pull from the Spare pool, so a capacitor never leaves its phase.
+  //  TRACK 1 — BEAM SEARCH: keeps the best `BEAM` partial solutions at every depth,
+  //  so it can move *through* a temporarily-worse state. Finds the exact 2-swap
+  //  optimum for small banks and good incremental (exchange/spare) improvements.
+  //
+  //  TRACK 2 — OUTLIER-FIX: some banks need a COORDINATED set of spare swaps where
+  //  EVERY intermediate step makes Ino *worse* before it collapses to ~0 (e.g. 3
+  //  phases each with one off unit — fixing one at a time raises Ino, only fixing
+  //  all three balances the bank). Beam prunes those rising paths, so this track
+  //  greedily replaces the worst per-phase outlier with the closest spare,
+  //  ACCEPTING temporary Ino rises, recording the state after each swap.
+  //
+  //  All visited states from BOTH tracks become candidates; for each budget
+  //  (2/4/6 swaps) we pick the lowest real Ino, fewest swaps, then most spares
+  //  used (so spares are preferred when they reach the same Ino — the field tech
+  //  wants the spare pool deployed). lockedY1Arr/lockedY2Arr are always included
+  //  in every Ino evaluation but never moved; swaps stay WITHIN a phase or pull
+  //  from Spare, so a capacitor never leaves its phase.
   const PHASES = ['A', 'B', 'C'];
   const targets = [2, 4, 6];
   const kv = systemKV || 69;
@@ -1273,6 +1281,20 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   }
   const baseIno = inoOf(y1ByPhase, y2ByPhase);
 
+  // Every visited state (from either track) is pushed here as a candidate.
+  const candidates = [];
+  function record(y1obj, y2obj, spareArr, actions, ino) {
+    const spUsed = actions.reduce((n, a) => n + (a.type === 'exchange' ? 0 : 1), 0);
+    candidates.push({
+      ino, swaps: actions.length, sp: spUsed,
+      y1: [...y1obj.A, ...y1obj.B, ...y1obj.C],
+      y2: [...y2obj.A, ...y2obj.B, ...y2obj.C],
+      spare: spareArr.slice(),
+      steps: actions.length ? actions.map(describeSwap) : ['ไม่มีการสับเปลี่ยนที่ลด Ino ได้']
+    });
+  }
+  record(y1ByPhase, y2ByPhase, sparePool, [], baseIno);
+
   function sig(st) {
     const f = a => a.map(u => u.val.toFixed(4)).join(',');
     return f(st.y1.A) + '|' + f(st.y1.B) + '|' + f(st.y1.C) + '#' +
@@ -1283,8 +1305,7 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
     return {
       y1: { A: st.y1.A.slice(), B: st.y1.B.slice(), C: st.y1.C.slice() },
       y2: { A: st.y2.A.slice(), B: st.y2.B.slice(), C: st.y2.C.slice() },
-      spare: st.spare.slice(), actions: st.actions.slice(),
-      ino: st.ino, touched: st.touched
+      spare: st.spare.slice(), actions: st.actions.slice(), ino: st.ino
     };
   }
   // All single-swap children of a state (in-phase exchange + spare replacement).
@@ -1299,7 +1320,6 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
           c.y1[ph][i] = Object.assign({}, u2, { origin: tag1 });
           c.y2[ph][j] = Object.assign({}, u1, { origin: tag2 });
           c.ino = inoOf(c.y1, c.y2);
-          c.touched = st.touched || !!(u1.isOutlier || u2.isOutlier);
           c.actions.push({ type: 'exchange', from: u1, to: u2 });
           kids.push(c);
         }
@@ -1310,7 +1330,6 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
           c.spare = st.spare.slice();
           c.spare[k] = Object.assign({}, removed, { origin: 'Spare' });
           c.ino = inoOf(c.y1, c.y2);
-          c.touched = st.touched || !!(removed.isOutlier || sp.isOutlier);
           c.actions.push({ type: 'replace-y1', from: removed, to: sp });
           kids.push(c);
         }
@@ -1323,7 +1342,6 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
           c.spare = st.spare.slice();
           c.spare[k] = Object.assign({}, removed, { origin: 'Spare' });
           c.ino = inoOf(c.y1, c.y2);
-          c.touched = st.touched || !!(removed.isOutlier || sp.isOutlier);
           c.actions.push({ type: 'replace-y2', from: removed, to: sp });
           kids.push(c);
         }
@@ -1332,40 +1350,90 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
     return kids;
   }
 
+  // ── TRACK 1: beam search ──
   const init = {
     y1: { A: y1ByPhase.A.slice(), B: y1ByPhase.B.slice(), C: y1ByPhase.C.slice() },
     y2: { A: y2ByPhase.A.slice(), B: y2ByPhase.B.slice(), C: y2ByPhase.C.slice() },
-    spare: sparePool.slice(), actions: [], ino: baseIno, touched: false
+    spare: sparePool.slice(), actions: [], ino: baseIno
   };
-  // bestByDepth[d] = best state reachable using AT MOST d swaps (monotonic).
-  const bestByDepth = [init];
   let beam = [init];
   const seen = new Set([sig(init)]);
   for (let d = 1; d <= MAXDEPTH; d++) {
     let kids = [];
     for (const st of beam) kids = kids.concat(expand(st));
     const uniq = [];
-    for (const k of kids) { const s = sig(k); if (!seen.has(s)) { seen.add(s); uniq.push(k); } }
-    // Lower Ino first; tie-break prefers swaps that move a flagged outlier (Rule 2).
-    uniq.sort((a, b) => (a.ino - b.ino) || ((b.touched ? 1 : 0) - (a.touched ? 1 : 0)));
+    for (const k of kids) {
+      const s = sig(k);
+      if (!seen.has(s)) { seen.add(s); uniq.push(k); record(k.y1, k.y2, k.spare, k.actions, k.ino); }
+    }
+    uniq.sort((a, b) => a.ino - b.ino);
     beam = uniq.slice(0, d === 1 ? KEEP1 : BEAM);
-    let bd = bestByDepth[d - 1];
-    if (uniq.length && uniq[0].ino < bd.ino - 1e-9) bd = uniq[0];
-    bestByDepth[d] = bd;
-    if (!beam.length) { for (let dd = d + 1; dd <= MAXDEPTH; dd++) bestByDepth[dd] = bd; break; }
+    if (!beam.length) break;
   }
 
+  // ── TRACK 2: outlier-fix (accept temporary Ino rises) ──
+  function modeRefByPhase(swapList, lockArr) {
+    const m = {};
+    PHASES.forEach(p => {
+      const vals = [];
+      swapList.forEach(u => { if ((u.origin || '').replace("'", '') === p) vals.push(u.val); });
+      lockArr.forEach(u => { if ((u.origin || '').replace("'", '') === p) vals.push(u.val); });
+      m[p] = vals.length >= 2 ? findModeReference(vals) : null;
+    });
+    return m;
+  }
+  (function runOutlierFix() {
+    const cy1 = { A: y1ByPhase.A.slice(), B: y1ByPhase.B.slice(), C: y1ByPhase.C.slice() };
+    const cy2 = { A: y2ByPhase.A.slice(), B: y2ByPhase.B.slice(), C: y2ByPhase.C.slice() };
+    let sp = sparePool.slice();
+    const actions = [];
+    for (let step = 0; step < MAXDEPTH; step++) {
+      if (!sp.length) break;
+      const mode1 = modeRefByPhase([...cy1.A, ...cy1.B, ...cy1.C], lockY1);
+      const mode2 = modeRefByPhase([...cy2.A, ...cy2.B, ...cy2.C], lockY2);
+      let best = null; // { dev, side, ph, idx, mode }
+      PHASES.forEach(p => {
+        if (mode1[p]) cy1[p].forEach((u, idx) => { const dev = Math.abs(u.val - mode1[p]) / mode1[p]; if (dev >= 0.02 && (!best || dev > best.dev)) best = { dev, side: 1, ph: p, idx, mode: mode1[p] }; });
+        if (mode2[p]) cy2[p].forEach((u, idx) => { const dev = Math.abs(u.val - mode2[p]) / mode2[p]; if (dev >= 0.02 && (!best || dev > best.dev)) best = { dev, side: 2, ph: p, idx, mode: mode2[p] }; });
+      });
+      if (!best) break;
+      // pick the spare closest to that phase's mode
+      let bk = -1, bd = Infinity;
+      sp.forEach((s, k) => { const dd = Math.abs(s.val - best.mode); if (dd < bd) { bd = dd; bk = k; } });
+      if (bk < 0) break;
+      const arr = best.side === 1 ? cy1[best.ph] : cy2[best.ph];
+      const removed = arr[best.idx], spUnit = sp[bk], tag = removed.origin;
+      arr[best.idx] = Object.assign({}, spUnit, { origin: tag });
+      sp = sp.slice(); sp[bk] = Object.assign({}, removed, { origin: 'Spare' });
+      actions.push({ type: best.side === 1 ? 'replace-y1' : 'replace-y2', from: removed, to: spUnit });
+      record(cy1, cy2, sp, actions, inoOf(cy1, cy2));
+    }
+  })();
+
+  // ── merge: best candidate per budget ──
+  // lowest Ino → fewest swaps → most spares used (prefer deploying the spare pool
+  // when it reaches the same Ino at the same swap count).
+  function pick(maxSwaps) {
+    let best = candidates[0];
+    for (const c of candidates) {
+      if (c.swaps > maxSwaps) continue;
+      if (c.ino < best.ino - 1e-9) { best = c; continue; }
+      if (c.ino <= best.ino + 1e-9) {
+        if (c.swaps < best.swaps || (c.swaps === best.swaps && c.sp > best.sp)) best = c;
+      }
+    }
+    return best;
+  }
   const results = targets.map(target => {
-    const bs = bestByDepth[Math.min(target, MAXDEPTH)];
+    const b = pick(target);
     return {
       swapCount: target,
-      actualSwaps: bs.actions.length,
-      diff: bs.ino,            // = Ino in mA
-      Ino_mA: bs.ino,
-      y1: [...bs.y1.A, ...bs.y1.B, ...bs.y1.C],
-      y2: [...bs.y2.A, ...bs.y2.B, ...bs.y2.C],
-      spare: bs.spare,
-      steps: bs.actions.length ? bs.actions.map(describeSwap) : ['ไม่มีการสับเปลี่ยนที่ลด Ino ได้']
+      actualSwaps: b.swaps,
+      diff: b.ino,            // = Ino in mA
+      Ino_mA: b.ino,
+      sparesUsed: b.sp,
+      y1: b.y1, y2: b.y2, spare: b.spare,
+      steps: b.steps
     };
   });
   return { baseDiff: baseIno, baseIno, swaps: results };
