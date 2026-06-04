@@ -687,6 +687,13 @@ body {
   background: var(--red-soft); color: var(--red);
   border: 1px solid var(--red); font-weight: 700;
 }
+.pill.p-fail {
+  background: var(--amber-soft, #fff3e0); color: var(--amber, #e67e22);
+  border: 1px solid var(--amber, #e67e22); font-weight: 700;
+}
+.ci.is-failed { background: var(--amber-soft, #fff3e0); border-radius: 4px;
+  padding-left: 6px; padding-right: 6px; margin-left: -6px; margin-right: -6px; }
+.ci.is-failed .cv { color: var(--amber, #e67e22); font-weight: 700; }
 .ci.is-outlier {
   background: var(--red-soft); border-radius: 4px;
   padding-left: 6px; padding-right: 6px; margin-left: -6px; margin-right: -6px;
@@ -829,7 +836,7 @@ body {
         <i class="fas fa-moon icon-dark"></i>
         <i class="fas fa-sun icon-light"></i>
       </button>
-      <div class="ver-badge">v6.0</div>
+      <div class="ver-badge">v6.3</div>
     </div>
   </header>
 
@@ -1013,6 +1020,13 @@ const PI2F = 2 * Math.PI * 50; // ω = 2πf, f=50Hz
 // swap optimizer all read this so the "pass/fail" line is consistent everywhere.
 const ALARM_MA = 50.0;
 if (typeof window !== 'undefined') window.ALARM_MA = ALARM_MA;
+
+// Capacitor nameplate (µF). A unit reading BELOW this is treated as FAILED in the
+// field and is swapped FIRST; units at/above nameplate are "good" and kept in
+// place (only swapped if the failed units alone can't bring I_no under ALARM_MA).
+// Display-only + swap-priority — it NEVER changes the I_no calculation.
+const NAMEPLATE_UF = 27.00;
+if (typeof window !== 'undefined') window.NAMEPLATE_UF = NAMEPLATE_UF;
 
 function sumC(arr) { return arr.reduce((t, c) => t + c.val, 0); }
 
@@ -1228,7 +1242,7 @@ function phaseOf(item, isY2) {
   return (item.origin || '').replace("'", '');
 }
 
-function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, lockedY1Arr, lockedY2Arr) {
+function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, lockedY1Arr, lockedY2Arr, nameplate) {
   // Two complementary searches, scored by the ACTUAL phasor Ino (calcYYMetrics):
   //
   //  TRACK 1 — BEAM SEARCH: keeps the best `BEAM` partial solutions at every depth,
@@ -1254,6 +1268,14 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   const lockY1 = lockedY1Arr || [];
   const lockY2 = lockedY2Arr || [];
   const MAXDEPTH = 6;
+  // Nameplate-failure awareness (optional). When set, the search treats units
+  // reading below `nameplate` as FAILED and prioritizes getting them OUT.
+  const NP = (typeof nameplate === 'number' && nameplate > 0) ? nameplate : null;
+  function isBelow(u) {
+    if (!NP || !u || u.origin === 'Spare') return false;
+    if (u.measuredA != null && u.measuredB != null) return u.measuredA < NP || u.measuredB < NP;
+    return u.val < NP;
+  }
 
   function bucket(arr) {
     const m = { A: [], B: [], C: [] };
@@ -1285,11 +1307,12 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   const candidates = [];
   function record(y1obj, y2obj, spareArr, actions, ino) {
     const spUsed = actions.reduce((n, a) => n + (a.type === 'exchange' ? 0 : 1), 0);
+    const y1 = [...y1obj.A, ...y1obj.B, ...y1obj.C];
+    const y2 = [...y2obj.A, ...y2obj.B, ...y2obj.C];
+    const below = NP ? (y1.filter(isBelow).length + y2.filter(isBelow).length) : 0;
     candidates.push({
-      ino, swaps: actions.length, sp: spUsed,
-      y1: [...y1obj.A, ...y1obj.B, ...y1obj.C],
-      y2: [...y2obj.A, ...y2obj.B, ...y2obj.C],
-      spare: spareArr.slice(),
+      ino, swaps: actions.length, sp: spUsed, below,
+      y1, y2, spare: spareArr.slice(),
       steps: actions.length ? actions.map(describeSwap) : ['ไม่มีการสับเปลี่ยนที่ลด Ino ได้']
     });
   }
@@ -1391,10 +1414,19 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
       if (!sp.length) break;
       const mode1 = modeRefByPhase([...cy1.A, ...cy1.B, ...cy1.C], lockY1);
       const mode2 = modeRefByPhase([...cy2.A, ...cy2.B, ...cy2.C], lockY2);
-      let best = null; // { dev, side, ph, idx, mode }
+      // Prefer BELOW-nameplate (failed) units first, then largest mode-deviation.
+      let best = null; // { bad, dev, side, ph, idx, mode }
+      function consider(side, p, u, idx, mode) {
+        if (!mode) return;
+        const dev = Math.abs(u.val - mode) / mode;
+        const bad = isBelow(u) ? 1 : 0;
+        if (dev < 0.02 && !bad) return;            // ignore good units already at mode
+        if (!best || bad > best.bad || (bad === best.bad && dev > best.dev))
+          best = { bad, dev, side, ph: p, idx, mode };
+      }
       PHASES.forEach(p => {
-        if (mode1[p]) cy1[p].forEach((u, idx) => { const dev = Math.abs(u.val - mode1[p]) / mode1[p]; if (dev >= 0.02 && (!best || dev > best.dev)) best = { dev, side: 1, ph: p, idx, mode: mode1[p] }; });
-        if (mode2[p]) cy2[p].forEach((u, idx) => { const dev = Math.abs(u.val - mode2[p]) / mode2[p]; if (dev >= 0.02 && (!best || dev > best.dev)) best = { dev, side: 2, ph: p, idx, mode: mode2[p] }; });
+        cy1[p].forEach((u, idx) => consider(1, p, u, idx, mode1[p]));
+        cy2[p].forEach((u, idx) => consider(2, p, u, idx, mode2[p]));
       });
       if (!best) break;
       // pick the spare closest to that phase's mode
@@ -1411,16 +1443,20 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   })();
 
   // ── merge: best candidate per budget ──
-  // lowest Ino → fewest swaps → most spares used (prefer deploying the spare pool
-  // when it reaches the same Ino at the same swap count).
+  // When nameplate-aware: get FAILED (below-nameplate) units OUT first (fewest
+  // left), THEN lowest Ino → fewest swaps → most spares used. Otherwise just
+  // lowest Ino → fewest swaps → most spares.
+  function better(c, best) {
+    if (NP && c.below !== best.below) return c.below < best.below;
+    if (Math.abs(c.ino - best.ino) > 1e-9) return c.ino < best.ino;
+    if (c.swaps !== best.swaps) return c.swaps < best.swaps;
+    return c.sp > best.sp;
+  }
   function pick(maxSwaps) {
     let best = candidates[0];
     for (const c of candidates) {
       if (c.swaps > maxSwaps) continue;
-      if (c.ino < best.ino - 1e-9) { best = c; continue; }
-      if (c.ino <= best.ino + 1e-9) {
-        if (c.swaps < best.swaps || (c.swaps === best.swaps && c.sp > best.sp)) best = c;
-      }
+      if (better(c, best)) best = c;
     }
     return best;
   }
@@ -1769,86 +1805,99 @@ async function clientCalculate(payload) {
     const y2Tier1 = y2Flat.filter(x => !x.isLocked);
     const y2Tier2 = y2Flat.filter(x =>  x.isLocked);
 
-    // ── Tier 1: focus on "วัดแยก" items + Spare ──
-    // Build per-phase baseline from locked (Tier 2) items so the optimizer
-    // minimizes the ACTUAL per-phase Ino (matching calcYYMetrics & Excel).
-    function sumLockedByPhase(arr, prime) {
+    // ── Nameplate-failure priority + multi-level swap strategy ──
+    // A unit reading < NAMEPLATE_UF (27.00 µF) is treated as FAILED (field rule) and
+    // swapped FIRST; units ≥ nameplate are "good" and kept in place. Order of levels:
+    //   L0: failed Tier-1 units only        (good + grouped LOCKED)
+    //   L1: all Tier-1 units                 (grouped LOCKED)
+    //   L2: + grouped Tier-2 units           (skipped when scissors used)
+    // For each budget we pick the LEAST-disruptive level that meets the alarm
+    // threshold; if none meets it, the lowest I_no. NEVER changes the I_no calc.
+    const hasScissors = y1Flat.some(x => x.isSplit) || y2Flat.some(x => x.isSplit);
+    function isFailedUnit(x) {
+      if (x.measuredA != null && x.measuredB != null) return x.measuredA < NAMEPLATE_UF || x.measuredB < NAMEPLATE_UF;
+      return x.val < NAMEPLATE_UF;
+    }
+    function sumByPhase(arr) {
       const m = { A: 0, B: 0, C: 0 };
       arr.forEach(x => { const p = (x.origin||'').replace("'",''); if (m[p] !== undefined) m[p] += x.val; });
       return m;
     }
-    const lockedBaseline = {
-      y1ByPhase: sumLockedByPhase(y1Tier2, false),
-      y2ByPhase: sumLockedByPhase(y2Tier2, true)
-    };
-    quickResult = findPhaseAwareYYSwaps(y1Tier1, y2Tier1, spare || [], lockedBaseline, kv, y1Tier2, y2Tier2);
-
-    function computeAfter(swY1, swY2) {
-      const fullY1 = [...swY1, ...y1Tier2];
-      const fullY2 = [...swY2, ...y2Tier2];
-      return { fullY1, fullY2, eng: calcYYMetrics(fullY1, fullY2, kv) };
-    }
-
-    quickResult.swaps = quickResult.swaps.map(sw => {
-      const r = computeAfter(sw.y1, sw.y2);
-      sw.engAfter = r.eng;
-      sw.Ino_mA = r.eng.Ino_mA;
-      sw.underThreshold = sw.Ino_mA < THRESHOLD_MA;
-      sw.y1Full = r.fullY1; sw.y2Full = r.fullY2;
-      sw.tier = 1;
-      return sw;
-    });
-
-    // "Full optimal" = the best (6-swap) phase-aware result
-    fullResult = Object.assign({}, quickResult.swaps[quickResult.swaps.length - 1]);
-    fullResult.swapCount = fullResult.actualSwaps;
-
-    // ── Tier 2 FALLBACK ──
-    // If best Tier 1 solution still exceeds threshold AND there are locked items,
-    // include the locked (grouped) items as swappable too.
-    // EXCEPTION: when the technician used "วัดแยก" (scissors) anywhere, the grouped
-    // units are explicitly off-limits — swap ONLY the measured-separately units
-    // (+ spares), never the grouped ones, even if Ino stays above threshold.
-    const hasScissors = y1Flat.some(x => x.isSplit) || y2Flat.some(x => x.isSplit);
-    const tier1Best = quickResult.swaps[quickResult.swaps.length - 1];
-    const needFallback = !tier1Best.underThreshold && (y1Tier2.length + y2Tier2.length) > 0 && !hasScissors;
-    if (needFallback) {
-      // Now everything is swappable: no locked baseline offset
-      const y1All = [...y1Tier1, ...y1Tier2];
-      const y2All = [...y2Tier1, ...y2Tier2];
-      const t2 = findPhaseAwareYYSwaps(y1All, y2All, spare || [], { y1ByPhase:{A:0,B:0,C:0}, y2ByPhase:{A:0,B:0,C:0} }, kv, [], []);
-
-      t2.swaps.forEach(sw => {
-        sw.engAfter = calcYYMetrics(sw.y1, sw.y2, kv);
+    function runPass(swapY1, swapY2, lockY1, lockY2, level) {
+      const baseline = { y1ByPhase: sumByPhase(lockY1), y2ByPhase: sumByPhase(lockY2) };
+      const res = findPhaseAwareYYSwaps(swapY1, swapY2, spare || [], baseline, kv, lockY1, lockY2, NAMEPLATE_UF);
+      res.swaps.forEach(sw => {
+        const fullY1 = [...sw.y1, ...lockY1];
+        const fullY2 = [...sw.y2, ...lockY2];
+        sw.engAfter = calcYYMetrics(fullY1, fullY2, kv);
         sw.Ino_mA = sw.engAfter.Ino_mA;
         sw.underThreshold = sw.Ino_mA < THRESHOLD_MA;
-        sw.y1Full = sw.y1; sw.y2Full = sw.y2;
-        sw.tier = 2;
+        sw.y1Full = fullY1; sw.y2Full = fullY2;
+        sw.level = level;
+        sw.tier = level >= 2 ? 2 : 1;
       });
-
-      // For each level, keep whichever (Tier 1 vs Tier 2) gives lower Ino
-      quickResult.swaps = quickResult.swaps.map((sw, i) => {
-        const cand = t2.swaps[i];
-        return (cand && cand.Ino_mA < sw.Ino_mA) ? cand : sw;
-      });
-      const t2Best = t2.swaps[t2.swaps.length - 1];
-      if (t2Best && t2Best.Ino_mA < fullResult.Ino_mA) {
-        fullResult = Object.assign({}, t2Best);
-        fullResult.swapCount = t2Best.actualSwaps;
-      }
-      quickResult.fallbackUsed = true;
+      return res;
     }
+
+    const y1Fail = y1Tier1.filter(isFailedUnit), y1Good = y1Tier1.filter(x => !isFailedUnit(x));
+    const y2Fail = y2Tier1.filter(isFailedUnit), y2Good = y2Tier1.filter(x => !isFailedUnit(x));
+
+    const levels = [];
+    // L0 — failed Tier-1 only
+    levels.push(runPass(y1Fail, y2Fail, [...y1Good, ...y1Tier2], [...y2Good, ...y2Tier2], 0));
+    // L1 — all Tier-1 (only if there ARE good units to add; else identical to L0)
+    if (y1Good.length + y2Good.length > 0) {
+      levels.push(runPass(y1Tier1, y2Tier1, y1Tier2, y2Tier2, 1));
+    }
+    // L2 — + grouped Tier-2 (skip when scissors used)
+    if (!hasScissors && (y1Tier2.length + y2Tier2.length) > 0) {
+      levels.push(runPass([...y1Tier1, ...y1Tier2], [...y2Tier1, ...y2Tier2], [], [], 2));
+    }
+
+    // Count failed (below-nameplate) units still installed in an arrangement.
+    // Removed units sit in the spare pool (origin 'Spare') and don't count.
+    function failRemain(sw) {
+      let n = 0;
+      [...(sw.y1Full || []), ...(sw.y2Full || [])].forEach(u => { if (u.origin !== 'Spare' && isFailedUnit(u)) n++; });
+      return n;
+    }
+    // Per budget, in priority order matching the field procedure:
+    //   1. get the FAILED (<nameplate) units OUT — fewest left installed
+    //      (this stops the optimizer from "compensating" by reusing a bad unit)
+    //   2. meet the alarm threshold
+    //   3. least disruptive (lower level = don't touch good/grouped if avoidable)
+    //   4. fewest swaps, then lowest I_no
+    function chooseBudget(i) {
+      const cands = levels.map(p => p.swaps[i]).filter(Boolean);
+      cands.forEach(c => { c._fail = failRemain(c); });
+      cands.sort((a, b) =>
+        a._fail - b._fail
+        || ((b.underThreshold ? 1 : 0) - (a.underThreshold ? 1 : 0))
+        || a.level - b.level
+        || a.actualSwaps - b.actualSwaps
+        || a.Ino_mA - b.Ino_mA);
+      return cands[0];
+    }
+    quickResult = { baseDiff: levels[0].baseIno, baseIno: levels[0].baseIno, swaps: [0, 1, 2].map(chooseBudget) };
+    quickResult.usedGood  = quickResult.swaps.some(sw => sw.level >= 1);
+    quickResult.fallbackUsed = quickResult.swaps.some(sw => sw.level >= 2);
+
+    fullResult = Object.assign({}, quickResult.swaps[quickResult.swaps.length - 1]);
+    fullResult.swapCount = fullResult.actualSwaps;
 
     // Info note
     const tier1Count = y1Tier1.length + y2Tier1.length;
     const tier2Count = y1Tier2.length + y2Tier2.length;
     const sCount = (spare||[]).length;
-    const outlierCount = y1ModeOutliers.length + y2ModeOutliers.length;
+    const nFail = y1Fail.length + y2Fail.length;
+    const goodSpare = (spare || []).filter(s => s.val >= NAMEPLATE_UF).length;
     quickResult.lockedNote = (tier1Count + tier2Count) > 0
-      ? `Tier 1 (ติ๊ก "วัดแยก"): ${tier1Count} ตัว · Tier 2 (กรุ๊ป): ${tier2Count} ตัว · Spare ${sCount} ตัว` +
-        (outlierCount > 0 ? ` · 🎯 พบ ${outlierCount} ตัวห่างจาก mode ≥5% (จัดลำดับสลับก่อน)` : '') +
-        (quickResult.fallbackUsed ? ' · ⚠ Tier 1 ไม่พอ ใช้ fallback (สลับ Tier 2 ด้วย)' : '') +
-        (hasScissors && tier2Count > 0 ? ' · 🔒 มีวัดแยก → สับเฉพาะตัววัดแยก + Spare (ไม่แตะตัวกรุ๊ป)' : '')
+      ? `Tier 1 (วัดแยก): ${tier1Count} ตัว · Tier 2 (กรุ๊ป): ${tier2Count} ตัว · Spare ${sCount} ตัว (ดี ${goodSpare})` +
+        (nFail > 0 ? ` · 🔧 พบ ${nFail} ตัว < ${NAMEPLATE_UF} µF (ต่ำกว่า nameplate = เสีย) สับก่อน` : '') +
+        (nFail > goodSpare ? ` · 🔁 spare ดี (≥${NAMEPLATE_UF}) ไม่พอ (${goodSpare}/${nFail}) → ใช้ตัวที่ "ดีกว่า" ทดแทนชั่วคราวเพื่อบาลานซ์` : '') +
+        (quickResult.usedGood && !quickResult.fallbackUsed ? ' · ⚠ ตัวเสียอย่างเดียวไม่พอ ต้องสับตัวดี (≥nameplate) ด้วย' : '') +
+        (quickResult.fallbackUsed ? ' · ⚠ ต้องใช้ fallback (สลับตัวกรุ๊ป Tier 2 ด้วย)' : '') +
+        (hasScissors && tier2Count > 0 ? ' · 🔒 มีวัดแยก → ไม่แตะตัวกรุ๊ป' : '')
       : null;
   }
 
@@ -2539,6 +2588,12 @@ window.buildHBridgeFormulas = buildHBridgeFormulas;
 const F2={uF:v=>isNaN(v)?'—':Number(v).toFixed(4),mA:v=>isNaN(v)?'—':Number(v).toFixed(4),S:v=>isNaN(v)?'—':(Number(v)*1e6).toFixed(3),V:v=>isNaN(v)?'—':Number(v).toFixed(2),Mvar:v=>isNaN(v)?'—':Number(v).toFixed(3),Ohm:v=>isNaN(v)?'—':Number(v).toFixed(2)};
 // Relay-alarm threshold (mA) — comes from calculator.js (single source of truth)
 const ALARM = (typeof window!=='undefined' && window.ALARM_MA) || 50;
+// Capacitor nameplate (µF) — a unit below this is treated as "failed" (เสีย)
+const NAMEPLATE = (typeof window!=='undefined' && window.NAMEPLATE_UF) || 27;
+function unitBelowNameplate(c){
+  if (c.measuredA != null && c.measuredB != null) return c.measuredA < NAMEPLATE || c.measuredB < NAMEPLATE;
+  return c.val < NAMEPLATE;
+}
 
 function buildEngPanelFull(title,m,topology){
   let items=[];
@@ -2785,12 +2840,24 @@ function buildSolCard(cls,title,sw,showSteps,topology){
 
 function capList(arr,tgt){
   return arr.slice().sort((a,b)=>b.val-a.val).map(c=>{
-    const isLeft=c.origin==='A'||c.origin==='C';
-    const isRight=c.origin==='B'||c.origin==='D';
-    const onSide=(tgt==='left'&&isLeft)||(tgt==='right'&&isRight)||(c.origin===tgt);
-    const tag=c.origin==='Spare'?'<span class="pill p-spare">จากอะไหล่</span>'
-             :!onSide?`<span class="pill p-move">ย้ายจาก ${c.origin}</span>`
-             :'<span class="pill p-stay">อยู่เดิม</span>';
+    let tag;
+    if(c.origin==='Spare'){
+      tag='<span class="pill p-spare">จากอะไหล่</span>';
+    }else if(tgt==='Y1'||tgt==='Y2'){
+      // Y-Y: plain origin (A/B/C) belongs to Y1, primed (A'/B'/C') belongs to Y2.
+      const isPrimed=c.origin.includes("'");
+      const stayed=(tgt==='Y1'&&!isPrimed)||(tgt==='Y2'&&isPrimed);
+      const otherWye=tgt==='Y1'?'Y2':'Y1';
+      tag=stayed?'<span class="pill p-stay">อยู่เดิม</span>'
+                :`<span class="pill p-move">ย้ายจาก ${otherWye} (${c.origin})</span>`;
+    }else{
+      // H-bridge: left = A/C, right = B/D.
+      const isLeft=c.origin==='A'||c.origin==='C';
+      const isRight=c.origin==='B'||c.origin==='D';
+      const onSide=(tgt==='left'&&isLeft)||(tgt==='right'&&isRight)||(c.origin===tgt);
+      tag=!onSide?`<span class="pill p-move">ย้ายจาก ${c.origin}</span>`
+                 :'<span class="pill p-stay">อยู่เดิม</span>';
+    }
     const splitNote = c.subKey
       ? `<span style="font-size:0.65rem;color:var(--txt3);margin-left:4px;">[ตัว ${c.subKey.toUpperCase()}]</span>`
       : (c.measuredA != null && c.measuredB != null
@@ -2800,7 +2867,12 @@ function capList(arr,tgt){
     const outlierTag = c.isOutlier
       ? `<span class="pill p-outlier" title="ห่างจาก mode ${(c.deviation*100).toFixed(1)}%${c.modeRef?` (mode≈${c.modeRef.toFixed(2)}µF)`:''}"><i class="fas fa-bullseye"></i> outlier</span>`
       : '';
-    return `<div class="ci ${c.isOutlier?'is-outlier':''}"><span><span class="cv">${c.val.toFixed(3)}</span><span class="cid"> (${c.id})</span>${splitNote}</span><span style="display:flex;gap:4px;align-items:center;">${outlierTag}${tag}</span></div>`;
+    // Nameplate indicator: unit (or a measured piece) below nameplate = "failed"
+    const failed = c.origin!=='Spare' && unitBelowNameplate(c);
+    const failTag = failed
+      ? `<span class="pill p-fail" title="ต่ำกว่า nameplate ${NAMEPLATE} µF"><i class="fas fa-triangle-exclamation"></i> < ${NAMEPLATE}</span>`
+      : '';
+    return `<div class="ci ${c.isOutlier?'is-outlier':''} ${failed?'is-failed':''}"><span><span class="cv">${c.val.toFixed(3)}</span><span class="cid"> (${c.id})</span>${splitNote}</span><span style="display:flex;gap:4px;align-items:center;">${failTag}${outlierTag}${tag}</span></div>`;
   }).join('');
 }
 
