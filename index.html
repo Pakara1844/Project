@@ -829,7 +829,7 @@ body {
         <i class="fas fa-moon icon-dark"></i>
         <i class="fas fa-sun icon-light"></i>
       </button>
-      <div class="ver-badge">v5.9</div>
+      <div class="ver-badge">v6.0</div>
     </div>
   </header>
 
@@ -1697,10 +1697,12 @@ async function clientCalculate(payload) {
       fullResult.tier = 1;
     }
 
-    // Tier 2 fallback if needed
+    // Tier 2 fallback if needed — but NOT when "วัดแยก" (scissors) is in use:
+    // grouped units are then off-limits, swap only measured-separately + spares.
+    const hasScissors = [aF, bF, cF, dF].some(arr => arr.some(x => x.isSplit));
     const t1Best = quickResult.swaps[quickResult.swaps.length-1];
     const totalT2 = aT2.length + bT2.length + cT2.length + dT2.length;
-    if (!t1Best.underThreshold && totalT2 > 0) {
+    if (!t1Best.underThreshold && totalT2 > 0 && !hasScissors) {
       // Prepare Tier 2 — swap locked items individually (ทีละตัว)
       const aT2P = prepareTier2Array(aT2), bT2P = prepareTier2Array(bT2);
       const cT2P = prepareTier2Array(cT2), dT2P = prepareTier2Array(dT2);
@@ -1746,7 +1748,8 @@ async function clientCalculate(payload) {
     const t2Count = aT2.length + bT2.length + cT2.length + dT2.length;
     quickResult.lockedNote = (t1Count + t2Count) > 0
       ? `Tier 1 (ติ๊ก "วัดแยก"): ${t1Count} ตัว · Tier 2 (กรุ๊ป): ${t2Count} ตัว · Spare ${(spare||[]).length} ตัว` +
-        (quickResult.fallbackUsed ? ' · ⚠ Tier 1 ไม่พอ ใช้ fallback (สลับ Tier 2 ด้วย)' : '')
+        (quickResult.fallbackUsed ? ' · ⚠ Tier 1 ไม่พอ ใช้ fallback (สลับ Tier 2 ด้วย)' : '') +
+        (hasScissors && t2Count > 0 ? ' · 🔒 มีวัดแยก → สับเฉพาะตัววัดแยก + Spare (ไม่แตะตัวกรุ๊ป)' : '')
       : null;
   } else {
     const y1Flat = expandPairs(y1);
@@ -1802,10 +1805,13 @@ async function clientCalculate(payload) {
 
     // ── Tier 2 FALLBACK ──
     // If best Tier 1 solution still exceeds threshold AND there are locked items,
-    // include the locked (grouped) items as swappable too — still phase-aware,
-    // still individual swaps.
+    // include the locked (grouped) items as swappable too.
+    // EXCEPTION: when the technician used "วัดแยก" (scissors) anywhere, the grouped
+    // units are explicitly off-limits — swap ONLY the measured-separately units
+    // (+ spares), never the grouped ones, even if Ino stays above threshold.
+    const hasScissors = y1Flat.some(x => x.isSplit) || y2Flat.some(x => x.isSplit);
     const tier1Best = quickResult.swaps[quickResult.swaps.length - 1];
-    const needFallback = !tier1Best.underThreshold && (y1Tier2.length + y2Tier2.length) > 0;
+    const needFallback = !tier1Best.underThreshold && (y1Tier2.length + y2Tier2.length) > 0 && !hasScissors;
     if (needFallback) {
       // Now everything is swappable: no locked baseline offset
       const y1All = [...y1Tier1, ...y1Tier2];
@@ -1841,7 +1847,8 @@ async function clientCalculate(payload) {
     quickResult.lockedNote = (tier1Count + tier2Count) > 0
       ? `Tier 1 (ติ๊ก "วัดแยก"): ${tier1Count} ตัว · Tier 2 (กรุ๊ป): ${tier2Count} ตัว · Spare ${sCount} ตัว` +
         (outlierCount > 0 ? ` · 🎯 พบ ${outlierCount} ตัวห่างจาก mode ≥5% (จัดลำดับสลับก่อน)` : '') +
-        (quickResult.fallbackUsed ? ' · ⚠ Tier 1 ไม่พอ ใช้ fallback (สลับ Tier 2 ด้วย)' : '')
+        (quickResult.fallbackUsed ? ' · ⚠ Tier 1 ไม่พอ ใช้ fallback (สลับ Tier 2 ด้วย)' : '') +
+        (hasScissors && tier2Count > 0 ? ' · 🔒 มีวัดแยก → สับเฉพาะตัววัดแยก + Spare (ไม่แตะตัวกรุ๊ป)' : '')
       : null;
   }
 
