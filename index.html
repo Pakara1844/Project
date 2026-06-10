@@ -836,7 +836,7 @@ body {
         <i class="fas fa-moon icon-dark"></i>
         <i class="fas fa-sun icon-light"></i>
       </button>
-      <div class="ver-badge">v6.3</div>
+      <div class="ver-badge">v6.5</div>
     </div>
   </header>
 
@@ -1151,6 +1151,8 @@ function describeSwap(action) {
   if (type === 'exchange')   return `สลับ [${from.id}] (${from.val.toFixed(3)} µF) ↔ [${to.id}] (${to.val.toFixed(3)} µF)`;
   if (type === 'replace-y1') return `ถอด [${from.id}] (${from.val.toFixed(3)} µF) จาก Y1 → แทนด้วย [${to.id}] (${to.val.toFixed(3)} µF)`;
   if (type === 'replace-y2') return `ถอด [${from.id}] (${from.val.toFixed(3)} µF) จาก Y2 → แทนด้วย [${to.id}] (${to.val.toFixed(3)} µF)`;
+  if (type === 'piece-replace') return `แทนชิ้น [${from.id}.${action.piece}] (${action.oldVal.toFixed(3)} µF) ด้วยอะไหล่ (${to.val.toFixed(3)} µF) → คู่เป็น ${action.newPairVal.toFixed(3)} µF`;
+  if (type === 'piece-swap')    return `สลับชิ้น [${action.u1.id}.${action.p1}] (${action.v1.toFixed(3)}) ↔ [${action.u2.id}.${action.p2}] (${action.v2.toFixed(3)} µF)`;
   return '';
 }
 
@@ -1331,13 +1333,23 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
       spare: st.spare.slice(), actions: st.actions.slice(), ino: st.ino
     };
   }
-  // All single-swap children of a state (in-phase exchange + spare replacement).
+  // A scissored slot is a measured-separately parallel PAIR (2 cap pieces).
+  const isScis = u => u && u.measuredA != null && u.measuredB != null;
+  const pieceUnit = (u, na, nb) => Object.assign({}, u, { measuredA: na, measuredB: nb, val: na + nb });
+
+  // Children of a state. NON-scissored swappable units move as WHOLE units
+  // (in-phase exchange + spare replacement). Scissored slots (parallel pairs) are
+  // never swapped whole — instead their individual cap PIECES are rearranged:
+  // a piece can be exchanged with another scissored slot's piece ("สับกันเอง"),
+  // or replaced by a spare cap ("สลับจาก spare"). Grouped/locked units never move.
   function expand(st) {
     const kids = [];
     for (const ph of PHASES) {
       const a1 = st.y1[ph], a2 = st.y2[ph], tag1 = ph, tag2 = ph + "'";
       for (let i = 0; i < a1.length; i++) {
+        if (isScis(a1[i])) continue;
         for (let j = 0; j < a2.length; j++) {
+          if (isScis(a2[j])) continue;
           const c = clone(st), u1 = a1[i], u2 = a2[j];
           c.y1[ph] = a1.slice(); c.y2[ph] = a2.slice();
           c.y1[ph][i] = Object.assign({}, u2, { origin: tag1 });
@@ -1358,6 +1370,7 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
         }
       }
       for (let j = 0; j < a2.length; j++) {
+        if (isScis(a2[j])) continue;
         for (let k = 0; k < st.spare.length; k++) {
           const c = clone(st), removed = a2[j], sp = st.spare[k];
           c.y2[ph] = a2.slice();
@@ -1366,6 +1379,54 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
           c.spare[k] = Object.assign({}, removed, { origin: 'Spare' });
           c.ino = inoOf(c.y1, c.y2);
           c.actions.push({ type: 'replace-y2', from: removed, to: sp });
+          kids.push(c);
+        }
+      }
+    }
+
+    // ── PIECE-LEVEL moves for scissored slots (parallel pairs) ──
+    const scis = [];
+    for (const ph of PHASES) {
+      st.y1[ph].forEach((u, i) => { if (isScis(u)) scis.push({ side: 1, ph, i }); });
+      st.y2[ph].forEach((u, i) => { if (isScis(u)) scis.push({ side: 2, ph, i }); });
+    }
+    const arrOf = (state, loc) => (loc.side === 1 ? state.y1 : state.y2)[loc.ph];
+    // (a) replace one piece of a scissored slot with a spare cap
+    for (const loc of scis) {
+      const u = arrOf(st, loc)[loc.i];
+      for (const pc of ['a', 'b']) {
+        const oldVal = pc === 'a' ? u.measuredA : u.measuredB;
+        for (let k = 0; k < st.spare.length; k++) {
+          const sp = st.spare[k];
+          if (sp.val === oldVal) continue;
+          const c = clone(st);
+          const nu = pc === 'a' ? pieceUnit(u, sp.val, u.measuredB) : pieceUnit(u, u.measuredA, sp.val);
+          (loc.side === 1 ? c.y1 : c.y2)[loc.ph] = arrOf(st, loc).slice();
+          arrOf(c, loc)[loc.i] = nu;
+          c.spare = st.spare.slice();
+          c.spare[k] = Object.assign({}, sp, { val: oldVal, origin: 'Spare' });
+          c.ino = inoOf(c.y1, c.y2);
+          c.actions.push({ type: 'piece-replace', from: u, piece: pc, oldVal, to: sp, newPairVal: nu.val });
+          kids.push(c);
+        }
+      }
+    }
+    // (b) swap a piece between two scissored slots ("สับกันเอง")
+    for (let m = 0; m < scis.length; m++) {
+      for (let n = m + 1; n < scis.length; n++) {
+        const A = scis[m], B = scis[n];
+        const uA = arrOf(st, A)[A.i], uB = arrOf(st, B)[B.i];
+        for (const pa of ['a', 'b']) for (const pb of ['a', 'b']) {
+          const va = pa === 'a' ? uA.measuredA : uA.measuredB;
+          const vb = pb === 'a' ? uB.measuredA : uB.measuredB;
+          if (va === vb) continue;
+          const c = clone(st);
+          (A.side === 1 ? c.y1 : c.y2)[A.ph] = arrOf(st, A).slice();
+          (B.side === 1 ? c.y1 : c.y2)[B.ph] = arrOf(st, B).slice();
+          arrOf(c, A)[A.i] = pa === 'a' ? pieceUnit(uA, vb, uA.measuredB) : pieceUnit(uA, uA.measuredA, vb);
+          arrOf(c, B)[B.i] = pb === 'a' ? pieceUnit(uB, va, uB.measuredB) : pieceUnit(uB, uB.measuredA, va);
+          c.ino = inoOf(c.y1, c.y2);
+          c.actions.push({ type: 'piece-swap', u1: uA, p1: pa, v1: va, u2: uB, p2: pb, v2: vb });
           kids.push(c);
         }
       }
@@ -1417,7 +1478,7 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
       // Prefer BELOW-nameplate (failed) units first, then largest mode-deviation.
       let best = null; // { bad, dev, side, ph, idx, mode }
       function consider(side, p, u, idx, mode) {
-        if (!mode) return;
+        if (!mode || isScis(u)) return;   // scissored pairs are fixed at piece level (beam track)
         const dev = Math.abs(u.val - mode) / mode;
         const bad = isBelow(u) ? 1 : 0;
         if (dev < 0.02 && !bad) return;            // ignore good units already at mode
