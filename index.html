@@ -836,7 +836,7 @@ body {
         <i class="fas fa-moon icon-dark"></i>
         <i class="fas fa-sun icon-light"></i>
       </button>
-      <div class="ver-badge">v6.5</div>
+      <div class="ver-badge">v6.8</div>
     </div>
   </header>
 
@@ -907,8 +907,9 @@ body {
       </div>
 
       <!-- System params -->
-      <div class="sys-params" style="grid-template-columns:1fr;">
+      <div class="sys-params" style="grid-template-columns:1fr 1fr;">
         <div class="fg"><label>แรงดันระบบ V<sub>S</sub> (kV)</label><input type="number" id="systemKV" value="69" min="1" max="1000" step="0.1"></div>
+        <div class="fg"><label>ค่า unbalance สูงสุด I<sub>no</sub> (mA)</label><input type="number" id="alarmMA" value="50" min="0.1" max="100000" step="0.1"></div>
       </div>
 
       <!-- Hint -->
@@ -918,8 +919,8 @@ body {
           <strong>วิธีกรอก:</strong> กรอกจำนวนช่องของแต่ละกิ่ง/leg แยกกัน → กดสร้าง → กรอกค่า C<br>
           • <strong>☑ ต่อขนาน (ระดับฝั่ง)</strong> = ช่องในฝั่งนี้เป็นคู่ขนาน → กรอก<strong>ค่ารวมของช่าง</strong>ได้เลย (ไม่ ÷2) ระบบจะล็อกเป็น Tier 2 + โชว์ปุ่มกรรไกร<br>
           • <strong>✂ กรรไกร (รายตัว)</strong> = วัดแยก 2 ตัวในช่องนี้ → กรอก va, vb ระบบใช้<strong>ผลรวม va+vb</strong> เป็นค่าช่อง (Tier 1 สลับได้)<br>
-          • Algorithm จะสลับ <strong>เฉพาะตัวที่กดกรรไกร + Spare</strong> ก่อน — ถ้า Ino ยังเกิน 50mA จึงขยายไปสลับตัวอื่น
-          • <strong>Spare = ตัวเดี่ยวเสมอ</strong> — การสับเปลี่ยนทำเป็นรายตัว ถ้า Ino > 50mA ระบบจะหาทางลดให้ต่ำกว่า 50mA
+          • Algorithm จะสลับ <strong>เฉพาะตัวที่กดกรรไกร + Spare</strong> ก่อน — ถ้า Ino ยังเกินค่า unbalance ที่ตั้งไว้ จึงขยายไปสลับตัวอื่น
+          • <strong>Spare = ตัวเดี่ยวเสมอ</strong> — การสับเปลี่ยนทำเป็นรายตัว ถ้า Ino เกินเกณฑ์ที่กรอกไว้ ระบบจะหาทางลดให้ต่ำกว่าเกณฑ์
         </div>
       </div>
 
@@ -1028,7 +1029,29 @@ if (typeof window !== 'undefined') window.ALARM_MA = ALARM_MA;
 const NAMEPLATE_UF = 27.00;
 if (typeof window !== 'undefined') window.NAMEPLATE_UF = NAMEPLATE_UF;
 
+// Max allowed spread (µF) of the per-phase SERIES capacitance WITHIN one wye side
+// (phase A vs B vs C). After swapping, each side should have its three phases'
+// series-combined C within this tolerance — an ADDITIONAL acceptance goal beyond
+// the I_no alarm. Like nameplate, this is display + swap-priority only; it NEVER
+// changes the I_no calculation. (YY topology only.)
+const PHASE_SPREAD_UF = 0.1;
+if (typeof window !== 'undefined') window.PHASE_SPREAD_UF = PHASE_SPREAD_UF;
+
 function sumC(arr) { return arr.reduce((t, c) => t + c.val, 0); }
+
+// Within-side phase spread from a calcYYMetrics() result: max−min of the three
+// per-phase SERIES capacitances on each wye (perPhase.X.C1 = Y1, .C2 = Y2), and
+// whether BOTH sides are within tolerance. Used as an extra swap-acceptance goal.
+function phaseSpreadOf(metrics, tol) {
+  const t = (typeof tol === 'number' && tol > 0) ? tol : PHASE_SPREAD_UF;
+  const p = metrics && metrics.perPhase;
+  if (!p) return { y1: NaN, y2: NaN, max: NaN, ok: false, tol: t };
+  const sp = a => Math.max.apply(null, a) - Math.min.apply(null, a);
+  const s1 = sp([p.A.C1, p.B.C1, p.C.C1]);
+  const s2 = sp([p.A.C2, p.B.C2, p.C.C2]);
+  const mx = Math.max(s1, s2);
+  return { y1: s1, y2: s2, max: mx, ok: mx <= t + 1e-9, tol: t };
+}
 
 /** Engineering metrics for YY topology — per-phase unbalance, CT between N1-N2 */
 function calcYYMetrics(y1, y2, systemKV) {
@@ -1148,7 +1171,11 @@ function calcHBridgeMetrics(legA, legB, legC, legD, systemKV) {
 
 function describeSwap(action) {
   const { type, from, to } = action;
-  if (type === 'exchange')   return `สลับ [${from.id}] (${from.val.toFixed(3)} µF) ↔ [${to.id}] (${to.val.toFixed(3)} µF)`;
+  if (type === 'exchange') {
+    const pf = (from.origin||'').replace("'",''), pt = (to.origin||'').replace("'",'');
+    const cross = pf && pt && pf !== pt ? ' (ข้ามเฟส)' : '';
+    return `สลับ [${from.id}] (${from.val.toFixed(3)} µF) ↔ [${to.id}] (${to.val.toFixed(3)} µF)${cross}`;
+  }
   if (type === 'replace-y1') return `ถอด [${from.id}] (${from.val.toFixed(3)} µF) จาก Y1 → แทนด้วย [${to.id}] (${to.val.toFixed(3)} µF)`;
   if (type === 'replace-y2') return `ถอด [${from.id}] (${from.val.toFixed(3)} µF) จาก Y2 → แทนด้วย [${to.id}] (${to.val.toFixed(3)} µF)`;
   if (type === 'piece-replace') return `แทนชิ้น [${from.id}.${action.piece}] (${action.oldVal.toFixed(3)} µF) ด้วยอะไหล่ (${to.val.toFixed(3)} µF) → คู่เป็น ${action.newPairVal.toFixed(3)} µF`;
@@ -1291,9 +1318,11 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   // Adaptive search width. When the candidate space is small we keep ALL depth-1
   // states so the 2-swap optimum is found EXACTLY (the budget the field worker
   // uses most); otherwise we cap to keep one calculation well under a second.
-  const nSingles = PHASES.reduce((t, ph) =>
-    t + y1ByPhase[ph].length * y2ByPhase[ph].length +
-    (y1ByPhase[ph].length + y2ByPhase[ph].length) * sparePool.length, 0);
+  // Exchanges are CROSS-PHASE (any Y1 unit ↔ any Y2 unit), so the single-swap
+  // count is (total Y1)·(total Y2) + spare replacements — not just per-phase.
+  const totY1 = y1ByPhase.A.length + y1ByPhase.B.length + y1ByPhase.C.length;
+  const totY2 = y2ByPhase.A.length + y2ByPhase.B.length + y2ByPhase.C.length;
+  const nSingles = totY1 * totY2 + (totY1 + totY2) * sparePool.length;
   const small = nSingles <= 200;
   const KEEP1 = small ? Math.max(nSingles, 1) : 60;
   const BEAM  = small ? 40 : 24;
@@ -1302,6 +1331,13 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
     const fullY1 = [...cY1.A, ...cY1.B, ...cY1.C, ...lockY1];
     const fullY2 = [...cY2.A, ...cY2.B, ...cY2.C, ...lockY2];
     return calcYYMetrics(fullY1, fullY2, kv).Ino_mA;
+  }
+  // Within-side per-phase series-C spread for a state (max of Y1/Y2 spreads).
+  // Used only as a tiebreaker among equal-Ino candidates — prefer A≈B≈C.
+  function spreadOf(cY1, cY2) {
+    const fullY1 = [...cY1.A, ...cY1.B, ...cY1.C, ...lockY1];
+    const fullY2 = [...cY2.A, ...cY2.B, ...cY2.C, ...lockY2];
+    return phaseSpreadOf(calcYYMetrics(fullY1, fullY2, kv)).max;
   }
   const baseIno = inoOf(y1ByPhase, y2ByPhase);
 
@@ -1314,6 +1350,7 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
     const below = NP ? (y1.filter(isBelow).length + y2.filter(isBelow).length) : 0;
     candidates.push({
       ino, swaps: actions.length, sp: spUsed, below,
+      spread: spreadOf(y1obj, y2obj),
       y1, y2, spare: spareArr.slice(),
       steps: actions.length ? actions.map(describeSwap) : ['ไม่มีการสับเปลี่ยนที่ลด Ino ได้']
     });
@@ -1344,23 +1381,36 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   // or replaced by a spare cap ("สลับจาก spare"). Grouped/locked units never move.
   function expand(st) {
     const kids = [];
+    // ── Whole-unit EXCHANGES between Y1 and Y2 — CROSS-PHASE allowed ──
+    // A non-scissored swappable unit in Y1 (any phase) may trade places with one
+    // in Y2 (any phase): e.g. Y1-A ↔ Y2-B'. The moved unit takes the phase tag of
+    // its new position. This intentionally relaxes the old "a cap never leaves its
+    // phase" rule — the field worker wants Y1/Y2 units freely interchangeable.
+    for (const pa of PHASES) {
+      const a1 = st.y1[pa];
+      for (let i = 0; i < a1.length; i++) {
+        if (isScis(a1[i])) continue;
+        for (const pb of PHASES) {
+          const a2 = st.y2[pb];
+          for (let j = 0; j < a2.length; j++) {
+            if (isScis(a2[j])) continue;
+            const c = clone(st), u1 = a1[i], u2 = a2[j];
+            c.y1[pa][i] = Object.assign({}, u2, { origin: pa });
+            c.y2[pb][j] = Object.assign({}, u1, { origin: pb + "'" });
+            c.ino = inoOf(c.y1, c.y2);
+            c.actions.push({ type: 'exchange', from: u1, to: u2 });
+            kids.push(c);
+          }
+        }
+      }
+    }
+    // ── SPARE replacements (unit stays in its own position/phase) ──
     for (const ph of PHASES) {
       const a1 = st.y1[ph], a2 = st.y2[ph], tag1 = ph, tag2 = ph + "'";
       for (let i = 0; i < a1.length; i++) {
         if (isScis(a1[i])) continue;
-        for (let j = 0; j < a2.length; j++) {
-          if (isScis(a2[j])) continue;
-          const c = clone(st), u1 = a1[i], u2 = a2[j];
-          c.y1[ph] = a1.slice(); c.y2[ph] = a2.slice();
-          c.y1[ph][i] = Object.assign({}, u2, { origin: tag1 });
-          c.y2[ph][j] = Object.assign({}, u1, { origin: tag2 });
-          c.ino = inoOf(c.y1, c.y2);
-          c.actions.push({ type: 'exchange', from: u1, to: u2 });
-          kids.push(c);
-        }
         for (let k = 0; k < st.spare.length; k++) {
           const c = clone(st), removed = a1[i], sp = st.spare[k];
-          c.y1[ph] = a1.slice();
           c.y1[ph][i] = Object.assign({}, sp, { origin: tag1 });
           c.spare = st.spare.slice();
           c.spare[k] = Object.assign({}, removed, { origin: 'Spare' });
@@ -1373,7 +1423,6 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
         if (isScis(a2[j])) continue;
         for (let k = 0; k < st.spare.length; k++) {
           const c = clone(st), removed = a2[j], sp = st.spare[k];
-          c.y2[ph] = a2.slice();
           c.y2[ph][j] = Object.assign({}, sp, { origin: tag2 });
           c.spare = st.spare.slice();
           c.spare[k] = Object.assign({}, removed, { origin: 'Spare' });
@@ -1510,6 +1559,9 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   function better(c, best) {
     if (NP && c.below !== best.below) return c.below < best.below;
     if (Math.abs(c.ino - best.ino) > 1e-9) return c.ino < best.ino;
+    // Among electrically-equal (same Ino) candidates, prefer the tighter within-
+    // side phase spread (A≈B≈C). Continuous tiebreak before swap-count/spares.
+    if (Math.abs((c.spread || 0) - (best.spread || 0)) > 1e-9) return (c.spread || 0) < (best.spread || 0);
     if (c.swaps !== best.swaps) return c.swaps < best.swaps;
     return c.sp > best.sp;
   }
@@ -1529,6 +1581,7 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
       diff: b.ino,            // = Ino in mA
       Ino_mA: b.ino,
       sparesUsed: b.sp,
+      phaseSpread: b.spread,  // within-side per-phase series-C spread (µF)
       y1: b.y1, y2: b.y2, spare: b.spare,
       steps: b.steps
     };
@@ -1728,9 +1781,14 @@ function unpackTier2Result(arr) {
 }
 
 async function clientCalculate(payload) {
-  const {topology, y1, y2, spare, legs, systemKV} = payload;
+  const {topology, y1, y2, spare, legs, systemKV, alarmMA} = payload;
   const kv = parseFloat(systemKV) || 69;
-  const THRESHOLD_MA = ALARM_MA;  // CT alarm threshold (see ALARM_MA at top)
+  // CT alarm threshold (mA). The field engineer sets this per-substation in Step 2;
+  // ALARM_MA (top of file) is now only the DEFAULT fallback. It drives underThreshold
+  // (pass/fail) + budget selection, and is stored on engBefore.thresholdMA so UI +
+  // formulas read it back and stay consistent. Does NOT change the I_no calculation.
+  const userAlarm = parseFloat(alarmMA);
+  const THRESHOLD_MA = (isFinite(userAlarm) && userAlarm > 0) ? userAlarm : ALARM_MA;
   let quickResult, fullResult, engBefore;
 
   if (topology === 'h-bridge') {
@@ -1852,6 +1910,7 @@ async function clientCalculate(payload) {
     const y1Flat = expandPairs(y1);
     const y2Flat = expandPairs(y2);
     engBefore   = calcYYMetrics(y1Flat, y2Flat, kv);
+    engBefore.spread = phaseSpreadOf(engBefore);   // within-side A/B/C series spread (before)
 
     // ── Rule 2: mode-based outlier detection for non-parallel groups ──
     // Flag units deviating ≥5% from the per-phase mode; these are prioritized.
@@ -1893,6 +1952,10 @@ async function clientCalculate(payload) {
         sw.engAfter = calcYYMetrics(fullY1, fullY2, kv);
         sw.Ino_mA = sw.engAfter.Ino_mA;
         sw.underThreshold = sw.Ino_mA < THRESHOLD_MA;
+        // Within-side per-phase series-C spread (A≈B≈C) — extra acceptance goal.
+        sw.spread = phaseSpreadOf(sw.engAfter);
+        sw.spreadOK = sw.spread.ok;
+        sw.fullyPass = sw.underThreshold && sw.spreadOK;
         sw.y1Full = fullY1; sw.y2Full = fullY2;
         sw.level = level;
         sw.tier = level >= 2 ? 2 : 1;
@@ -1902,17 +1965,27 @@ async function clientCalculate(payload) {
 
     const y1Fail = y1Tier1.filter(isFailedUnit), y1Good = y1Tier1.filter(x => !isFailedUnit(x));
     const y2Fail = y2Tier1.filter(isFailedUnit), y2Good = y2Tier1.filter(x => !isFailedUnit(x));
+    const hasFailed = (y1Fail.length + y2Fail.length) > 0;
 
     const levels = [];
-    // L0 — failed Tier-1 only
+    // L0 — failed Tier-1 only (good + grouped LOCKED). Exchanges are now CROSS-PHASE
+    // (any Y1 unit ↔ any Y2 unit), so failed units can move freely between sides.
     levels.push(runPass(y1Fail, y2Fail, [...y1Good, ...y1Tier2], [...y2Good, ...y2Tier2], 0));
-    // L1 — all Tier-1 (only if there ARE good units to add; else identical to L0)
-    if (y1Good.length + y2Good.length > 0) {
-      levels.push(runPass(y1Tier1, y2Tier1, y1Tier2, y2Tier2, 1));
-    }
-    // L2 — + grouped Tier-2 (skip when scissors used)
-    if (!hasScissors && (y1Tier2.length + y2Tier2.length) > 0) {
-      levels.push(runPass([...y1Tier1, ...y1Tier2], [...y2Tier1, ...y2Tier2], [], [], 2));
+    // ESCALATION POLICY (product decision): when there ARE failed (<nameplate) units,
+    // touch ONLY those — do NOT bring in good / grouped units even if I_no still
+    // exceeds the alarm; just show the best achievable from the failed units. The
+    // L1/L2 fallbacks run ONLY when there are no failed units to act on (otherwise
+    // the bank is all-good but imbalanced, and rearranging good units is the sole
+    // way to rebalance — the tool's original purpose).
+    if (!hasFailed) {
+      // L1 — all Tier-1 (only if there ARE good units to add; else identical to L0)
+      if (y1Good.length + y2Good.length > 0) {
+        levels.push(runPass(y1Tier1, y2Tier1, y1Tier2, y2Tier2, 1));
+      }
+      // L2 — + grouped Tier-2 (skip when scissors used)
+      if (!hasScissors && (y1Tier2.length + y2Tier2.length) > 0) {
+        levels.push(runPass([...y1Tier1, ...y1Tier2], [...y2Tier1, ...y2Tier2], [], [], 2));
+      }
     }
 
     // Count failed (below-nameplate) units still installed in an arrangement.
@@ -1925,17 +1998,22 @@ async function clientCalculate(payload) {
     // Per budget, in priority order matching the field procedure:
     //   1. get the FAILED (<nameplate) units OUT — fewest left installed
     //      (this stops the optimizer from "compensating" by reusing a bad unit)
-    //   2. meet the alarm threshold
-    //   3. least disruptive (lower level = don't touch good/grouped if avoidable)
-    //   4. fewest swaps, then lowest I_no
+    //   2. fully pass = meet BOTH the alarm threshold AND the within-side phase
+    //      spread goal (A≈B≈C ≤ PHASE_SPREAD_UF)
+    //   3. meet the alarm threshold (relay safety floor) on its own
+    //   4. meet the phase-spread goal on its own
+    //   5. least disruptive (lower level), fewest swaps, tighter spread, lowest I_no
     function chooseBudget(i) {
       const cands = levels.map(p => p.swaps[i]).filter(Boolean);
       cands.forEach(c => { c._fail = failRemain(c); });
       cands.sort((a, b) =>
         a._fail - b._fail
+        || ((b.fullyPass ? 1 : 0) - (a.fullyPass ? 1 : 0))
         || ((b.underThreshold ? 1 : 0) - (a.underThreshold ? 1 : 0))
+        || ((b.spreadOK ? 1 : 0) - (a.spreadOK ? 1 : 0))
         || a.level - b.level
         || a.actualSwaps - b.actualSwaps
+        || (a.spread.max - b.spread.max)
         || a.Ino_mA - b.Ino_mA);
       return cands[0];
     }
@@ -1954,25 +2032,29 @@ async function clientCalculate(payload) {
     const goodSpare = (spare || []).filter(s => s.val >= NAMEPLATE_UF).length;
     quickResult.lockedNote = (tier1Count + tier2Count) > 0
       ? `Tier 1 (วัดแยก): ${tier1Count} ตัว · Tier 2 (กรุ๊ป): ${tier2Count} ตัว · Spare ${sCount} ตัว (ดี ${goodSpare})` +
-        (nFail > 0 ? ` · 🔧 พบ ${nFail} ตัว < ${NAMEPLATE_UF} µF (ต่ำกว่า nameplate = เสีย) สับก่อน` : '') +
-        (nFail > goodSpare ? ` · 🔁 spare ดี (≥${NAMEPLATE_UF}) ไม่พอ (${goodSpare}/${nFail}) → ใช้ตัวที่ "ดีกว่า" ทดแทนชั่วคราวเพื่อบาลานซ์` : '') +
-        (quickResult.usedGood && !quickResult.fallbackUsed ? ' · ⚠ ตัวเสียอย่างเดียวไม่พอ ต้องสับตัวดี (≥nameplate) ด้วย' : '') +
-        (quickResult.fallbackUsed ? ' · ⚠ ต้องใช้ fallback (สลับตัวกรุ๊ป Tier 2 ด้วย)' : '') +
+        ' · 🔄 สลับ Y1↔Y2 ข้ามเฟสได้' +
+        (nFail > 0 ? ` · 🔧 พบ ${nFail} ตัว < ${NAMEPLATE_UF} µF (ต่ำกว่า nameplate = เสีย) → สับเฉพาะตัวเสีย ไม่แตะตัวดี/กรุ๊ป` : '') +
+        (nFail > 0 && nFail > goodSpare ? ` · 🔁 spare ดี (≥${NAMEPLATE_UF}) ไม่พอ (${goodSpare}/${nFail}) → ใช้ตัวที่ "ดีกว่า" ทดแทนชั่วคราวเพื่อบาลานซ์` : '') +
+        (!hasFailed && quickResult.usedGood && !quickResult.fallbackUsed ? ' · ⚠ ไม่มีตัวเสีย → สลับตัวดีเพื่อบาลานซ์' : '') +
+        (!hasFailed && quickResult.fallbackUsed ? ' · ⚠ ต้องใช้ fallback (สลับตัวกรุ๊ป Tier 2 ด้วย)' : '') +
         (hasScissors && tier2Count > 0 ? ' · 🔒 มีวัดแยก → ไม่แตะตัวกรุ๊ป' : '')
       : null;
   }
 
-  // Mark which quick swap is the BEST: fewest swaps that meets Ino < 5mA
+  // Mark which quick swap is the BEST: fewest swaps that meets the alarm; and
+  // (YY) fewest swaps that FULLY pass (alarm AND within-side phase spread).
   quickResult.bestUnderThreshold = null;
+  quickResult.bestFullyPass = null;
   for (let i = 0; i < quickResult.swaps.length; i++) {
-    if (quickResult.swaps[i].underThreshold) {
+    if (quickResult.bestUnderThreshold === null && quickResult.swaps[i].underThreshold)
       quickResult.bestUnderThreshold = i;
-      break;
-    }
+    if (quickResult.bestFullyPass === null && quickResult.swaps[i].underThreshold && quickResult.swaps[i].spreadOK)
+      quickResult.bestFullyPass = i;
   }
 
   // Add threshold info
   engBefore.thresholdMA = THRESHOLD_MA;
+  engBefore.phaseSpreadTol = PHASE_SPREAD_UF;
   const beforeMA = topology==='h-bridge' ? engBefore.In_mA : engBefore.Ino_mA;
   engBefore.overThreshold = beforeMA >= THRESHOLD_MA;
   engBefore.Ino_mA_before = beforeMA;
@@ -2493,7 +2575,7 @@ function buildYYFormulas(vals, m) {
     sym('I<sub>ny</sub> = V<sub>ph</sub>·[S₁sin0 + S₂sin(−120°) + S₃sin(120°)] − (S₁+S₂+S₃)·V<sub>ny</sub>'),
     eq('I<sub>nx</sub> = ' + n(Inx.toExponential(4)) + ', &nbsp; I<sub>ny</sub> = ' + n(Iny.toExponential(4))),
     sym('I<sub>no</sub> = √(I<sub>nx</sub>² + I<sub>ny</sub>²) · 10⁶'),
-    final('I<sub>no</sub> = ' + r(F.mA(m.Ino_mA)) + ' mA' + (function(){var A=(window.ALARM_MA||50);return m.Ino_mA < A ? ' ✓ (< '+A+' mA)' : ' ⚠ (≥ '+A+' mA)';})())
+    final('I<sub>no</sub> = ' + r(F.mA(m.Ino_mA)) + ' mA' + (function(){var A=(m.thresholdMA||window.ALARM_MA||50);return m.Ino_mA < A ? ' ✓ (< '+A+' mA)' : ' ⚠ (≥ '+A+' mA)';})())
   );
 
   // Step 6: Q
@@ -2647,10 +2729,13 @@ window.buildHBridgeFormulas = buildHBridgeFormulas;
 // ═══════════════════════════════════════
 'use strict';
 const F2={uF:v=>isNaN(v)?'—':Number(v).toFixed(4),mA:v=>isNaN(v)?'—':Number(v).toFixed(4),S:v=>isNaN(v)?'—':(Number(v)*1e6).toFixed(3),V:v=>isNaN(v)?'—':Number(v).toFixed(2),Mvar:v=>isNaN(v)?'—':Number(v).toFixed(3),Ohm:v=>isNaN(v)?'—':Number(v).toFixed(2)};
-// Relay-alarm threshold (mA) — comes from calculator.js (single source of truth)
-const ALARM = (typeof window!=='undefined' && window.ALARM_MA) || 50;
+// Relay-alarm threshold (mA). Default from calculator.js; refreshed per-render in
+// renderResults() from the user-entered value carried on engBefore.thresholdMA.
+let ALARM = (typeof window!=='undefined' && window.ALARM_MA) || 50;
 // Capacitor nameplate (µF) — a unit below this is treated as "failed" (เสีย)
 const NAMEPLATE = (typeof window!=='undefined' && window.NAMEPLATE_UF) || 27;
+// Max within-side per-phase series-C spread (µF) — A≈B≈C goal (YY only)
+const SPREADTOL = (typeof window!=='undefined' && window.PHASE_SPREAD_UF) || 0.1;
 function unitBelowNameplate(c){
   if (c.measuredA != null && c.measuredB != null) return c.measuredA < NAMEPLATE || c.measuredB < NAMEPLATE;
   return c.val < NAMEPLATE;
@@ -2686,6 +2771,11 @@ function buildEngPanelFull(title,m,topology){
     }
     items.push({l:'V_no (เฟสเซอร์)',v:F2.V(m.Vno),u:'V',c:'hi-amber',vc:'warn'});
     items.push({l:'I_no (CT, เฟสเซอร์)',v:F2.mA(m.Ino_mA),u:'mA',c:'hi-red',vc:c});
+    if (m.spread && isFinite(m.spread.max)) {
+      items.push({l:'ΔC อนุกรมต่อเฟส (สูงสุด Y1/Y2)',
+        v:m.spread.max.toFixed(3)+' ('+m.spread.y1.toFixed(3)+'/'+m.spread.y2.toFixed(3)+')',
+        u:'µF',c:'hi-amber',vc:m.spread.ok?'good':'bad'});
+    }
     items.push({l:'Q รวม',v:F2.Mvar(m.Qt),u:'Mvar',c:'hi-green',vc:'good'});
   }
   return `<div class="eng-panel-full">
@@ -2730,6 +2820,10 @@ function buildSolEng(m,topology){
 function renderResults(vals,result){
   const {quickResult,fullResult,engBefore}=result;
   const topology=vals.topology;
+  // Refresh the alarm threshold from the user-entered value (Step 2), carried on
+  // engBefore.thresholdMA. Falls back to the default ALARM_MA if absent.
+  ALARM = (engBefore && engBefore.thresholdMA > 0) ? engBefore.thresholdMA
+        : ((typeof window!=='undefined' && window.ALARM_MA) || 50);
   const sumY1=vals.y1.reduce((a,c)=>a+c.val,0);
   const sumY2=vals.y2.reduce((a,c)=>a+c.val,0);
   const baseDiff=Math.abs(sumY1-sumY2);
@@ -2809,6 +2903,9 @@ function renderResults(vals,result){
         </div>
       </div>
       <div class="rs-note">เกณฑ์รีเลย์: I<sub>no</sub> ต้องต่ำกว่า ${ALARM} mA</div>
+      ${(topology!=='h-bridge' && autoSw.spread && isFinite(autoSw.spread.max))
+        ? `<div class="rs-note">ΔC อนุกรมต่อเฟสในฝั่งเดียวกัน (A≈B≈C): <b>${autoSw.spread.max.toFixed(3)} µF</b> — ${autoSw.spread.ok?'✓ ผ่าน':'⚠ ยังไม่ผ่าน'} (เกณฑ์ ≤ ${SPREADTOL} µF)</div>`
+        : ''}
     </div>`;
 
   const fixedDefs=[
@@ -2839,7 +2936,7 @@ function renderResults(vals,result){
   const fullSteps = (fullResult.steps && fullResult.steps.length)
     ? fullResult.steps
     : [`จัดเรียงใหม่ ${fullResult.swapCount||fullResult.actualSwaps||0} ครั้ง — ได้ Ino ต่ำสุด`];
-  const fullSw={diff:fullResult.diff,y1:fullResult.y1,y2:fullResult.y2,y1Full:fullResult.y1Full,y2Full:fullResult.y2Full,engAfter:fullResult.engAfter,underThreshold:fullResult.underThreshold,actualSwaps:fullResult.actualSwaps,steps:fullSteps};
+  const fullSw={diff:fullResult.diff,y1:fullResult.y1,y2:fullResult.y2,y1Full:fullResult.y1Full,y2Full:fullResult.y2Full,engAfter:fullResult.engAfter,underThreshold:fullResult.underThreshold,spread:fullResult.spread,actualSwaps:fullResult.actualSwaps,steps:fullSteps};
   const fullTitle = `🏆 ดีที่สุด — สับ ${fullResult.actualSwaps!=null?fullResult.actualSwaps:(fullResult.swapCount||0)} ครั้ง (Ino ต่ำสุด)`;
   document.getElementById('tabFull').innerHTML = lockedBanner + buildSolCard('full',fullTitle,fullSw,true,topology);
 
@@ -2870,15 +2967,31 @@ function buildSolCard(cls,title,sw,showSteps,topology){
          <small>${pass?`(< ${ALARM} mA)`:`(เกิน ${ALARM} mA)`}</small>
        </span>`
     : '';
+  // Within-side phase-spread badge (A≈B≈C) — YY only
+  let spreadBadge = '';
+  if (topology!=='h-bridge' && sw.spread && isFinite(sw.spread.max)) {
+    const sok = (sw.spread.ok != null) ? sw.spread.ok : (sw.spread.max <= SPREADTOL + 1e-9);
+    spreadBadge = `<span class="ino-badge ${sok?'pass':'fail'}"
+         title="ช่วงต่างของ C อนุกรมต่อเฟสในฝั่งเดียวกัน (A/B/C) — Y1 ${sw.spread.y1.toFixed(3)} / Y2 ${sw.spread.y2.toFixed(3)} µF">
+         <i class="fas fa-${sok?'check-circle':'exclamation-triangle'}"></i>
+         ΔC เฟส = ${sw.spread.max.toFixed(3)} µF <small>(${sok?'≤':'>'} ${SPREADTOL} µF)</small>
+       </span>`;
+  }
+  const fullyPass = sw.underThreshold && sw.spread && (sw.spread.ok != null ? sw.spread.ok : (sw.spread.max <= SPREADTOL + 1e-9));
   const recommended = sw.underThreshold && sw.isRecommended
-    ? `<div class="recommended-badge"><i class="fas fa-star"></i> แนะนำ — สับน้อยที่สุดที่ I<sub>no</sub> < ${ALARM} mA</div>`
+    ? `<div class="recommended-badge"><i class="fas fa-star"></i> แนะนำ — ${
+         (topology!=='h-bridge' && sw.spread)
+           ? (fullyPass ? `ผ่านทั้ง I<sub>no</sub> < ${ALARM} mA และ ΔC เฟส ≤ ${SPREADTOL} µF` : `สับน้อยที่สุดที่ I<sub>no</sub> < ${ALARM} mA (ΔC เฟสยังเกิน ${SPREADTOL} µF)`)
+           : `สับน้อยที่สุดที่ I<sub>no</sub> < ${ALARM} mA`
+       }</div>`
     : '';
   return `<div class="sol-card ${cls} ${sw.underThreshold?'sol-pass':'sol-fail'}">
     <div class="sol-top">
       <div class="sol-name">${title}</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         ${inoBadge}
-        <span class="delta-badge-mini" title="ΔC">ΔC ${sw.diff.toFixed(3)} µF</span>
+        ${spreadBadge}
+        <span class="delta-badge-mini" title="ΔC รวมสองฝั่ง">ΔC ${sw.diff.toFixed(3)} µF</span>
       </div>
     </div>
     ${recommended}
@@ -3381,6 +3494,11 @@ function getInputValues(){
     if(!isNaN(vs)&&vs>0) spare.push({id:'S-'+(k+1),val:vs,origin:'Spare',pos:k});
   });
   const systemKV=parseFloat(document.getElementById('systemKV').value)||69;
+  // ค่า unbalance สูงสุด (เกณฑ์ I_no, mA) ที่หน้างานกรอกใน Step 2 — ใช้แทนค่า default
+  // ALARM_MA ในการตัดสินผ่าน/ไม่ผ่าน และเป็นเป้าของการคำนวณการสับเปลี่ยน
+  const alarmEl=document.getElementById('alarmMA');
+  const alarmMA=(alarmEl && parseFloat(alarmEl.value)>0) ? parseFloat(alarmEl.value)
+                : ((typeof window!=='undefined' && window.ALARM_MA) || 50);
 
   // Returns whether the side-level "ต่อขนาน" checkbox is ticked.
   // ticked  = ช่องในฝั่งนี้เป็นคู่ขนาน → ล็อกเป็น Tier 2 (สลับเป็น fallback) + โชว์กรรไกร
@@ -3447,7 +3565,7 @@ function getInputValues(){
       legs[key] = readPanel(key, label, sep);
       if (legs[key] === null) return null;
     }
-    return { topology:'h-bridge', y1:[...legs.a,...legs.c], y2:[...legs.b,...legs.d], spare, legs, systemKV };
+    return { topology:'h-bridge', y1:[...legs.a,...legs.c], y2:[...legs.b,...legs.d], spare, legs, systemKV, alarmMA };
   } else {
     const sepY1 = isMeasuredSeparately('parY1');
     const sepY2 = isMeasuredSeparately('parY2');
@@ -3461,12 +3579,12 @@ function getInputValues(){
     }
     const y1 = [...phases.a, ...phases.b, ...phases.c];
     const y2 = [...phases.ap, ...phases.bp, ...phases.cp];
-    return { topology:'yy-unground', y1, y2, spare, systemKV, phases };
+    return { topology:'yy-unground', y1, y2, spare, systemKV, phases, alarmMA };
   }
 }
 
 // ═══════════════════════════════════════════════════════
-// CALCULATE — target: Ino < 50mA (ALARM_MA) with minimum swaps
+// CALCULATE — target: Ino < ค่า unbalance ที่กรอก (default ALARM_MA) with minimum swaps
 // ═══════════════════════════════════════════════════════
 async function handleCalculate(){
   const vals=getInputValues();
