@@ -66,12 +66,15 @@ function build() {
   if (!fs.existsSync(DIST)) fs.mkdirSync(DIST, { recursive: true });
   const outFile = path.join(DIST, 'egat-cbank.html');
   fs.writeFileSync(outFile, out);
-  // GitHub Pages entry point
   fs.writeFileSync(path.join(DIST, 'index.html'), out);
+  // Repo-root index.html = the file GitHub Pages serves. Written on every build so
+  // a deploy is just: npm run build → git commit → git push (no manual copy).
+  fs.writeFileSync(path.join(ROOT, 'index.html'), out);
 
   const kb = (out.length / 1024).toFixed(1);
   console.log(`✓ Built dist/egat-cbank.html  (${kb} KB)`);
-  console.log(`✓ Built dist/index.html       (copy for GitHub Pages)`);
+  console.log(`✓ Built dist/index.html       (copy)`);
+  console.log(`✓ Built index.html            (repo root — GitHub Pages entry point)`);
 }
 
 build();
