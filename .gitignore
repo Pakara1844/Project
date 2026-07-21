@@ -1,0 +1,14 @@
+node_modules/
+npm-debug.log*
+.DS_Store
+*.log
+
+# per-version build archive — local machine only, not for the repo
+backups/
+
+# build output is committed for GitHub Pages convenience; if you prefer to build
+# in CI instead, uncomment the next line:
+# dist/
+
+# Claude Code machine-local settings (permission allowlist) — not for the repo
+.claude/settings.local.json
