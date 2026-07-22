@@ -1,0 +1,10 @@
+# Keep source text as LF in the repo and on checkout (avoids CRLF churn on Windows
+# and keeps tooling like the test's function-extraction regex line-ending-safe).
+* text=auto eol=lf
+
+# Binary assets — never touch line endings
+*.docx binary
+*.xlsx binary
+*.png  binary
+*.jpg  binary
+*.pdf  binary

@@ -108,14 +108,15 @@ being hoisted into the shared global scope, so:
 - `calcYYMetrics(y1, y2, systemKV)` — the reference calculation. `y1`/`y2` are
   arrays of `{id, val(µF), origin}` where origin ∈ {A,B,C} for wye-1 and
   {A',B',C'} for wye-2. Returns `{Ino_mA, Vno, Qt, S:{S1..S6}, perPhase, ...}`.
-- `findPhaseAwareYYSwaps(y1, y2, spare, _, systemKV, lockedY1, lockedY2, nameplate, swapMode)`
-  — the optimizer. `swapMode` gates `expand()`: `'spare'` = spare replacements only;
-  `'inphase'` = + same-phase exchange (Y1-A ↔ Y2-A'); `'cross'` = + cross-phase
-  exchange (Y1-A ↔ Y2-B', a moved unit takes its new position's phase tag). Defaults
-  to `'cross'`. (Cross-phase intentionally relaxed the earlier "a cap never leaves
-  its phase" rule.) Equal-valued swaps are skipped in `expand()` (no-ops → big speed
-  win on real banks). Every candidate is scored by the *real* `calcYYMetrics` I_no.
-  It runs
+- `findPhaseAwareYYSwaps(y1, y2, spare, _, systemKV, lockedY1, lockedY2, nameplate, _mode, thresholdMA)`
+  — the optimizer. `expand()` emits EVERY in-rack exchange — any of the 6 phases ↔
+  any other, **same-side OR cross-side** (e.g. A'↔B' as well as A↔A') — plus spare
+  replacements. Each candidate carries a **`cost`** = the rack distance of its
+  exchanges (`RACK_ORDER` A A' B B' C C' = 0..5) plus `SWAP_SPARE_COST` (100) per
+  spare. So the optimizer prefers the NEAREST swap and leaves a SPARE for last (see
+  the swap-priority section). `_mode` is legacy/unused. Equal-valued swaps are
+  skipped in `expand()` (no-ops → big speed win). Every candidate is scored by the
+  *real* `calcYYMetrics` I_no + 6-phase spread. It runs
   **two complementary searches** and merges their visited states:
   1. **Beam search** — keeps the best `BEAM` partial solutions at each depth so it
      can pass *through* a temporarily-worse state. Finds the exact 2-swap optimum
@@ -159,34 +160,27 @@ being hoisted into the shared global scope, so:
   **disabled** — the optimizer swaps ONLY the measured-separately units + spares
   and never touches the grouped units, even if I_no stays above the threshold.
   (`hasScissors` in `clientCalculate`, both YY and H-bridge paths.)
-- **Nameplate-failure priority** (`NAMEPLATE_UF = 27.00 µF`, top of `calculator.js`,
-  `window.NAMEPLATE_UF`). A unit reading **below** nameplate is "failed" (เสีย) in
-  the field and is swapped FIRST; units **≥** nameplate are "good" and kept in
-  place. The YY optimizer escalates along a **swap-priority LADDER** (least → most
-  disruptive), each rung a `runPass(..., level, mode)` with a `swapMode` that gates
-  which moves `expand()` may generate:
-  - **P1** (level 0, mode `'spare'`) — SPARE ONLY: replace failed Tier-1 units with
-    spares (good + grouped LOCKED, no exchanges).
-  - **P2** (level 1, mode `'inphase'`) — + SAME-PHASE swap: bring in all Tier-1
-    units, trade only within a phase (Y1-A ↔ Y2-A').
-  - **P3** (level 2, mode `'cross'`) — + CROSS-PHASE swap: also trade across phases
-    (Y1-A ↔ Y2-B').
-  - **P4** (level 3, mode `'cross'`) — + grouped Tier-2 units (skipped when scissors).
-  **ESCALATION POLICY (product decision):** all rungs are evaluated; `chooseBudget`
-  prefers the LOWEST rung that meets the alarm (spare-only if it suffices, else
-  same-phase, else cross-phase, else grouped). When NO rung passes it falls back to
-  **lowest I_no** so a higher rung is used only when it actually balances better:
-  `_fail → fullyPass → underThreshold → spreadOK → [passers: level→swaps→spread→I_no]
-  / [non-passers: I_no→swaps→level]`. Nameplate failed-first is handled inside the
-  search by the `below` count. For scissored slots, "failed" checks the measured
-  pieces (`measuredA`/`measuredB`).
-  The optimizer ranks candidates by *fewest failed units left installed* (`below`)
-  THEN lowest I_no — so it gets the broken units OUT first and never "compensates"
-  by reusing a bad unit while good spares remain. When good spares RUN OUT (the
-  `below` floor can't drop further), it freely uses the least-bad failed units /
-  failed spares as temporary replacements to keep minimising I_no.
-  This is swap-priority + display only — it NEVER changes the I_no calculation.
-  (H-bridge path keeps the simpler optimizer; nameplate is display-only there.)
+- **Swap priority = PHYSICAL RACK DISTANCE, spare LAST** (product decision, v7.9).
+  The rack is wired left→right **A A' B B' C C'** (`RACK_ORDER`). The technician's
+  effort grows with how far apart two caps sit, so the optimizer rearranges the
+  rack with the NEAREST swap first (a bad A' is fixed from A or B before C') and
+  only fetches a SPARE when rack rearrangement can't reach the goal. This is
+  expressed as a per-candidate **`cost`** (rack distance for an exchange,
+  `SWAP_SPARE_COST`=100 for a spare) — see `swapActionCost`. Two levels:
+  - **L0** — Tier-1 units, all in-rack exchanges + spares (`cost` orders near→far→spare).
+  - **L1** — + grouped Tier-2 units, fallback (skipped when scissors used).
+  `better()` (per-budget pick) and `chooseBudget()` (across L0/L1) both apply:
+  **relay-pass gate → phase-balance (spreadOK/spread) → lowest `cost` (nearest swaps,
+  spare-last) → lowest I_no → fewest swaps → fewest grouped touched**. If nothing
+  passes the relay, lowest I_no wins (closest to safe), then lowest cost.
+  - **Nameplate** (`NAMEPLATE_UF = 27.00 µF`, `window.NAMEPLATE_UF`): a unit below
+    it is "failed" (เสีย). Failed units are NO LONGER removed-first — they're moved
+    in-rack like any other, and a spare is fetched only if the rack can't balance
+    (a single failed cap can't be fixed by rearrangement, so a spare IS used there).
+    Nameplate is now **display-only** (badge + note). `isFailedUnit` still drives the
+    "🔧 พบ N ตัวเสีย" note. For scissored slots it checks the measured pieces.
+  Still swap-priority + display only — it NEVER changes the I_no calculation.
+  (H-bridge path keeps the simpler optimizer.)
 - **Phase-balance goal — the PRIMARY swap objective** (`PHASE_SPREAD_UF = 0.005 µF`,
   top of `calculator.js`, `window.PHASE_SPREAD_UF`, YY only). "Balance the phases at
   the star point": after swapping, ALL SIX per-phase SERIES capacitances (A,B,C on

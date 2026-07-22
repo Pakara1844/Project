@@ -34,6 +34,25 @@ if (typeof window !== 'undefined') window.NAMEPLATE_UF = NAMEPLATE_UF;
 const PHASE_SPREAD_UF = 0.005;
 if (typeof window !== 'undefined') window.PHASE_SPREAD_UF = PHASE_SPREAD_UF;
 
+// PHYSICAL RACK LAYOUT (left → right): A A' B B' C C'. The technician's effort to
+// swap two caps grows with how far apart they sit — so the optimizer prefers the
+// NEAREST swap first (e.g. a failed A' is fixed from A or B before C'), and uses a
+// SPARE only as the last resort. `rackDist` = |position difference| between two
+// phase origins; a spare costs SWAP_SPARE_COST (>> the max rack distance of 5).
+const RACK_ORDER = { A: 0, "A'": 1, B: 2, "B'": 3, C: 4, "C'": 5 };
+const SWAP_SPARE_COST = 100;
+function rackDist(originP, originQ) {
+  const a = RACK_ORDER[originP], b = RACK_ORDER[originQ];
+  return (a == null || b == null) ? 0 : Math.abs(a - b);
+}
+// Effort cost of one swap action: rack distance for an in-rack exchange, or the
+// heavy SWAP_SPARE_COST for anything that consumes a spare (spare = last resort).
+function swapActionCost(a) {
+  if (a.type === 'exchange') return a.dist != null ? a.dist : rackDist(a.from && a.from.origin, a.to && a.to.origin);
+  if (a.type === 'piece-swap') return rackDist(a.u1 && a.u1.origin, a.u2 && a.u2.origin);
+  return SWAP_SPARE_COST;   // replace-y1 / replace-y2 / piece-replace all use a spare
+}
+
 function sumC(arr) { return arr.reduce((t, c) => t + c.val, 0); }
 
 // Phase spread from a calcYYMetrics() result: the max−min of the per-phase SERIES
@@ -171,9 +190,9 @@ function calcHBridgeMetrics(legA, legB, legC, legD, systemKV) {
 function describeSwap(action) {
   const { type, from, to } = action;
   if (type === 'exchange') {
-    const pf = (from.origin||'').replace("'",''), pt = (to.origin||'').replace("'",'');
-    const cross = pf && pt && pf !== pt ? ' (ข้ามเฟส)' : '';
-    return `สลับ [${from.id}] (${from.val.toFixed(3)} µF) ↔ [${to.id}] (${to.val.toFixed(3)} µF)${cross}`;
+    const d = action.dist != null ? action.dist : rackDist(from.origin, to.origin);
+    const near = d <= 1 ? ' — ใกล้' : (d >= 4 ? ' — ไกล' : '');
+    return `สลับ [${from.origin}] ↔ [${to.origin}] (ระยะ ${d}${near}): [${from.id}] ${from.val.toFixed(3)} ↔ [${to.id}] ${to.val.toFixed(3)} µF`;
   }
   if (type === 'replace-y1') return `ถอด [${from.id}] (${from.val.toFixed(3)} µF) จาก Y1 → แทนด้วย [${to.id}] (${to.val.toFixed(3)} µF)`;
   if (type === 'replace-y2') return `ถอด [${from.id}] (${from.val.toFixed(3)} µF) จาก Y2 → แทนด้วย [${to.id}] (${to.val.toFixed(3)} µF)`;
@@ -271,15 +290,19 @@ function phaseOf(item, isY2) {
 }
 
 function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, lockedY1Arr, lockedY2Arr, nameplate, swapMode, thresholdMA) {
-  // swapMode controls which moves expand() may generate, for the swap-priority
-  // ladder (least → most disruptive):
-  //   'spare'   → spare replacements ONLY (fix failed units with spares).
-  //   'inphase' → spare + same-phase exchange (Y1-A ↔ Y2-A').
-  //   'cross'   → spare + same-phase + cross-phase exchange (Y1-A ↔ Y2-B').
-  // Defaults to 'cross' (everything) when not specified.
-  const MODE = swapMode || 'cross';
-  const allowInphase = MODE === 'inphase' || MODE === 'cross';
-  const allowCross   = MODE === 'cross';
+  // expand() generates EVERY in-rack exchange (any of the 6 phases ↔ any other) plus
+  // spare replacements. The swap-priority order is NOT gated here — it is expressed
+  // as a `cost` per candidate (rack distance for exchanges, SWAP_SPARE_COST for a
+  // spare), so the optimizer naturally prefers the NEAREST rack swap and leaves the
+  // spare for last. The 6 rack slots, left → right, with their origin tag + position:
+  const RACK_SLOTS = [
+    { side: 1, ph: 'A', tag: 'A',  pos: 0 },
+    { side: 2, ph: 'A', tag: "A'", pos: 1 },
+    { side: 1, ph: 'B', tag: 'B',  pos: 2 },
+    { side: 2, ph: 'B', tag: "B'", pos: 3 },
+    { side: 1, ph: 'C', tag: 'C',  pos: 4 },
+    { side: 2, ph: 'C', tag: "C'", pos: 5 },
+  ];
   // Relay threshold (mA). PRIMARY objective = minimize the 6-phase series-C spread
   // (balance), but a relay-PASSING arrangement (I_no < THR) always beats a failing
   // one — "balance เป็นหลัก + I_no ต้องผ่านรีเลย์ด้วย". Infinity = no gate.
@@ -330,11 +353,12 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   // Adaptive search width. When the candidate space is small we keep ALL depth-1
   // states so the 2-swap optimum is found EXACTLY (the budget the field worker
   // uses most); otherwise we cap to keep one calculation well under a second.
-  // Exchanges are CROSS-PHASE (any Y1 unit ↔ any Y2 unit), so the single-swap
-  // count is (total Y1)·(total Y2) + spare replacements — not just per-phase.
+  // Exchanges now span ALL SIX phases (any rack slot ↔ any other), so the single-
+  // swap count is ~ every unit-pair + spare replacements.
   const totY1 = y1ByPhase.A.length + y1ByPhase.B.length + y1ByPhase.C.length;
   const totY2 = y2ByPhase.A.length + y2ByPhase.B.length + y2ByPhase.C.length;
-  const nSingles = totY1 * totY2 + (totY1 + totY2) * sparePool.length;
+  const totAll = totY1 + totY2;
+  const nSingles = totAll * (totAll - 1) / 2 + totAll * sparePool.length;
   const small = nSingles <= 200;
   // Cap search width on very large banks (e.g. 14 caps/phase) so a single run stays
   // snappy on a phone. Equal-valued swaps are pruned in expand(), so real banks
@@ -361,11 +385,13 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   const candidates = [];
   function record(y1obj, y2obj, spareArr, actions, ino, spread) {
     const spUsed = actions.reduce((n, a) => n + (a.type === 'exchange' ? 0 : 1), 0);
+    // Effort cost: near rack swaps are cheap, far ones dearer, a spare is last resort.
+    const cost = actions.reduce((s, a) => s + swapActionCost(a), 0);
     const y1 = [...y1obj.A, ...y1obj.B, ...y1obj.C];
     const y2 = [...y2obj.A, ...y2obj.B, ...y2obj.C];
     const below = NP ? (y1.filter(isBelow).length + y2.filter(isBelow).length) : 0;
     candidates.push({
-      ino, spread, swaps: actions.length, sp: spUsed, below,
+      ino, spread, cost, swaps: actions.length, sp: spUsed, below,
       y1, y2, spare: spareArr.slice(),
       acts: actions.slice(),   // raw actions — UI pairs each swap to its units
       steps: actions.length ? actions.map(describeSwap) : ['ไม่มีการสับเปลี่ยนที่ปรับสมดุลเฟสได้']
@@ -397,34 +423,33 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   // or replaced by a spare cap ("สลับจาก spare"). Grouped/locked units never move.
   function expand(st) {
     const kids = [];
-    // ── Whole-unit EXCHANGES between Y1 and Y2 (gated by swapMode) ──
-    // 'inphase' allows same-phase (Y1-A ↔ Y2-A'); 'cross' also allows cross-phase
-    // (Y1-A ↔ Y2-B'). A moved unit takes the phase tag of its new position.
-    // 'spare' mode skips exchanges entirely (spare replacements only, below).
-    if (allowInphase) {
-      for (const pa of PHASES) {
-        const a1 = st.y1[pa];
-        for (let i = 0; i < a1.length; i++) {
-          if (isScis(a1[i])) continue;
-          for (const pb of PHASES) {
-            if (pa !== pb && !allowCross) continue;   // cross-phase only in 'cross'
-            const a2 = st.y2[pb];
-            for (let j = 0; j < a2.length; j++) {
-              if (isScis(a2[j])) continue;
-              const u1 = a1[i], u2 = a2[j];
-              if (u1.val === u2.val) continue;   // equal values → swap is a no-op, skip
-              const c = clone(st);
-              c.y1[pa][i] = Object.assign({}, u2, { origin: pa });
-              c.y2[pb][j] = Object.assign({}, u1, { origin: pb + "'" });
-              const _m = metricsOf(c.y1, c.y2); c.ino = _m.ino; c.spread = _m.spread;
-              c.actions.push({ type: 'exchange', from: u1, to: u2 });
-              kids.push(c);
-            }
+    // ── In-rack EXCHANGES: ANY of the 6 phases ↔ any other (same-side OR cross-side) ──
+    // Each pair carries its rack distance so nearer swaps are preferred (via cost).
+    // A moved unit takes the phase tag of its new rack position.
+    for (let s1 = 0; s1 < RACK_SLOTS.length; s1++) {
+      const S1 = RACK_SLOTS[s1];
+      const a1 = (S1.side === 1 ? st.y1 : st.y2)[S1.ph];
+      for (let i = 0; i < a1.length; i++) {
+        if (isScis(a1[i])) continue;
+        for (let s2 = s1 + 1; s2 < RACK_SLOTS.length; s2++) {
+          const S2 = RACK_SLOTS[s2];
+          const dist = S2.pos - S1.pos;
+          const a2 = (S2.side === 1 ? st.y1 : st.y2)[S2.ph];
+          for (let j = 0; j < a2.length; j++) {
+            if (isScis(a2[j])) continue;
+            const u1 = a1[i], u2 = a2[j];
+            if (u1.val === u2.val) continue;   // equal values → swap is a no-op, skip
+            const c = clone(st);
+            (S1.side === 1 ? c.y1 : c.y2)[S1.ph][i] = Object.assign({}, u2, { origin: S1.tag });
+            (S2.side === 1 ? c.y1 : c.y2)[S2.ph][j] = Object.assign({}, u1, { origin: S2.tag });
+            const _m = metricsOf(c.y1, c.y2); c.ino = _m.ino; c.spread = _m.spread;
+            c.actions.push({ type: 'exchange', from: u1, to: u2, dist: dist });
+            kids.push(c);
           }
         }
       }
     }
-    // ── SPARE replacements (unit stays in its own position/phase) ──
+    // ── SPARE replacements (unit stays in its own position/phase) — last resort ──
     for (const ph of PHASES) {
       const a1 = st.y1[ph], a2 = st.y2[ph], tag1 = ph, tag2 = ph + "'";
       for (let i = 0; i < a1.length; i++) {
@@ -592,23 +617,25 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   })();
 
   // ── merge: best candidate per budget ──
-  // Nameplate failed-out first; then relay-pass GATE (I_no < THR beats a failing
-  // one); then PHASE BALANCE (lowest 6-phase spread) as the primary objective among
-  // relay-passing states. If nothing passes, prefer the lowest I_no (closest to
-  // safe), then tighter balance. Then fewest swaps / most spares used.
+  // relay-pass GATE (I_no < THR beats a failing one) → PHASE BALANCE (lowest 6-phase
+  // spread) among passers → then LEAST EFFORT (`cost` = near rack swaps first, spare
+  // last) → lowest I_no → fewest swaps / fewest spares. If nothing passes the relay,
+  // lowest I_no (closest to safe) → least effort. (Nameplate failed-count no longer
+  // gates: a failed unit is moved in-rack first, a spare fetched only if needed.)
   function better(c, best) {
-    if (NP && c.below !== best.below) return c.below < best.below;
     const cp = c.ino < THR, bp = best.ino < THR;
     if (cp !== bp) return cp;                                             // relay-pass gate
-    if (cp) {                                                            // both pass → balance primary
+    if (cp) {                                                            // both pass → balance, then effort
       if (Math.abs(c.spread - best.spread) > 1e-9) return c.spread < best.spread;
+      if (c.cost !== best.cost) return c.cost < best.cost;               // nearest swaps / spare-last
       if (Math.abs(c.ino - best.ino) > 1e-9) return c.ino < best.ino;
     } else {                                                             // neither passes → closest to safe
       if (Math.abs(c.ino - best.ino) > 1e-9) return c.ino < best.ino;
+      if (c.cost !== best.cost) return c.cost < best.cost;
       if (Math.abs(c.spread - best.spread) > 1e-9) return c.spread < best.spread;
     }
     if (c.swaps !== best.swaps) return c.swaps < best.swaps;
-    return c.sp > best.sp;
+    return c.sp < best.sp;                                               // fewer spares used
   }
   function pick(maxSwaps) {
     let best = candidates[0];
@@ -627,6 +654,7 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
       Ino_mA: b.ino,
       spreadInner: b.spread,  // 6-phase series-C spread the search minimized (µF)
       sparesUsed: b.sp,
+      swapCost: b.cost,       // total effort = rack distance + spare penalty
       y1: b.y1, y2: b.y2, spare: b.spare,
       acts: b.acts,           // raw actions — UI pairs each swap to its units
       steps: b.steps
@@ -971,15 +999,14 @@ async function clientCalculate(payload) {
     const y2Tier1 = y2Flat.filter(x => !x.isLocked);
     const y2Tier2 = y2Flat.filter(x =>  x.isLocked);
 
-    // ── Swap-priority LADDER (least → most disruptive) + nameplate failed-first ──
-    // A unit reading < NAMEPLATE_UF (27.00 µF) is FAILED (field rule) and swapped
-    // FIRST; units ≥ nameplate are "good". The optimizer escalates in this order,
-    // and chooseBudget prefers the LOWEST level that meets the alarm:
-    //   P1 (level 0): SPARE ONLY — replace failed units with spares (good locked).
-    //   P2 (level 1): + SAME-PHASE swap — trade with C in the same phase (A↔A').
-    //   P3 (level 2): + CROSS-PHASE swap — trade with C from another phase (A↔B').
-    //   P4 (level 3): + grouped Tier-2 units (skipped when scissors used).
-    // NEVER changes the I_no calc.
+    // ── Swap-priority = PHYSICAL RACK DISTANCE (near → far), spare LAST ──
+    // expand() emits every in-rack exchange (any of the 6 phases ↔ any other) plus
+    // spare replacements; each candidate carries a `cost` (rack distance for an
+    // exchange, SWAP_SPARE_COST for a spare). So the optimizer rearranges the rack
+    // with the NEAREST swaps first and only fetches a SPARE when rack rearrangement
+    // can't reach the goal. A failed (<nameplate) unit is moved in-rack first too;
+    // nameplate is display-only now. Two levels: L0 = Tier-1 units (rack + spare);
+    // L1 = + grouped Tier-2 as a fallback (skipped when scissors used).
     const hasScissors = y1Flat.some(x => x.isSplit) || y2Flat.some(x => x.isSplit);
     function isFailedUnit(x) {
       if (x.measuredA != null && x.measuredB != null) return x.measuredA < NAMEPLATE_UF || x.measuredB < NAMEPLATE_UF;
@@ -990,92 +1017,66 @@ async function clientCalculate(payload) {
       arr.forEach(x => { const p = (x.origin||'').replace("'",''); if (m[p] !== undefined) m[p] += x.val; });
       return m;
     }
-    function runPass(swapY1, swapY2, lockY1, lockY2, level, mode) {
+    function runPass(swapY1, swapY2, lockY1, lockY2, level) {
       const baseline = { y1ByPhase: sumByPhase(lockY1), y2ByPhase: sumByPhase(lockY2) };
-      const res = findPhaseAwareYYSwaps(swapY1, swapY2, spare || [], baseline, kv, lockY1, lockY2, NAMEPLATE_UF, mode, THRESHOLD_MA);
+      const res = findPhaseAwareYYSwaps(swapY1, swapY2, spare || [], baseline, kv, lockY1, lockY2, NAMEPLATE_UF, null, THRESHOLD_MA);
       res.swaps.forEach(sw => {
         const fullY1 = [...sw.y1, ...lockY1];
         const fullY2 = [...sw.y2, ...lockY2];
         sw.engAfter = calcYYMetrics(fullY1, fullY2, kv);
         sw.Ino_mA = sw.engAfter.Ino_mA;
         sw.underThreshold = sw.Ino_mA < THRESHOLD_MA;
-        // Within-side per-phase series-C spread (A≈B≈C) — extra acceptance goal.
         sw.spread = phaseSpreadOf(sw.engAfter);
         sw.spreadOK = sw.spread.ok;
         sw.fullyPass = sw.underThreshold && sw.spreadOK;
+        sw.cost = sw.swapCost != null ? sw.swapCost : 0;   // rack distance + spare penalty
         sw.y1Full = fullY1; sw.y2Full = fullY2;
         sw.level = level;
-        sw.mode = mode;
-        sw.tier = level >= 3 ? 2 : 1;
+        sw.tier = level >= 1 ? 2 : 1;
       });
       return res;
     }
 
-    const y1Fail = y1Tier1.filter(isFailedUnit), y1Good = y1Tier1.filter(x => !isFailedUnit(x));
-    const y2Fail = y2Tier1.filter(isFailedUnit), y2Good = y2Tier1.filter(x => !isFailedUnit(x));
-    const hasFailed = (y1Fail.length + y2Fail.length) > 0;
-    const hasGood   = (y1Good.length + y2Good.length) > 0;
-
     const levels = [];
-    // P1 — SPARE ONLY on failed units (good + grouped LOCKED, no exchanges).
-    levels.push(runPass(y1Fail, y2Fail, [...y1Good, ...y1Tier2], [...y2Good, ...y2Tier2], 0, 'spare'));
-    // P2 — SAME-PHASE swap: bring in all Tier-1 units (grouped locked), trade only
-    // within the same phase (A↔A'). Needs good units to add over P1.
-    if (hasGood) {
-      levels.push(runPass(y1Tier1, y2Tier1, y1Tier2, y2Tier2, 1, 'inphase'));
-    }
-    // P3 — CROSS-PHASE swap: same set, now allow trading across phases (A↔B').
-    levels.push(runPass(y1Tier1, y2Tier1, y1Tier2, y2Tier2, 2, 'cross'));
-    // P4 — + grouped Tier-2 units (cross-phase). Skip when scissors used.
+    // L0 — Tier-1 units, rack swaps + spare (grouped LOCKED). Cost orders near→far→spare.
+    levels.push(runPass(y1Tier1, y2Tier1, y1Tier2, y2Tier2, 0));
+    // L1 — + grouped Tier-2 as a fallback (skip when scissors used).
     if (!hasScissors && (y1Tier2.length + y2Tier2.length) > 0) {
-      levels.push(runPass([...y1Tier1, ...y1Tier2], [...y2Tier1, ...y2Tier2], [], [], 3, 'cross'));
+      levels.push(runPass([...y1Tier1, ...y1Tier2], [...y2Tier1, ...y2Tier2], [], [], 1));
     }
 
-    // Count failed (below-nameplate) units still installed in an arrangement.
-    // Removed units sit in the spare pool (origin 'Spare') and don't count.
+    // Count failed (<nameplate) units still installed — for the display note only.
     function failRemain(sw) {
       let n = 0;
       [...(sw.y1Full || []), ...(sw.y2Full || [])].forEach(u => { if (u.origin !== 'Spare' && isFailedUnit(u)) n++; });
       return n;
     }
-    // Per budget, priority order — PHASE BALANCE is the primary objective:
-    //   1. get the FAILED (<nameplate) units OUT — fewest left installed.
-    //   2. fullyPass = balanced (6-phase ΔC ≤ PHASE_SPREAD_UF) AND relay-pass
-    //      (I_no < alarm). Among these, pick the least-disruptive rung.
-    //   3. otherwise: balance FIRST (spreadOK, then tighter ΔC), relay-pass, then
-    //      lower I_no, then least disruptive. So the optimizer chases phase balance
-    //      but never presents a solution that fails the relay over one that passes.
+    // Per budget: relay-pass GATE → phase balance → LEAST EFFORT (rack distance +
+    // spare-last, via `cost`) → lowest I_no → fewest swaps → fewest grouped touched.
     function chooseBudget(i) {
       const cands = levels.map(p => p.swaps[i]).filter(Boolean);
       cands.forEach(c => { c._fail = failRemain(c); });
       cands.sort((a, b) => {
-        if (a._fail !== b._fail) return a._fail - b._fail;                             // 1. fewest failed installed
-        const ut = (b.underThreshold ? 1 : 0) - (a.underThreshold ? 1 : 0); if (ut) return ut; // 2. relay-pass GATE
+        const ut = (b.underThreshold ? 1 : 0) - (a.underThreshold ? 1 : 0); if (ut) return ut; // relay-pass GATE
         if (a.underThreshold) {
-          // Both pass the relay → PHASE BALANCE is the objective. Prefer balanced
-          // (ΔC ≤ tol); among fully-balanced, least-disruptive rung; otherwise the
-          // tightest ΔC, then lowest I_no.
-          const so = (b.spreadOK ? 1 : 0) - (a.spreadOK ? 1 : 0); if (so) return so;
-          if (a.spreadOK) {
-            return a.level - b.level || a.actualSwaps - b.actualSwaps
-                || (a.spread.max - b.spread.max) || (a.Ino_mA - b.Ino_mA);
-          }
-          if (Math.abs(a.spread.max - b.spread.max) > 1e-9) return a.spread.max - b.spread.max;   // tighter balance (PRIMARY)
+          const so = (b.spreadOK ? 1 : 0) - (a.spreadOK ? 1 : 0); if (so) return so;             // balanced ≤ tol
+          if (!a.spreadOK && Math.abs(a.spread.max - b.spread.max) > 1e-9) return a.spread.max - b.spread.max;
+          if (a.cost !== b.cost) return a.cost - b.cost;                                          // nearest swaps / spare-last
           if (Math.abs(a.Ino_mA - b.Ino_mA) > 1e-6) return a.Ino_mA - b.Ino_mA;
           return a.actualSwaps - b.actualSwaps || a.level - b.level;
         }
-        // Neither passes the relay → get CLOSEST to safe (lowest I_no), then tighter
-        // balance, then least disruptive.
+        // Neither passes → closest to safe (lowest I_no), then least effort.
         if (Math.abs(a.Ino_mA - b.Ino_mA) > 1e-6) return a.Ino_mA - b.Ino_mA;
+        if (a.cost !== b.cost) return a.cost - b.cost;
         if (Math.abs(a.spread.max - b.spread.max) > 1e-9) return a.spread.max - b.spread.max;
         return a.actualSwaps - b.actualSwaps || a.level - b.level;
       });
       return cands[0];
     }
     quickResult = { baseDiff: levels[0].baseIno, baseIno: levels[0].baseIno, swaps: [0, 1, 2].map(chooseBudget) };
-    quickResult.usedGood     = quickResult.swaps.some(sw => sw.level >= 1);  // P2+ : touched good units
-    quickResult.usedCross    = quickResult.swaps.some(sw => sw.level >= 2);  // P3+ : cross-phase swap
-    quickResult.fallbackUsed = quickResult.swaps.some(sw => sw.level >= 3);  // P4  : grouped Tier-2
+    quickResult.usedGood     = true;                                          // rack swaps may touch any good unit
+    quickResult.usedSpare    = quickResult.swaps.some(sw => sw.sparesUsed > 0);
+    quickResult.fallbackUsed = quickResult.swaps.some(sw => sw.level >= 1);   // grouped Tier-2 fallback
 
     fullResult = Object.assign({}, quickResult.swaps[quickResult.swaps.length - 1]);
     fullResult.swapCount = fullResult.actualSwaps;
@@ -1084,15 +1085,13 @@ async function clientCalculate(payload) {
     const tier1Count = y1Tier1.length + y2Tier1.length;
     const tier2Count = y1Tier2.length + y2Tier2.length;
     const sCount = (spare||[]).length;
-    const nFail = y1Fail.length + y2Fail.length;
+    const nFail = y1Tier1.filter(isFailedUnit).length + y2Tier1.filter(isFailedUnit).length;
     const goodSpare = (spare || []).filter(s => s.val >= NAMEPLATE_UF).length;
     quickResult.lockedNote = (tier1Count + tier2Count) > 0
       ? `Tier 1 (วัดแยก): ${tier1Count} ตัว · Tier 2 (กรุ๊ป): ${tier2Count} ตัว · Spare ${sCount} ตัว (ดี ${goodSpare})` +
-        ' · ลำดับสับ: 1️⃣ spare → 2️⃣ ในเฟส (A↔A\') → 3️⃣ ข้ามเฟส (A↔B\')' +
-        (nFail > 0 ? ` · 🔧 พบ ${nFail} ตัว < ${NAMEPLATE_UF} µF (เสีย) → สับตัวเสีย + spare ก่อน` : '') +
-        (nFail > 0 && nFail > goodSpare ? ` · spare ดี (≥${NAMEPLATE_UF}) ไม่พอ (${goodSpare}/${nFail})` : '') +
-        (quickResult.usedGood && !quickResult.usedCross ? ' · 🔁 spare ไม่พอ → สลับ C ในเฟสเดียวกัน (A↔A\') เพิ่ม' : '') +
-        (quickResult.usedCross && !quickResult.fallbackUsed ? ' · 🔀 ในเฟสไม่พอ → สลับข้ามเฟส (A↔B\') เพิ่ม' : '') +
+        ' · ลำดับสับ: สลับในแร็คตามระยะ ใกล้→ไกล (A A\' B B\' C C\') ก่อน → spare ท้ายสุด' +
+        (nFail > 0 ? ` · 🔧 พบ ${nFail} ตัว < ${NAMEPLATE_UF} µF (เสีย) → ย้ายในแร็คก่อน ไม่พอค่อยใช้ spare` : '') +
+        (quickResult.usedSpare ? ' · 🔁 ใช้ spare (สลับในแร็คไม่พอ)' : '') +
         (quickResult.fallbackUsed ? ' · ⚠ ใช้ fallback (สลับตัวกรุ๊ป Tier 2 ด้วย)' : '') +
         (hasScissors && tier2Count > 0 ? ' · 🔒 มีวัดแยก → ไม่แตะตัวกรุ๊ป' : '')
       : null;

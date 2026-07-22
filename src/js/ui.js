@@ -132,28 +132,45 @@ function renderResults(vals,result){
       :buildYYFormulas(vals,engBefore);
   }
 
-  // ── Quick Mode = AUTO: fewest swaps that reach the lowest Ino ──
-  // The 2/4/6 cards are explicit fixed-count options the field worker can pick.
-  if (quickResult.bestUnderThreshold !== null) {
-    quickResult.swaps[quickResult.bestUnderThreshold].isRecommended = true;
-  }
   const lockedBanner = quickResult.lockedNote
     ? `<div class="locked-note"><i class="fas fa-lock"></i> ${quickResult.lockedNote}</div>`
     : '';
 
-  // Find the AUTO best: the swap option with lowest Ino, using fewest swaps to get there.
-  // (If 2 swaps already reaches the minimum Ino, don't show 4 or 6 as "better".)
-  let autoIdx = 0, autoIno = Infinity, autoSwaps = Infinity;
-  quickResult.swaps.forEach((sw,i)=>{
-    const ino = sw.Ino_mA != null ? sw.Ino_mA : (sw.engAfter ? (topology==='h-bridge'?sw.engAfter.In_mA:sw.engAfter.Ino_mA) : Infinity);
-    const ns = sw.actualSwaps != null ? sw.actualSwaps : [2,4,6][i];
-    // prefer lower Ino; tie-break on fewer actual swaps
-    if (ino < autoIno - 1e-6 || (Math.abs(ino-autoIno)<=1e-6 && ns < autoSwaps)) {
-      autoIno = ino; autoSwaps = ns; autoIdx = i;
-    }
-  });
+  // ── AUTO recommendation = FEWEST swaps that is "good enough" (saves field time) ──
+  // Priority: fewest swaps that FULLY passes (relay + balance) → fewest that passes
+  // the relay → else the "knee": fewest swaps that already captures ≥ KNEE_KEEP of
+  // the best achievable I_no reduction (more swaps beyond it barely help). We do NOT
+  // chase the absolute lowest I_no when a smaller swap count is already acceptable.
+  const KNEE_KEEP = 0.85;
+  const inoOfSw = sw => sw.Ino_mA != null ? sw.Ino_mA
+    : (sw.engAfter ? (topology==='h-bridge'?sw.engAfter.In_mA:sw.engAfter.Ino_mA) : Infinity);
+  const beforeIno = (engBefore && engBefore.Ino_mA_before) || Infinity;
+  const opts = quickResult.swaps.map((sw,i)=>({
+    i, ns: sw.actualSwaps != null ? sw.actualSwaps : [2,4,6][i], ino: inoOfSw(sw),
+    pass: !!sw.underThreshold, full: !!(sw.underThreshold && sw.spreadOK)
+  }));
+  const bestIno = Math.min.apply(null, opts.map(o=>o.ino));
+  const totalGain = Math.max(0, beforeIno - bestIno);
+  // fewest swaps first; among equal swap-counts prefer the balanced one, then lower I_no.
+  const fewest = arr => arr.slice().sort((a,b)=> a.ns - b.ns || (b.full?1:0)-(a.full?1:0) || a.ino - b.ino)[0];
+  // Clearing the RELAY is the field requirement → recommend the FEWEST swaps that
+  // does it (that's the minimum work that makes the bank safe). If nothing clears
+  // the relay, use the "knee" (fewest swaps that already captured ≥ KNEE_KEEP of the
+  // gain). Full phase-balance / lower I_no is offered via the 2/4/6 cards + note.
+  const rec =
+    fewest(opts.filter(o=>o.pass)) ||
+    fewest(opts.filter(o=> totalGain<=1e-9 ? true : (beforeIno - o.ino) >= KNEE_KEEP*totalGain)) ||
+    opts.reduce((a,b)=> b.ino<a.ino?b:a);
+  const autoIdx = rec.i;
   const autoSw = quickResult.swaps[autoIdx];
-  const autoTitle = `⭐ Quick Mode (อัตโนมัติ) — สับ ${autoSw.actualSwaps} ครั้ง ได้ Ino ต่ำสุด`;
+  quickResult.swaps[autoIdx].isRecommended = true;
+  const extraGain = autoSw.actualSwaps>0 ? (inoOfSw(autoSw) - bestIno) : 0; // more swaps could still remove this much
+  // is there a heavier option that ALSO reaches full balance, when rec isn't balanced?
+  const fullerOpt = !rec.full ? fewest(opts.filter(o=>o.full && o.ns>rec.ns)) : null;
+  const autoWhy = rec.full ? 'น้อยสุดที่ผ่านครบ (รีเลย์+บาลานซ์)'
+                : rec.pass ? 'น้อยสุดที่ผ่านรีเลย์ (พอสำหรับหน้างาน)'
+                : 'จุดคุ้มค่า — สับเพิ่มแทบไม่ช่วย';
+  const autoTitle = `⭐ แนะนำ — สับ ${autoSw.actualSwaps} ครั้ง (${autoWhy})`;
   const autoCard = buildSolCard('s1', autoTitle, Object.assign({}, autoSw, {isRecommended:true}), true, topology);
 
   // ── Big before → after summary banner (field-worker friendly) ──
@@ -181,6 +198,13 @@ function renderResults(vals,result){
       ${(topology!=='h-bridge' && autoSw.spread && isFinite(autoSw.spread.max))
         ? `<div class="rs-note">บาลานซ์เฟส — ΔC อนุกรมทั้ง 6 เฟส (A,B,C,A',B',C'): <b>${autoSw.spread.max.toFixed(3)} µF</b> — ${autoSw.spread.ok?'✓ ผ่าน':'⚠ ยังไม่ผ่าน'} (เกณฑ์ ≤ ${SPREADTOL} µF)</div>`
         : ''}
+      <div class="rs-note">${
+        fullerOpt
+          ? `💡 สับ ${autoSw.actualSwaps} ครั้งพอให้รีเลย์ผ่าน (ประหยัดเวลา) — อยากได้บาลานซ์เต็มด้วยให้สับ ${fullerOpt.ns} ครั้ง (ดูตัวเลือกด้านล่าง)`
+          : extraGain > 0.5
+          ? `💡 สับ ${autoSw.actualSwaps} ครั้งนี้พอแล้ว — สับเพิ่มลด I<sub>no</sub> ได้อีกแค่ ~${extraGain.toFixed(1)} mA (ไม่คุ้มเวลา)`
+          : `💡 สับ ${autoSw.actualSwaps} ครั้งนี้ให้ผลดีสุดแล้ว — สับเพิ่มไม่ช่วยลด I<sub>no</sub> อีก`
+      }</div>
     </div>`;
 
   const fixedDefs=[

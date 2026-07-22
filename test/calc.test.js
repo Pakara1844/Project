@@ -20,7 +20,7 @@ function sumC(arr) { return arr.reduce((t, c) => t + c.val, 0); }
 // Extract calcYYMetrics from the source so the test always uses the real code.
 const calcSrc = fs.readFileSync(
   path.join(__dirname, '..', 'src', 'js', 'calculator.js'), 'utf8'
-);
+).replace(/\r\n/g, '\n');   // normalise CRLF → LF so extraction is line-ending-agnostic
 const fnMatch = calcSrc.match(/function calcYYMetrics[\s\S]*?\n}\n/);
 if (!fnMatch) {
   console.error('✗ Could not find calcYYMetrics in calculator.js');
