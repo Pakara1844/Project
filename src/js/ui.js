@@ -95,6 +95,13 @@ function buildSolEng(m,topology){
       {l:'I_no CT (N1-N2)',v:F2.mA(m.Ino_mA),u:'mA',c:'hi-amber',vc:c},
       {l:'Q รวม',v:F2.Mvar(m.Qt),u:'Mvar',c:'hi-green',vc:'good'},
     ];
+    // Per-phase PARALLEL SUM after the swap, compared WITHIN each side (display only).
+    if (m.perPhase && m.perPhase.A.sum1 != null) {
+      const y1s=[m.perPhase.A.sum1,m.perPhase.B.sum1,m.perPhase.C.sum1];
+      const y2s=[m.perPhase.A.sum2,m.perPhase.B.sum2,m.perPhase.C.sum2];
+      items.push({l:'ผลรวม Y1 · A/B/C',v:y1s.map(x=>x.toFixed(3)).join(' / '),u:'µF',c:'hi-teal',vc:''});
+      items.push({l:'ผลรวม Y2 · A\'/B\'/C\'',v:y2s.map(x=>x.toFixed(3)).join(' / '),u:'µF',c:'hi-teal',vc:''});
+    }
   }
   return `<div class="sol-eng">${items.map(it=>`
     <div class="sol-eng-item ${it.c}">

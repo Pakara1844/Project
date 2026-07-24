@@ -1,6 +1,6 @@
 {
   "name": "egat-cbank-optimizer",
-  "version": "8.5.0",
+  "version": "8.6.0",
   "description": "Client-side tool for rebalancing EGAT ungrounded double-wye capacitor banks. Computes neutral unbalance current (I_no) using the complex-phasor method and suggests the fewest capacitor swaps to bring I_no below the 50 mA relay threshold.",
   "private": true,
   "scripts": {
