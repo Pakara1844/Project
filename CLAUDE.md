@@ -193,28 +193,25 @@ being hoisted into the shared global scope, so:
     "🔧 พบ N ตัวเสีย" note. For scissored slots it checks the measured pieces.
   Still swap-priority + display only — it NEVER changes the I_no calculation.
   (H-bridge path keeps the simpler optimizer.)
-- **Phase-balance goal — the PRIMARY swap objective** (`PHASE_SPREAD_UF = 0.1 µF`,
+- **Phase-balance goal — the PRIMARY swap objective** (`PHASE_SPREAD_UF = 0.005 µF`,
   top of `calculator.js`, `window.PHASE_SPREAD_UF`, YY only). Balance is WITHIN each
   wye: after swapping, **A=B=C on Y1 AND A'=B'=C' on Y2** — each wye's three per-phase
   capacitances within the tolerance of each other. The two wyes do NOT need to match
   each other (v8.1 — reverted from the v7.7 "star-point / all-six-equal" metric),
   because **I_no = 0 requires only within-wye balance** (a bank with Y1 all-27.2 and
   Y2 all-27.0 has I_no = 0 but the two wyes differ). **The balance comparison uses the
-  per-phase PARALLEL SUM (Σ Cᵢ), NOT the series value** (v8.2 — the engineer reads the
-  direct sum in the field; series was unintuitive). `calcYYMetrics` exposes both:
-  `perPhase.X.C1`/`.C2` = SERIES (drives I_no, displayed as "อนุกรม") and
-  `perPhase.X.sum1`/`.sum2` = PARALLEL SUM (drives balance ONLY). **CRITICAL: I_no is
-  STILL computed from the series `phaseC` — never the sum. Do not let the sum leak into
-  the I_no path (a parallel sum there makes I_no ~100× too big — see the CRITICAL
-  section).** TOLERANCE: the sum scale grows with caps/phase (a 10-cap phase sums to
-  ≈272 µF), so the tol is a FIXED absolute **0.1 µF** ("phases within 0.1 µF of each
-  other") — it does NOT track alarmMA the way the old series 0.005 did. `phaseSpreadOf(
-  metrics)` reads `perPhase.X.sum1`/`.sum2` and returns `{y1,y2,all,max,ok}` where
-  **`max` = max(y1,y2)** (the worse-balanced wye) and `ok` = `max ≤ tol`; `y1`/`y2`
-  are the per-side sum spreads; `all` (max−min across all six sums) is kept for DISPLAY
-  ONLY and gates nothing. The optimizer's PRIMARY objective is to minimize this
-  within-wye sum spread (`metricsOf` returns `phaseSpreadOf(m).max`), **subject to the
-  relay passing** (I_no < threshold) as a hard gate — "บาลานซ์เฟส เป็นหลัก + I_no
+  per-phase SERIES value C_phase = 1/Σ(1/cᵢ)** — the SAME value that drives I_no, shown
+  as "อนุกรม" (v8.3 — reverted the v8.2 parallel-sum experiment; the engineer wants the
+  series per-phase values A/B/C compared directly). `phaseSpreadOf(metrics)` reads
+  `perPhase.X.C1`/`.C2` (series) and returns `{y1,y2,all,max,ok}` where **`max` =
+  max(y1,y2)** (the worse-balanced wye) and `ok` = `max ≤ tol`; `y1`/`y2` are the
+  per-side series spreads; `all` (max−min across all six phases) is kept for DISPLAY
+  ONLY and gates nothing. **Sizing:** measured on a real bank (115 kV, 10 caps/phase →
+  C_phase ≈ 2.72 µF), ΔC within a wye maps to I_no at ≈ **0.001 µF per 10.5 mA**, so
+  0.005 µF ≈ 52 mA — keep the tol in the same order as the alarm. The optimizer's
+  PRIMARY objective is to minimize this within-wye series spread (`metricsOf` returns
+  `phaseSpreadOf(m).max`), **subject to the relay passing** (I_no < threshold) as a
+  hard gate — "บาลานซ์เฟส เป็นหลัก + I_no
   ต้องผ่านรีเลย์ด้วย". This is threaded all the way into the search:
   - `metricsOf()` returns `{ino, spread}` from ONE `calcYYMetrics` call (no extra cost).
   - The beam frontier is MULTI-OBJECTIVE: it keeps the tightest-spread states AND a

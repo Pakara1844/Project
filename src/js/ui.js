@@ -8,9 +8,9 @@ const F2={uF:v=>isNaN(v)?'—':Number(v).toFixed(4),mA:v=>isNaN(v)?'—':Number(
 let ALARM = (typeof window!=='undefined' && window.ALARM_MA) || 50;
 // Capacitor nameplate (µF) — a unit below this is treated as "failed" (เสีย)
 const NAMEPLATE = (typeof window!=='undefined' && window.NAMEPLATE_UF) || 27;
-// Max spread (µF) of the per-phase PARALLEL SUM C WITHIN each wye — balance goal is
+// Max spread (µF) of the per-phase SERIES C WITHIN each wye — balance goal is
 // A=B=C on Y1 AND A'=B'=C' on Y2 (YY only). The optimizer's primary objective.
-const SPREADTOL = (typeof window!=='undefined' && window.PHASE_SPREAD_UF) || 0.1;
+const SPREADTOL = (typeof window!=='undefined' && window.PHASE_SPREAD_UF) || 0.005;
 function unitBelowNameplate(c){
   if (c.measuredA != null && c.measuredB != null) return c.measuredA < NAMEPLATE || c.measuredB < NAMEPLATE;
   return c.val < NAMEPLATE;
@@ -47,8 +47,8 @@ function buildEngPanelFull(title,m,topology){
     items.push({l:'V_no (เฟสเซอร์)',v:F2.V(m.Vno),u:'V',c:'hi-amber',vc:'warn'});
     items.push({l:'I_no (CT, เฟสเซอร์)',v:F2.mA(m.Ino_mA),u:'mA',c:'hi-red',vc:c});
     if (m.spread && isFinite(m.spread.max)) {
-      items.push({l:'ΔC ผลรวมในฝั่ง (A=B=C / A\'=B\'=C\')',
-        v:m.spread.max.toFixed(3)+' (Y1 '+m.spread.y1.toFixed(3)+' / Y2 '+m.spread.y2.toFixed(3)+')',
+      items.push({l:'ΔC อนุกรมในฝั่ง (A=B=C / A\'=B\'=C\')',
+        v:m.spread.max.toFixed(4)+' (Y1 '+m.spread.y1.toFixed(4)+' / Y2 '+m.spread.y2.toFixed(4)+')',
         u:'µF',c:'hi-amber',vc:m.spread.ok?'good':'bad'});
     }
     items.push({l:'Q รวม',v:F2.Mvar(m.Qt),u:'Mvar',c:'hi-green',vc:'good'});
@@ -196,7 +196,7 @@ function renderResults(vals,result){
       </div>
       <div class="rs-note">เกณฑ์รีเลย์: I<sub>no</sub> ต้องต่ำกว่า ${ALARM} mA</div>
       ${(topology!=='h-bridge' && autoSw.spread && isFinite(autoSw.spread.max))
-        ? `<div class="rs-note">บาลานซ์เฟสในฝั่ง (A=B=C บน Y1, A'=B'=C' บน Y2) — ΔC ผลรวมสูงสุดในฝั่ง: <b>${autoSw.spread.max.toFixed(3)} µF</b> — ${autoSw.spread.ok?'✓ ผ่าน':'⚠ ยังไม่ผ่าน'} (เกณฑ์ ≤ ${SPREADTOL} µF)</div>`
+        ? `<div class="rs-note">บาลานซ์เฟสในฝั่ง (A=B=C บน Y1, A'=B'=C' บน Y2) — ΔC อนุกรมสูงสุดในฝั่ง: <b>${autoSw.spread.max.toFixed(4)} µF</b> — ${autoSw.spread.ok?'✓ ผ่าน':'⚠ ยังไม่ผ่าน'} (เกณฑ์ ≤ ${SPREADTOL} µF)</div>`
         : ''}
       <div class="rs-note">${
         fullerOpt
@@ -270,9 +270,9 @@ function buildSolCard(cls,title,sw,showSteps,topology){
   if (topology!=='h-bridge' && sw.spread && isFinite(sw.spread.max)) {
     const sok = (sw.spread.ok != null) ? sw.spread.ok : (sw.spread.max <= SPREADTOL + 1e-9);
     spreadBadge = `<span class="ino-badge ${sok?'pass':'fail'}"
-         title="บาลานซ์ในฝั่ง (A=B=C บน Y1, A'=B'=C' บน Y2) — Y1 ${sw.spread.y1.toFixed(3)} / Y2 ${sw.spread.y2.toFixed(3)} µF">
+         title="บาลานซ์ในฝั่ง อนุกรม (A=B=C บน Y1, A'=B'=C' บน Y2) — Y1 ${sw.spread.y1.toFixed(4)} / Y2 ${sw.spread.y2.toFixed(4)} µF">
          <i class="fas fa-${sok?'check-circle':'exclamation-triangle'}"></i>
-         ΔC เฟส = ${sw.spread.max.toFixed(3)} µF <small>(${sok?'≤':'>'} ${SPREADTOL} µF)</small>
+         ΔC เฟส = ${sw.spread.max.toFixed(4)} µF <small>(${sok?'≤':'>'} ${SPREADTOL} µF)</small>
        </span>`;
   }
   const fullyPass = sw.underThreshold && sw.spread && (sw.spread.ok != null ? sw.spread.ok : (sw.spread.max <= SPREADTOL + 1e-9));

@@ -130,19 +130,22 @@ console.log('\nCase 5 — balance is within-wye: wyes may differ, still balanced
   check('.all still exposed (cross-wye, display only) and > 0', s.all > 0.01);
 }
 
-// Case 6 — the balance metric is on the PARALLEL SUM scale, not the series scale.
-// One cap in Y1/phase A raised by Δ=0.5 µF among 10 caps: the reported within-wye
-// spread must be ≈ Δ (the direct sum difference), NOT Δ/N² ≈ 0.005 (the series value).
-console.log('\nCase 6 — balance compares the direct SUM per phase (not series)');
+// Case 6 — the balance metric compares the per-phase SERIES C_phase (1/Σ(1/cᵢ)),
+// NOT the parallel sum. One cap in Y1/phase A raised to 30 µF among 10 caps: the
+// reported within-wye spread must be the SERIES shift (~0.026 µF), NOT the sum
+// difference (30−27.2 = 2.8 µF). Tolerance is 0.005 µF so this still FAILS balance.
+console.log('\nCase 6 — balance compares the per-phase SERIES C_phase (not sum)');
 {
   const mk = (o, v, n) => Array.from({ length: n }, (_, i) => ({ id: `${o}-${i + 1}`, val: v, origin: o }));
   const y1 = [...mk('A', 27.2, 10), ...mk('B', 27.2, 10), ...mk('C', 27.2, 10)];
-  y1[0].val = 27.7;   // one cap on A up by 0.5 µF
+  y1[0].val = 30.0;   // one cap on A up to 30 µF
   const y2 = [...mk("A'", 27.2, 10), ...mk("B'", 27.2, 10), ...mk("C'", 27.2, 10)];
+  const seriesA = 1 / (9 / 27.2 + 1 / 30.0);            // ≈ 2.7456
+  const expected = seriesA - 2.72;                       // ≈ 0.0256 (series shift)
   const s = spreadOf(calcYY(y1, y2, KV));
-  check('Y1 spread ≈ 0.5 µF (sum scale), not ~0.005 (series)', Math.abs(s.y1 - 0.5) < 1e-6);
-  check('spread.max reflects the sum difference (≈0.5)', Math.abs(s.max - 0.5) < 1e-6);
-  check('tolerance is 0.1 µF → this 0.5 µF spread FAILS balance', s.ok === false);
+  check('Y1 spread = the SERIES shift (~0.026), not the sum diff 2.8', Math.abs(s.y1 - expected) < 1e-6);
+  check('spread.max is on the series scale (< 0.1, far from 2.8)', s.max < 0.1);
+  check('tolerance 0.005 µF → this spread FAILS balance', s.ok === false);
 }
 
 console.log('');
