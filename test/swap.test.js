@@ -130,6 +130,21 @@ console.log('\nCase 5 — balance is within-wye: wyes may differ, still balanced
   check('.all still exposed (cross-wye, display only) and > 0', s.all > 0.01);
 }
 
+// Case 6 — the balance metric is on the PARALLEL SUM scale, not the series scale.
+// One cap in Y1/phase A raised by Δ=0.5 µF among 10 caps: the reported within-wye
+// spread must be ≈ Δ (the direct sum difference), NOT Δ/N² ≈ 0.005 (the series value).
+console.log('\nCase 6 — balance compares the direct SUM per phase (not series)');
+{
+  const mk = (o, v, n) => Array.from({ length: n }, (_, i) => ({ id: `${o}-${i + 1}`, val: v, origin: o }));
+  const y1 = [...mk('A', 27.2, 10), ...mk('B', 27.2, 10), ...mk('C', 27.2, 10)];
+  y1[0].val = 27.7;   // one cap on A up by 0.5 µF
+  const y2 = [...mk("A'", 27.2, 10), ...mk("B'", 27.2, 10), ...mk("C'", 27.2, 10)];
+  const s = spreadOf(calcYY(y1, y2, KV));
+  check('Y1 spread ≈ 0.5 µF (sum scale), not ~0.005 (series)', Math.abs(s.y1 - 0.5) < 1e-6);
+  check('spread.max reflects the sum difference (≈0.5)', Math.abs(s.max - 0.5) < 1e-6);
+  check('tolerance is 0.1 µF → this 0.5 µF spread FAILS balance', s.ok === false);
+}
+
 console.log('');
 if (failures) {
   console.error(`✗ ${failures} assertion(s) FAILED — swap optimizer has regressed.`);

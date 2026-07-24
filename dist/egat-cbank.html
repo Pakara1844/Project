@@ -908,7 +908,7 @@ body {
         <i class="fas fa-moon icon-dark"></i>
         <i class="fas fa-sun icon-light"></i>
       </button>
-      <div class="ver-badge">v8.1</div>
+      <div class="ver-badge">v8.2</div>
     </div>
   </header>
 
@@ -1112,19 +1112,19 @@ if (typeof window !== 'undefined') window.ALARM_MA = ALARM_MA;
 const NAMEPLATE_UF = 27.00;
 if (typeof window !== 'undefined') window.NAMEPLATE_UF = NAMEPLATE_UF;
 
-// Max allowed spread (µF) of the per-phase SERIES capacitance WITHIN one wye side
-// (A vs B vs C on Y1, A' vs B' vs C' on Y2). The BALANCE GOAL is A=B=C on Y1 AND
-// A'=B'=C' on Y2 — each wye internally balanced (the two wyes need NOT match each
-// other; that is not required for I_no=0). `phaseSpreadOf().max` = the worse of the
-// two within-wye spreads and must be ≤ this tolerance. An ADDITIONAL acceptance goal
-// beyond the I_no alarm; display + swap-priority only — it NEVER changes the I_no
+// Max allowed spread (µF) of the per-phase PARALLEL SUM capacitance (Σ Cᵢ per phase)
+// WITHIN one wye side (A vs B vs C on Y1, A' vs B' vs C' on Y2). The BALANCE GOAL is
+// A=B=C on Y1 AND A'=B'=C' on Y2 — each wye internally balanced (the two wyes need NOT
+// match each other; that is not required for I_no=0). `phaseSpreadOf().max` = the worse
+// of the two within-wye spreads and must be ≤ this tolerance. An ADDITIONAL acceptance
+// goal beyond the I_no alarm; display + swap-priority only — it NEVER changes the I_no
 // calculation. (YY topology only.)
-// SIZING NOTE (measured, 115 kV / 10 caps-in-series per phase → C_phase ≈ 2.72 µF):
-// ΔC within a wye maps to I_no at roughly 0.001 µF ≈ 10.5 mA. So 0.1 µF
-// would allow I_no ≈ 1050 mA — useless as a gate. 0.005 µF ≈ 52 mA, which lines up
-// with the default 50 mA alarm. Keep this in the same order as the alarm you expect;
-// a looser value makes the balance badge pass while the relay still trips.
-const PHASE_SPREAD_UF = 0.005;
+// SCALE NOTE: this compares the DIRECT SUM of each phase's caps (the number the field
+// engineer reads), so its magnitude grows with the caps/phase count — a 10-cap phase
+// sums to ≈ 272 µF. The engineer set the goal as "phases within 0.1 µF of each other"
+// (total per-phase µF), so this is a FIXED absolute tolerance on the sum, independent
+// of the old series-scale 0.005 value. It does NOT track the user's alarmMA.
+const PHASE_SPREAD_UF = 0.1;
 if (typeof window !== 'undefined') window.PHASE_SPREAD_UF = PHASE_SPREAD_UF;
 
 // PHYSICAL RACK LAYOUT (left → right): A A' B B' C C'. The technician's effort to
@@ -1152,22 +1152,24 @@ function swapActionCost(a) {
 
 function sumC(arr) { return arr.reduce((t, c) => t + c.val, 0); }
 
-// Phase spread from a calcYYMetrics() result: the max−min of the per-phase SERIES
-// capacitances (perPhase.X.C1 = Y1, .C2 = Y2). The BALANCE GOAL is WITHIN each wye —
-// A=B=C on Y1 AND A'=B'=C' on Y2 — NOT that all six phases match across wyes. So
+// Phase spread from a calcYYMetrics() result: the max−min of the per-phase PARALLEL
+// SUM capacitances (perPhase.X.sum1 = Y1, .sum2 = Y2 — Σ Cᵢ of the phase, the direct
+// sum the field engineer reads, NOT the series value). The BALANCE GOAL is WITHIN each
+// wye — A=B=C on Y1 AND A'=B'=C' on Y2 — NOT that all six phases match across wyes. So
 // `.max` = max(y1 spread, y2 spread) (the worse-balanced side) and `.ok` = that ≤ tol.
 // This matches the physics: I_no = 0 needs only within-wye balance (the two wyes may
 // differ). `.y1`/`.y2` are the per-side spreads; `.all` (spread across all six phases)
-// is kept for display only and does NOT gate anything.
+// is kept for display only and does NOT gate anything. NOTE: this SUM scale is used for
+// the balance comparison ONLY — I_no still uses the series phaseC (never sum).
 function phaseSpreadOf(metrics, tol) {
   const t = (typeof tol === 'number' && tol > 0) ? tol : PHASE_SPREAD_UF;
   const p = metrics && metrics.perPhase;
   if (!p) return { y1: NaN, y2: NaN, all: NaN, max: NaN, ok: false, tol: t };
   const sp = a => Math.max.apply(null, a) - Math.min.apply(null, a);
-  const s1  = sp([p.A.C1, p.B.C1, p.C.C1]);                              // within Y1: A=B=C
-  const s2  = sp([p.A.C2, p.B.C2, p.C.C2]);                              // within Y2: A'=B'=C'
-  const all = sp([p.A.C1, p.B.C1, p.C.C1, p.A.C2, p.B.C2, p.C.C2]);      // all six (display only)
-  const within = Math.max(s1, s2);                                       // balance = worse-balanced wye
+  const s1  = sp([p.A.sum1, p.B.sum1, p.C.sum1]);                              // within Y1: A=B=C
+  const s2  = sp([p.A.sum2, p.B.sum2, p.C.sum2]);                              // within Y2: A'=B'=C'
+  const all = sp([p.A.sum1, p.B.sum1, p.C.sum1, p.A.sum2, p.B.sum2, p.C.sum2]); // all six (display only)
+  const within = Math.max(s1, s2);                                            // balance = worse-balanced wye
   return { y1: s1, y2: s2, all: all, max: within, ok: within <= t + 1e-9, tol: t };
 }
 
@@ -1215,6 +1217,23 @@ function calcYYMetrics(y1, y2, systemKV) {
   const CA1 = phaseC(y1, ['A']),  CB1 = phaseC(y1, ['B']),  CC1 = phaseC(y1, ['C']);
   const CA2 = phaseC(y2, ["A'"]), CB2 = phaseC(y2, ["B'"]), CC2 = phaseC(y2, ["C'"]);
 
+  // Per-phase PARALLEL SUM (µF) = Σ Cᵢ of that phase's units — used ONLY by the
+  // phase-BALANCE comparison (phaseSpreadOf), which the field engineer wants on the
+  // direct-sum scale, not the series scale. This is display + swap-priority only and
+  // NEVER feeds the I_no calculation (I_no uses the series phaseC above — do NOT mix).
+  function phaseSum(arr, origins) {
+    let s = 0;
+    arr.forEach(item => {
+      const o = (item.origin || '').replace("'", '');
+      if (origins.some(org => org.replace("'", '') === o || item.origin === org)) {
+        if (item.val > 0) s += item.val;
+      }
+    });
+    return s;
+  }
+  const PA1 = phaseSum(y1, ['A']),  PB1 = phaseSum(y1, ['B']),  PC1 = phaseSum(y1, ['C']);
+  const PA2 = phaseSum(y2, ["A'"]), PB2 = phaseSum(y2, ["B'"]), PC2 = phaseSum(y2, ["C'"]);
+
   // Susceptances (siemens). PI2F = 2π·f is declared in this same script block.
   const toS = c => PI2F * c / 1e6;
   const S1 = toS(CA1), S2 = toS(CB1), S3 = toS(CC1);   // wye-1 A,B,C
@@ -1248,11 +1267,12 @@ function calcYYMetrics(y1, y2, systemKV) {
   const C1_uF = sumC(y1), C2_uF = sumC(y2);
   const B1 = toS(C1_uF), B2 = toS(C2_uF);
 
-  // Per-phase detail (phasor contribution magnitude, for display only)
+  // Per-phase detail. C1/C2 = SERIES capacitance (drives I_no, display "อนุกรม").
+  // sum1/sum2 = PARALLEL SUM per phase (drives the phase-BALANCE comparison only).
   const perPhase = {
-    A: { S1: S1, S2: S4, C1: CA1, C2: CA2 },
-    B: { S1: S2, S2: S5, C1: CB1, C2: CB2 },
-    C: { S1: S3, S2: S6, C1: CC1, C2: CC2 },
+    A: { S1: S1, S2: S4, C1: CA1, C2: CA2, sum1: PA1, sum2: PA2 },
+    B: { S1: S2, S2: S5, C1: CB1, C2: CB2, sum1: PB1, sum2: PB2 },
+    C: { S1: S3, S2: S6, C1: CC1, C2: CC2, sum1: PC1, sum2: PC2 },
   };
 
   return {
@@ -1403,9 +1423,9 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
     { side: 1, ph: 'C', tag: 'C',  pos: 4 },
     { side: 2, ph: 'C', tag: "C'", pos: 5 },
   ];
-  // Relay threshold (mA). PRIMARY objective = minimize the WITHIN-wye series-C spread
-  // (A=B=C on Y1, A'=B'=C' on Y2), but a relay-PASSING arrangement (I_no < THR) always
-  // beats a failing one — "balance เป็นหลัก + I_no ต้องผ่านรีเลย์ด้วย". Infinity = no gate.
+  // Relay threshold (mA). PRIMARY objective = minimize the WITHIN-wye parallel-SUM
+  // spread (A=B=C on Y1, A'=B'=C' on Y2), but a relay-PASSING arrangement (I_no < THR)
+  // always beats a failing one — "balance เป็นหลัก + I_no ต้องผ่านรีเลย์ด้วย". Infinity = no gate.
   const THR = (typeof thresholdMA === 'number' && thresholdMA > 0) ? thresholdMA : Infinity;
   // Two complementary searches, scored by the ACTUAL phasor Ino (calcYYMetrics):
   //
@@ -1468,10 +1488,11 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   const BEAM  = small ? 40 : (huge ? 12 : 24);
 
   // One calcYYMetrics call yields BOTH the phasor I_no (relay metric) and the
-  // WITHIN-wye series-C spread (the primary balance metric = max of the Y1 A/B/C
-  // spread and the Y2 A'/B'/C' spread). PRIMARY objective = minimize that within-wye
-  // spread (balance A=B=C on Y1 and A'=B'=C' on Y2); I_no is the relay constraint.
-  // Same cost as computing I_no alone — spread is derived from the same result.
+  // WITHIN-wye PARALLEL-SUM spread (the primary balance metric = max of the Y1 A/B/C
+  // sum spread and the Y2 A'/B'/C' sum spread). PRIMARY objective = minimize that
+  // within-wye spread (balance A=B=C on Y1 and A'=B'=C' on Y2); I_no is the relay
+  // constraint. Same cost as computing I_no alone — spread is derived from the same
+  // result. (Balance uses parallel sum; I_no uses the series phaseC — never mixed.)
   function metricsOf(cY1, cY2) {
     const fullY1 = [...cY1.A, ...cY1.B, ...cY1.C, ...lockY1];
     const fullY2 = [...cY2.A, ...cY2.B, ...cY2.C, ...lockY2];
@@ -2903,7 +2924,7 @@ const F2={uF:v=>isNaN(v)?'—':Number(v).toFixed(4),mA:v=>isNaN(v)?'—':Number(
 let ALARM = (typeof window!=='undefined' && window.ALARM_MA) || 50;
 // Capacitor nameplate (µF) — a unit below this is treated as "failed" (เสีย)
 const NAMEPLATE = (typeof window!=='undefined' && window.NAMEPLATE_UF) || 27;
-// Max spread (µF) of the per-phase series C WITHIN each wye — balance goal is
+// Max spread (µF) of the per-phase PARALLEL SUM C WITHIN each wye — balance goal is
 // A=B=C on Y1 AND A'=B'=C' on Y2 (YY only). The optimizer's primary objective.
 const SPREADTOL = (typeof window!=='undefined' && window.PHASE_SPREAD_UF) || 0.1;
 function unitBelowNameplate(c){
@@ -2942,7 +2963,7 @@ function buildEngPanelFull(title,m,topology){
     items.push({l:'V_no (เฟสเซอร์)',v:F2.V(m.Vno),u:'V',c:'hi-amber',vc:'warn'});
     items.push({l:'I_no (CT, เฟสเซอร์)',v:F2.mA(m.Ino_mA),u:'mA',c:'hi-red',vc:c});
     if (m.spread && isFinite(m.spread.max)) {
-      items.push({l:'ΔC อนุกรมในฝั่ง (A=B=C / A\'=B\'=C\')',
+      items.push({l:'ΔC ผลรวมในฝั่ง (A=B=C / A\'=B\'=C\')',
         v:m.spread.max.toFixed(3)+' (Y1 '+m.spread.y1.toFixed(3)+' / Y2 '+m.spread.y2.toFixed(3)+')',
         u:'µF',c:'hi-amber',vc:m.spread.ok?'good':'bad'});
     }
@@ -3091,7 +3112,7 @@ function renderResults(vals,result){
       </div>
       <div class="rs-note">เกณฑ์รีเลย์: I<sub>no</sub> ต้องต่ำกว่า ${ALARM} mA</div>
       ${(topology!=='h-bridge' && autoSw.spread && isFinite(autoSw.spread.max))
-        ? `<div class="rs-note">บาลานซ์เฟสในฝั่ง (A=B=C บน Y1, A'=B'=C' บน Y2) — ΔC สูงสุดในฝั่ง: <b>${autoSw.spread.max.toFixed(3)} µF</b> — ${autoSw.spread.ok?'✓ ผ่าน':'⚠ ยังไม่ผ่าน'} (เกณฑ์ ≤ ${SPREADTOL} µF)</div>`
+        ? `<div class="rs-note">บาลานซ์เฟสในฝั่ง (A=B=C บน Y1, A'=B'=C' บน Y2) — ΔC ผลรวมสูงสุดในฝั่ง: <b>${autoSw.spread.max.toFixed(3)} µF</b> — ${autoSw.spread.ok?'✓ ผ่าน':'⚠ ยังไม่ผ่าน'} (เกณฑ์ ≤ ${SPREADTOL} µF)</div>`
         : ''}
       <div class="rs-note">${
         fullerOpt
