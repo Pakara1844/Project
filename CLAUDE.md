@@ -116,7 +116,7 @@ being hoisted into the shared global scope, so:
   spare. So the optimizer prefers the NEAREST swap and leaves a SPARE for last (see
   the swap-priority section). `_mode` is legacy/unused. Equal-valued swaps are
   skipped in `expand()` (no-ops → big speed win). Every candidate is scored by the
-  *real* `calcYYMetrics` I_no + 6-phase spread. It runs
+  *real* `calcYYMetrics` I_no + within-wye spread. It runs
   **two complementary searches** and merges their visited states:
   1. **Beam search** — keeps the best `BEAM` partial solutions at each depth so it
      can pass *through* a temporarily-worse state. Finds the exact 2-swap optimum
@@ -194,19 +194,24 @@ being hoisted into the shared global scope, so:
   Still swap-priority + display only — it NEVER changes the I_no calculation.
   (H-bridge path keeps the simpler optimizer.)
 - **Phase-balance goal — the PRIMARY swap objective** (`PHASE_SPREAD_UF = 0.005 µF`,
-  top of `calculator.js`, `window.PHASE_SPREAD_UF`, YY only). "Balance the phases at
-  the star point": after swapping, ALL SIX per-phase SERIES capacitances (A,B,C on
-  Y1 + A',B',C' on Y2) should sit within the tolerance of each other.
-  **Sizing matters:** measured on a real bank (115 kV, 10 caps in series/phase →
-  C_phase ≈ 2.72 µF), ΔC maps to I_no at ≈ **0.001 µF per 10.5 mA**. The original
-  0.1 µF would have allowed I_no ≈ 1050 mA — the badge passed while the relay
-  tripped. 0.005 µF ≈ 52 mA, matching the default 50 mA alarm. If you change the
-  tolerance, keep it in the same order as the alarm. `phaseSpreadOf(metrics)`
-  reads `perPhase.X.C1`/`.C2` and returns `{y1,y2,all,max,ok}` where `all` (=`max`)
-  is the max−min across all six phases and `y1`/`y2` are the per-side spreads (for
-  display). The optimizer's PRIMARY objective is to minimize this 6-phase spread,
-  **subject to the relay passing** (I_no < threshold) as a hard gate — "บาลานซ์เฟส
-  เป็นหลัก + I_no ต้องผ่านรีเลย์ด้วย". This is threaded all the way into the search:
+  top of `calculator.js`, `window.PHASE_SPREAD_UF`, YY only). Balance is WITHIN each
+  wye: after swapping, **A=B=C on Y1 AND A'=B'=C' on Y2** — each wye's three
+  per-phase SERIES capacitances within the tolerance of each other. The two wyes do
+  NOT need to match each other (v8.1 — reverted from the v7.7 "star-point / all-six-
+  equal" metric). This matches the physics: **I_no = 0 requires only within-wye
+  balance** (a bank with Y1 all-27.2 and Y2 all-27.0 has I_no = 0 but the two wyes
+  differ). Using all-six as the gate was stricter than the relay needs and flagged
+  I_no=0 banks as "unbalanced". **Sizing matters:** measured on a real bank (115 kV,
+  10 caps in series/phase → C_phase ≈ 2.72 µF), ΔC within a wye maps to I_no at ≈
+  **0.001 µF per 10.5 mA**. 0.005 µF ≈ 52 mA, matching the default 50 mA alarm. If
+  you change the tolerance, keep it in the same order as the alarm. `phaseSpreadOf(
+  metrics)` reads `perPhase.X.C1`/`.C2` and returns `{y1,y2,all,max,ok}` where
+  **`max` = max(y1,y2)** (the worse-balanced wye) and `ok` = `max ≤ tol`; `y1`/`y2`
+  are the per-side spreads; `all` (max−min across all six phases) is kept for DISPLAY
+  ONLY and gates nothing. The optimizer's PRIMARY objective is to minimize this
+  within-wye spread (`metricsOf` returns `phaseSpreadOf(m).max`), **subject to the
+  relay passing** (I_no < threshold) as a hard gate — "บาลานซ์เฟส เป็นหลัก + I_no
+  ต้องผ่านรีเลย์ด้วย". This is threaded all the way into the search:
   - `metricsOf()` returns `{ino, spread}` from ONE `calcYYMetrics` call (no extra cost).
   - The beam frontier is MULTI-OBJECTIVE: it keeps the tightest-spread states AND a
     half-beam of lowest-I_no states, so a relay-passing arrangement is never pruned

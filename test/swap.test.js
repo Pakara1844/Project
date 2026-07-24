@@ -21,9 +21,10 @@ const src = fs.readFileSync(
 const ctx = { window: {}, console, Math, Object, Array, Set, JSON, isFinite, parseFloat, alert() {} };
 vm.createContext(ctx);
 // findPhaseAwareYYSwaps is a top-level function (not on window) — export it explicitly.
-vm.runInContext(src + '\n;window.__opt = findPhaseAwareYYSwaps;', ctx);
+vm.runInContext(src + '\n;window.__opt = findPhaseAwareYYSwaps; window.__spread = phaseSpreadOf;', ctx);
 const optimize = ctx.window.__opt;
 const calcYY   = ctx.window._calcYYMetrics;
+const spreadOf = ctx.window.__spread;
 const SPARE    = new Set(['replace-y1', 'replace-y2', 'piece-replace']);
 const KV = 115, THR = 50;
 
@@ -110,6 +111,23 @@ console.log('\nCase 4 — symmetric pair solvable in-rack; spares not wasted on 
   const b2 = res.swaps[0];   // budget 2
   check('budget-2 passes relay', b2.Ino_mA < THR);
   assertConsistent('symmetric', res);
+}
+
+// Case 5 — balance metric is WITHIN each wye (A=B=C on Y1, A'=B'=C' on Y2), NOT
+// cross-wye. Two wyes each internally balanced but DIFFERENT from each other must
+// read as balanced (spread.ok = true) — because I_no = 0 there.
+console.log('\nCase 5 — balance is within-wye: wyes may differ, still balanced');
+{
+  const mk = (o, v, n) => Array.from({ length: n }, (_, i) => ({ id: `${o}-${i + 1}`, val: v, origin: o }));
+  const y1 = [...mk('A', 27.2, 10), ...mk('B', 27.2, 10), ...mk('C', 27.2, 10)];
+  const y2 = [...mk("A'", 27.0, 10), ...mk("B'", 27.0, 10), ...mk("C'", 27.0, 10)];   // wye offset
+  const m = calcYY(y1, y2, KV), s = spreadOf(m);
+  check('each wye internally balanced → I_no ≈ 0', m.Ino_mA < 1e-6);
+  check('spread.y1 ≈ 0 (A=B=C)', s.y1 < 1e-9);
+  check('spread.y2 ≈ 0 (A\'=B\'=C\')', s.y2 < 1e-9);
+  check('spread.max = within-wye (≈0), NOT the cross-wye .all', Math.abs(s.max) < 1e-9);
+  check('spread.ok = true even though the two wyes differ', s.ok === true);
+  check('.all still exposed (cross-wye, display only) and > 0', s.all > 0.01);
 }
 
 console.log('');
