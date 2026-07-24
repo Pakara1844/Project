@@ -1,13 +1,15 @@
 {
   "name": "egat-cbank-optimizer",
-  "version": "6.5.0",
+  "version": "8.0.0",
   "description": "Client-side tool for rebalancing EGAT ungrounded double-wye capacitor banks. Computes neutral unbalance current (I_no) using the complex-phasor method and suggests the fewest capacitor swaps to bring I_no below the 50 mA relay threshold.",
   "private": true,
   "scripts": {
     "build": "node build.js && node backup.js",
     "build:nobackup": "node build.js",
     "backup": "node backup.js",
-    "test": "node test/calc.test.js",
+    "test": "node test/calc.test.js && node test/swap.test.js",
+    "test:calc": "node test/calc.test.js",
+    "test:swap": "node test/swap.test.js",
     "serve": "node build.js && npx --yes http-server dist -p 8080 -c-1",
     "dev": "node build.js && echo 'Open dist/egat-cbank.html in a browser'"
   },

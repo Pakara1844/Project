@@ -908,7 +908,7 @@ body {
         <i class="fas fa-moon icon-dark"></i>
         <i class="fas fa-sun icon-light"></i>
       </button>
-      <div class="ver-badge">v7.9</div>
+      <div class="ver-badge">v8.0</div>
     </div>
   </header>
 
@@ -1136,6 +1136,10 @@ function rackDist(originP, originQ) {
   const a = RACK_ORDER[originP], b = RACK_ORDER[originQ];
   return (a == null || b == null) ? 0 : Math.abs(a - b);
 }
+// Action types that actually CONSUME a spare (used for sparesUsed accounting +
+// cost). `exchange` (in-rack) and `piece-swap` (scissored piece↔piece) use no spare.
+const SPARE_ACTION_TYPES = new Set(['replace-y1', 'replace-y2', 'piece-replace']);
+
 // Effort cost of one swap action: rack distance for an in-rack exchange, or the
 // heavy SWAP_SPARE_COST for anything that consumes a spare (spare = last resort).
 function swapActionCost(a) {
@@ -1475,7 +1479,10 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   // Every visited state (from either track) is pushed here as a candidate.
   const candidates = [];
   function record(y1obj, y2obj, spareArr, actions, ino, spread) {
-    const spUsed = actions.reduce((n, a) => n + (a.type === 'exchange' ? 0 : 1), 0);
+    // Count ONLY actions that actually consume a spare. `piece-swap` (สับชิ้นกันเอง
+    // between two scissored slots) and `exchange` (in-rack) use NO spare, so they
+    // must not inflate sparesUsed (which drives the "🔁 ใช้ spare" note + tiebreaker).
+    const spUsed = actions.reduce((n, a) => n + (SPARE_ACTION_TYPES.has(a.type) ? 1 : 0), 0);
     // Effort cost: near rack swaps are cheap, far ones dearer, a spare is last resort.
     const cost = actions.reduce((s, a) => s + swapActionCost(a), 0);
     const y1 = [...y1obj.A, ...y1obj.B, ...y1obj.C];
@@ -1708,25 +1715,34 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   })();
 
   // ── merge: best candidate per budget ──
-  // relay-pass GATE (I_no < THR beats a failing one) → PHASE BALANCE (lowest 6-phase
-  // spread) among passers → then LEAST EFFORT (`cost` = near rack swaps first, spare
-  // last) → lowest I_no → fewest swaps / fewest spares. If nothing passes the relay,
-  // lowest I_no (closest to safe) → least effort. (Nameplate failed-count no longer
-  // gates: a failed unit is moved in-rack first, a spare fetched only if needed.)
+  // relay-pass GATE (I_no < THR beats a failing one) → PHASE BALANCE gate (spread ≤
+  // tol, boolean) → LOWEST I_no (even if it needs a spare — product decision 2026-07)
+  // → LEAST EFFORT (`cost` = near rack swaps first, spare last) → fewest swaps / fewest
+  // spares. If nothing passes the relay, lowest I_no (closest to safe) → least effort.
+  // (Nameplate failed-count no longer gates.)
   function better(c, best) {
     const cp = c.ino < THR, bp = best.ino < THR;
-    if (cp !== bp) return cp;                                             // relay-pass gate
-    if (cp) {                                                            // both pass → balance, then effort
-      if (Math.abs(c.spread - best.spread) > 1e-9) return c.spread < best.spread;
-      if (c.cost !== best.cost) return c.cost < best.cost;               // nearest swaps / spare-last
+    if (cp !== bp) return cp;                                             // 1. relay-pass gate
+    if (cp) {                                                            // both pass relay
+      // 2. balance = BOOLEAN gate (spread ≤ tol), NOT a continuous compare. The old
+      //    continuous spread-first made a spare (spread→0) always beat a cheaper
+      //    in-rack plan, then the cost tiebreaker flipped back — the picker oscillated
+      //    between all-spare and all-rack. Boolean gate keeps it monotone.
+      const cok = c.spread <= PHASE_SPREAD_UF + 1e-9;
+      const bok = best.spread <= PHASE_SPREAD_UF + 1e-9;
+      if (cok !== bok) return cok;
+      if (!cok && Math.abs(c.spread - best.spread) > 1e-9) return c.spread < best.spread; // both unbalanced → tighter
+      // 3. LOWEST I_no — even if it needs a spare (product decision 2026-07: I_no
+      //    quality beats spare-conservation; spare-last is only the next tiebreaker).
       if (Math.abs(c.ino - best.ino) > 1e-9) return c.ino < best.ino;
+      if (c.cost !== best.cost) return c.cost < best.cost;               // 4. least effort (near→far→spare-last)
     } else {                                                             // neither passes → closest to safe
       if (Math.abs(c.ino - best.ino) > 1e-9) return c.ino < best.ino;
       if (c.cost !== best.cost) return c.cost < best.cost;
       if (Math.abs(c.spread - best.spread) > 1e-9) return c.spread < best.spread;
     }
-    if (c.swaps !== best.swaps) return c.swaps < best.swaps;
-    return c.sp < best.sp;                                               // fewer spares used
+    if (c.swaps !== best.swaps) return c.swaps < best.swaps;             // 5. fewer swaps
+    return c.sp < best.sp;                                               // 6. fewer spares used
   }
   function pick(maxSwaps) {
     let best = candidates[0];
@@ -2142,8 +2158,9 @@ async function clientCalculate(payload) {
       [...(sw.y1Full || []), ...(sw.y2Full || [])].forEach(u => { if (u.origin !== 'Spare' && isFailedUnit(u)) n++; });
       return n;
     }
-    // Per budget: relay-pass GATE → phase balance → LEAST EFFORT (rack distance +
-    // spare-last, via `cost`) → lowest I_no → fewest swaps → fewest grouped touched.
+    // Per budget: relay-pass GATE → phase balance gate → LOWEST I_no (even if it
+    // needs a spare) → LEAST EFFORT (rack distance + spare-last, via `cost`) → fewest
+    // swaps → fewest grouped touched. (Kept consistent with better() above.)
     function chooseBudget(i) {
       const cands = levels.map(p => p.swaps[i]).filter(Boolean);
       cands.forEach(c => { c._fail = failRemain(c); });
@@ -2152,8 +2169,8 @@ async function clientCalculate(payload) {
         if (a.underThreshold) {
           const so = (b.spreadOK ? 1 : 0) - (a.spreadOK ? 1 : 0); if (so) return so;             // balanced ≤ tol
           if (!a.spreadOK && Math.abs(a.spread.max - b.spread.max) > 1e-9) return a.spread.max - b.spread.max;
-          if (a.cost !== b.cost) return a.cost - b.cost;                                          // nearest swaps / spare-last
-          if (Math.abs(a.Ino_mA - b.Ino_mA) > 1e-6) return a.Ino_mA - b.Ino_mA;
+          if (Math.abs(a.Ino_mA - b.Ino_mA) > 1e-6) return a.Ino_mA - b.Ino_mA;                  // lowest I_no
+          if (a.cost !== b.cost) return a.cost - b.cost;                                          // then nearest swaps / spare-last
           return a.actualSwaps - b.actualSwaps || a.level - b.level;
         }
         // Neither passes → closest to safe (lowest I_no), then least effort.
