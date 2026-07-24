@@ -355,11 +355,15 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   //  in every Ino evaluation but never moved; swaps stay WITHIN a phase or pull
   //  from Spare, so a capacitor never leaves its phase.
   const PHASES = ['A', 'B', 'C'];
-  const targets = [2, 4, 6];
+  // Budget cards: quick (2) · medium (6) · MAX EFFORT (12). The last "uses the
+  // available resources to the fullest" — as many swaps + spares as it takes to get
+  // as close as possible when a scattered-outlier bank can't be fixed in a few swaps.
+  const targets = [2, 6, 12];
   const kv = systemKV || 69;
   const lockY1 = lockedY1Arr || [];
   const lockY2 = lockedY2Arr || [];
-  const MAXDEPTH = 6;
+  const MAXDEPTH = 12;      // deepest a solution may go (routing cap + max budget)
+  const BEAM_DEPTH = 6;     // beam search depth (small budgets); Track 3 handles deeper
   // Nameplate-failure awareness (optional). When set, the search treats units
   // reading below `nameplate` as FAILED and prioritizes getting them OUT.
   const NP = (typeof nameplate === 'number' && nameplate > 0) ? nameplate : null;
@@ -572,7 +576,7 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   };
   let beam = [init];
   const seen = new Set([sig(init)]);
-  for (let d = 1; d <= MAXDEPTH; d++) {
+  for (let d = 1; d <= BEAM_DEPTH; d++) {
     let kids = [];
     for (const st of beam) kids = kids.concat(expand(st));
     const uniq = [];
@@ -646,6 +650,120 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
       actions.push({ type: best.side === 1 ? 'replace-y1' : 'replace-y2', from: removed, to: spUnit });
       const om = metricsOf(cy1, cy2); record(cy1, cy2, sp, actions, om.ino, om.spread);
     }
+  })();
+
+  // ── TRACK 3: random-restart + route. Escapes the local minima the beam/greedy get
+  //    stuck in (scattered-outlier banks where in-rack shuffling tops out but using
+  //    MORE swaps + the spare pool gets much closer). Phase A searches the best
+  //    ARRANGEMENT in value space from many random restarts; Phase B ROUTES it into a
+  //    minimal, clean sequence of exchange/replace actions (≤ MAXDEPTH — the MAX-effort
+  //    budget). Operates ONLY on non-scissored swappable units + spares (scissored/
+  //    locked stay put; beam handles those). Everything flows into `candidates`, so the
+  //    existing ranking picks it only when it beats the other tracks. ──
+  (function runRandomRestart() {
+    const slots = [];
+    PHASES.forEach(ph => {
+      y1ByPhase[ph].forEach((u, idx) => { if (!isScis(u)) slots.push({ side: 1, ph, idx, origin: u.origin }); });
+      y2ByPhase[ph].forEach((u, idx) => { if (!isScis(u)) slots.push({ side: 2, ph, idx, origin: u.origin }); });
+    });
+    const nSlot = slots.length, nSpare = sparePool.length, N = nSlot + nSpare;
+    if (nSlot < 2 || N < 2) return;
+
+    // Seeded PRNG → deterministic (stable tests, reproducible field runs).
+    let _s = (0x9e3779b9 ^ Math.imul(N, 2654435761)) | 0;
+    const rnd = () => { _s = (_s + 0x6D2B79F5) | 0; let t = Math.imul(_s ^ (_s >>> 15), 1 | _s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = (rnd() * (i + 1)) | 0; const t = a[i]; a[i] = a[j]; a[j] = t; } return a; };
+
+    const slotUnit = i => (slots[i].side === 1 ? y1ByPhase : y2ByPhase)[slots[i].ph][slots[i].idx];
+    const baseArr = slots.map((_, i) => slotUnit(i).val).concat(sparePool.map(s => s.val));
+
+    const scisOf = (byPhase, ph) => byPhase[ph].filter(isScis);
+    function scoreArr(arr) {
+      const c1 = { A: scisOf(y1ByPhase, 'A'), B: scisOf(y1ByPhase, 'B'), C: scisOf(y1ByPhase, 'C') };
+      const c2 = { A: scisOf(y2ByPhase, 'A'), B: scisOf(y2ByPhase, 'B'), C: scisOf(y2ByPhase, 'C') };
+      for (let i = 0; i < nSlot; i++) { const s = slots[i]; (s.side === 1 ? c1 : c2)[s.ph].push({ val: arr[i], origin: s.origin }); }
+      return metricsOf(c1, c2);
+    }
+    // Rank key mirrors chooseBudget: relay gate → balance gate → I_no.
+    const rankKey = m => (m.ino >= THR) ? (2e9 + m.ino)
+      : (m.spread > PHASE_SPREAD_UF + 1e-9) ? (1e9 + m.spread * 1e6) : m.ino;
+    function greedy(arr) {
+      let bestKey = rankKey(scoreArr(arr)), improved = true, guard = 0;
+      while (improved && guard++ < 60) {
+        improved = false;
+        for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) {
+          if (i >= nSlot && j >= nSlot) continue;
+          if (arr[i] === arr[j]) continue;
+          const t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+          const k = rankKey(scoreArr(arr));
+          if (k < bestKey - 1e-12) { bestKey = k; improved = true; }
+          else { arr[j] = arr[i]; arr[i] = t; }
+        }
+      }
+      return arr;
+    }
+
+    const RESTARTS = small ? 100 : (huge ? 30 : 60);
+    const found = [];
+    for (let r = 0; r < RESTARTS; r++) found.push(greedy(r === 0 ? baseArr.slice() : shuffle(baseArr)));
+    found.sort((a, b) => rankKey(scoreArr(a)) - rankKey(scoreArr(b)));
+    const seen = new Set(); const picks = [];
+    for (const a of found) { const key = a.map(v => v.toFixed(4)).join(','); if (seen.has(key)) continue; seen.add(key); picks.push(a); if (picks.length >= 8) break; }
+
+    // Route original → target by CYCLE-FIX over all N positions (installed 0..nSlot-1,
+    // spare nSlot..N-1). Process installed positions in order; bring each to its target
+    // value from an UNFIXED later position, then never touch it again — so no cap is
+    // juggled back and forth. Prefer a 2-cycle (fixes both), then an installed source,
+    // and a spare only when nothing installed holds the value (keeps spare use minimal +
+    // steps clean). installed↔installed = exchange; installed↔spare = replace.
+    function route(targetArr) {
+      const cy1 = { A: y1ByPhase.A.slice(), B: y1ByPhase.B.slice(), C: y1ByPhase.C.slice() };
+      const cy2 = { A: y2ByPhase.A.slice(), B: y2ByPhase.B.slice(), C: y2ByPhase.C.slice() };
+      let sp = sparePool.slice();
+      const actions = [];
+      const inst = p => p < nSlot;
+      const uAt = p => inst(p) ? (slots[p].side === 1 ? cy1 : cy2)[slots[p].ph][slots[p].idx] : sp[p - nSlot];
+      const setU = (p, u) => {
+        if (inst(p)) { const s = slots[p]; const a = (s.side === 1 ? cy1 : cy2)[s.ph].slice(); a[s.idx] = u; (s.side === 1 ? cy1 : cy2)[s.ph] = a; }
+        else { sp = sp.slice(); sp[p - nSlot] = u; }
+      };
+      function apply(p, q) {
+        const up = uAt(p), uq = uAt(q);
+        if (inst(p) && inst(q)) {
+          const samePhase = slots[p].origin === slots[q].origin;   // within one phase → series C unchanged
+          setU(p, Object.assign({}, uq, { origin: slots[p].origin }));
+          setU(q, Object.assign({}, up, { origin: slots[q].origin }));
+          if (!samePhase) actions.push({ type: 'exchange', from: up, to: uq, dist: rackDist(slots[p].origin, slots[q].origin) });
+          // same-phase reorder is a no-op for the result → performed silently (no field step)
+        } else if (!inst(p) && !inst(q)) {           // spare↔spare — silent relabel, no field step
+          setU(p, uq); setU(q, up);
+        } else {                                      // one installed + one spare → replace
+          const i = inst(p) ? p : q, k = inst(p) ? q : p;
+          const removed = uAt(i), spU = uAt(k);
+          setU(i, Object.assign({}, spU, { origin: slots[i].origin }));
+          setU(k, Object.assign({}, removed, { origin: 'Spare' }));
+          actions.push({ type: slots[i].side === 1 ? 'replace-y1' : 'replace-y2', from: removed, to: spU });
+        }
+      }
+      for (let p = 0; p < nSlot; p++) {
+        let g = 0;
+        while (uAt(p).val !== targetArr[p] && g++ < N) {
+          if (actions.length >= MAXDEPTH) return;     // needs more than the MAX budget → drop
+          let q2 = -1, qInst = -1, qAny = -1;
+          for (let q = p + 1; q < N; q++) {
+            if (uAt(q).val !== targetArr[p]) continue;
+            if (targetArr[q] === uAt(p).val) { if (q2 < 0 || (inst(q) && !inst(q2))) q2 = q; }
+            else if (inst(q) && qInst < 0) qInst = q;
+            else if (qAny < 0) qAny = q;
+          }
+          const q = q2 >= 0 ? q2 : (qInst >= 0 ? qInst : qAny);
+          if (q < 0) break;                           // target value not found (shouldn't happen)
+          apply(p, q);
+        }
+      }
+      if (actions.length) { const m = metricsOf(cy1, cy2); record(cy1, cy2, sp, actions, m.ino, m.spread); }
+    }
+    for (const target of picks) route(target);
   })();
 
   // ── merge: best candidate per budget ──

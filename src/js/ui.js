@@ -165,7 +165,7 @@ function renderResults(vals,result){
     : (sw.engAfter ? (topology==='h-bridge'?sw.engAfter.In_mA:sw.engAfter.Ino_mA) : Infinity);
   const beforeIno = (engBefore && engBefore.Ino_mA_before) || Infinity;
   const opts = quickResult.swaps.map((sw,i)=>({
-    i, ns: sw.actualSwaps != null ? sw.actualSwaps : [2,4,6][i], ino: inoOfSw(sw),
+    i, ns: sw.actualSwaps != null ? sw.actualSwaps : (sw.swapCount != null ? sw.swapCount : [2,6,12][i]), ino: inoOfSw(sw),
     pass: !!sw.underThreshold, full: !!(sw.underThreshold && sw.spreadOK)
   }));
   const bestIno = Math.min.apply(null, opts.map(o=>o.ino));
@@ -226,24 +226,25 @@ function renderResults(vals,result){
       }</div>
     </div>`;
 
-  const fixedDefs=[
-    {cls:'s2',icon:'2️⃣',n:2,desc:'สับ 2 ครั้ง'},
-    {cls:'s2',icon:'4️⃣',n:4,desc:'สับ 4 ครั้ง'},
-    {cls:'s3',icon:'6️⃣',n:6,desc:'สับ 6 ครั้ง'},
-  ];
+  const nBudgets = quickResult.swaps.length;
   const fixedCards = quickResult.swaps.map((sw,i)=>{
-    const target=[2,4,6][i];
+    const target=(sw.swapCount!=null)?sw.swapCount:[2,6,12][i];
+    const isMax = i === nBudgets-1;               // last card = MAX effort (use resources fully)
+    const cls = isMax ? 's3' : 's2';
+    const icon = isMax ? '🛠️' : '🔧';
+    const name = isMax ? `สูงสุด ${target} ครั้ง (เต็มที่)` : `${target} ครั้ง`;
     const actual=(sw.actualSwaps!=null)?sw.actualSwaps:target;
     let label;
-    if (actual===0) label = `${fixedDefs[i].icon} ตัวเลือก ${target} ครั้ง — ไม่มีการสับที่ช่วยลด Ino`;
-    else if (actual<target) label = `${fixedDefs[i].icon} ตัวเลือก ${target} ครั้ง (ใช้จริง ${actual} ครั้งก็พอ)`;
-    else label = `${fixedDefs[i].icon} ตัวเลือก ${target} ครั้ง`;
-    return buildSolCard(fixedDefs[i].cls, label, sw, true, topology);
+    if (actual===0) label = `${icon} ตัวเลือก ${name} — ไม่มีการสับที่ช่วยลด Ino`;
+    else if (actual<target) label = `${icon} ตัวเลือก ${name} (ใช้จริง ${actual} ครั้งก็พอ)`;
+    else label = `${icon} ตัวเลือก ${name}`;
+    return buildSolCard(cls, label, sw, true, topology);
   }).join('');
 
+  const budgetList = quickResult.swaps.map(s=>s.swapCount).filter(n=>n!=null).join(' / ');
   const quickIntro = `<div class="locked-note" style="background:var(--green-soft,#e8f5e9);border-color:var(--green,#4caf50);">
     <i class="fas fa-bolt"></i> <b>Quick Mode</b> เลือกการสับที่ทำให้ Ino ต่ำสุดโดยใช้จำนวนครั้งน้อยที่สุดให้อัตโนมัติ ·
-    ด้านล่างเป็นตัวเลือกแบบกำหนดจำนวน 2 / 4 / 6 ครั้ง ให้หน้างานเลือกใช้ได้เลย</div>`;
+    ด้านล่างเป็นตัวเลือกแบบกำหนดจำนวน ${budgetList||'2 / 6 / 12'} ครั้ง (ตัวสุดท้าย = เต็มที่) ให้หน้างานเลือกใช้ได้เลย</div>`;
 
   document.getElementById('tabQuick').innerHTML = summaryBanner + lockedBanner + quickIntro + autoCard +
     `<div style="margin:18px 0 8px;font-weight:700;color:var(--txt2,#555);font-size:0.95rem;">

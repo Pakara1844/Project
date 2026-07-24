@@ -148,6 +148,22 @@ console.log('\nCase 6 — balance compares the per-phase SERIES C_phase (not sum
   check('tolerance 0.005 µF → this spread FAILS balance', s.ok === false);
 }
 
+// Case 7 — MAX-effort budget uses the full resources (more swaps + spares) on a
+// scattered-outlier bank the beam alone gets stuck on. 5 caps/phase, 11 outliers,
+// 5 good spares. The largest budget must beat the mid budget AND deploy ≥1 spare.
+console.log('\nCase 7 — MAX-effort budget uses spares + more swaps (scattered bank)');
+{
+  const mk = (o, arr) => arr.map((v, i) => ({ id: `${o}-${i + 1}`, val: v, origin: o }));
+  const y1 = [...mk('A', [27, 29, 26, 27, 27]), ...mk('B', [27, 29, 28, 27, 27]), ...mk('C', [27, 27, 27, 21, 27])];
+  const y2 = [...mk("A'", [27, 27, 27, 27, 27]), ...mk("B'", [27, 27, 26, 29, 21]), ...mk("C'", [27, 29, 25, 26, 27])];
+  const res = optimize(y1, y2, spares([27, 27, 27, 27, 27]), null, KV, [], [], 27.0, null, THR);
+  const mid = res.swaps[1], max = res.swaps[res.swaps.length - 1];
+  check('MAX budget reaches a much lower I_no than the mid budget', max.Ino_mA < mid.Ino_mA - 20);
+  check('MAX budget deploys at least one spare', max.sparesUsed >= 1);
+  check('MAX budget passes the relay (< THR)', max.Ino_mA < THR);
+  assertConsistent('scattered', res);
+}
+
 console.log('');
 if (failures) {
   console.error(`✗ ${failures} assertion(s) FAILED — swap optimizer has regressed.`);
