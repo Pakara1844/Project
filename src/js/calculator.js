@@ -125,6 +125,22 @@ function calcYYMetrics(y1, y2, systemKV) {
   const CA1 = phaseC(y1, ['A']),  CB1 = phaseC(y1, ['B']),  CC1 = phaseC(y1, ['C']);
   const CA2 = phaseC(y2, ["A'"]), CB2 = phaseC(y2, ["B'"]), CC2 = phaseC(y2, ["C'"]);
 
+  // Per-phase PARALLEL SUM (µF) = Σ Cᵢ of the phase — DISPLAY ONLY (a comparison panel
+  // in the UI). It does NOT drive I_no (series phaseC) nor the balance gate (which uses
+  // the series C1/C2 — see phaseSpreadOf). Kept separate on purpose; do NOT mix into I_no.
+  function phaseSum(arr, origins) {
+    let s = 0;
+    arr.forEach(item => {
+      const o = (item.origin || '').replace("'", '');
+      if (origins.some(org => org.replace("'", '') === o || item.origin === org)) {
+        if (item.val > 0) s += item.val;
+      }
+    });
+    return s;
+  }
+  const PA1 = phaseSum(y1, ['A']),  PB1 = phaseSum(y1, ['B']),  PC1 = phaseSum(y1, ['C']);
+  const PA2 = phaseSum(y2, ["A'"]), PB2 = phaseSum(y2, ["B'"]), PC2 = phaseSum(y2, ["C'"]);
+
   // Susceptances (siemens). PI2F = 2π·f is declared in this same script block.
   const toS = c => PI2F * c / 1e6;
   const S1 = toS(CA1), S2 = toS(CB1), S3 = toS(CC1);   // wye-1 A,B,C
@@ -159,11 +175,12 @@ function calcYYMetrics(y1, y2, systemKV) {
   const B1 = toS(C1_uF), B2 = toS(C2_uF);
 
   // Per-phase detail. C1/C2 = SERIES capacitance per phase (drives I_no AND the
-  // phase-balance comparison; displayed as "อนุกรม").
+  // phase-balance comparison; displayed as "อนุกรม"). sum1/sum2 = PARALLEL SUM per
+  // phase — DISPLAY ONLY (a comparison panel), never used by I_no or the balance gate.
   const perPhase = {
-    A: { S1: S1, S2: S4, C1: CA1, C2: CA2 },
-    B: { S1: S2, S2: S5, C1: CB1, C2: CB2 },
-    C: { S1: S3, S2: S6, C1: CC1, C2: CC2 },
+    A: { S1: S1, S2: S4, C1: CA1, C2: CA2, sum1: PA1, sum2: PA2 },
+    B: { S1: S2, S2: S5, C1: CB1, C2: CB2, sum1: PB1, sum2: PB2 },
+    C: { S1: S3, S2: S6, C1: CC1, C2: CC2, sum1: PC1, sum2: PC2 },
   };
 
   return {

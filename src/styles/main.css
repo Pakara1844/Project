@@ -459,6 +459,7 @@ body {
 .eng-item.hi-blue  { border-left-color:var(--blue); }
 .eng-item.hi-amber { border-left-color:var(--amber); }
 .eng-item.hi-green { border-left-color:var(--green); }
+.eng-item.hi-teal  { border-left-color:var(--teal); }
 .eng-item.hi-red   { border-left-color:var(--red); }
 .eng-item .ei-lbl  { font-size:0.68rem; color:var(--txt3); font-weight:700; margin-bottom:5px; text-transform:uppercase; letter-spacing:0.5px; }
 .eng-item .ei-val  { font-family:var(--mono); font-size:0.98rem; font-weight:700; color:var(--txt); }

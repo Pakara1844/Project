@@ -37,6 +37,21 @@ function buildEngPanelFull(title,m,topology){
       {l:'C เฟส B (อนุกรม Y1/Y2)',v:(m.perPhase.B.C1).toFixed(3)+' / '+(m.perPhase.B.C2).toFixed(3),u:'µF',c:'hi-blue',vc:''},
       {l:'C เฟส C (อนุกรม Y1/Y2)',v:(m.perPhase.C.C1).toFixed(3)+' / '+(m.perPhase.C.C2).toFixed(3),u:'µF',c:'hi-blue',vc:''},
     ];
+    // Per-phase PARALLEL SUM comparison (A vs B vs C, each side) — display only.
+    // Lets the engineer eyeball the direct-sum balance alongside the series values;
+    // it does NOT drive the pass/fail (that uses the series ΔC below).
+    if (m.perPhase && m.perPhase.A.sum1 != null) {
+      const spr = a => Math.max.apply(null,a) - Math.min.apply(null,a);
+      const y1s = [m.perPhase.A.sum1, m.perPhase.B.sum1, m.perPhase.C.sum1];
+      const y2s = [m.perPhase.A.sum2, m.perPhase.B.sum2, m.perPhase.C.sum2];
+      ['A','B','C'].forEach(ph => {
+        items.push({l:'ผลรวมเฟส '+ph+' (Y1/Y2)',
+          v:(m.perPhase[ph].sum1).toFixed(3)+' / '+(m.perPhase[ph].sum2).toFixed(3),u:'µF',c:'hi-teal',vc:''});
+      });
+      items.push({l:'ΔC ผลรวมในฝั่ง (A=B=C / A\'=B\'=C\')',
+        v:Math.max(spr(y1s),spr(y2s)).toFixed(3)+' (Y1 '+spr(y1s).toFixed(3)+' / Y2 '+spr(y2s).toFixed(3)+')',
+        u:'µF',c:'hi-teal',vc:''});
+    }
     // Susceptance per phase (siemens) — wye-1 vs wye-2
     if (m.perPhase && m.S) {
       const Spairs = [['A','S1','S4'],['B','S2','S5'],['C','S3','S6']];
