@@ -32,10 +32,11 @@ function buildEngPanelFull(title,m,topology){
     ];
   } else {
     const c=m.Ino_mA>=ALARM?'bad':m.Ino_mA>=ALARM*0.2?'warn':'good';
+    // Series C compared WITHIN each side: Y1 shows A/B/C together, Y2 shows A'/B'/C'
+    // together — no cross-side pairing (balance goal = A=B=C on Y1, A'=B'=C' on Y2).
     items=[
-      {l:'C เฟส A (อนุกรม Y1/Y2)',v:(m.perPhase.A.C1).toFixed(3)+' / '+(m.perPhase.A.C2).toFixed(3),u:'µF',c:'hi-blue',vc:''},
-      {l:'C เฟส B (อนุกรม Y1/Y2)',v:(m.perPhase.B.C1).toFixed(3)+' / '+(m.perPhase.B.C2).toFixed(3),u:'µF',c:'hi-blue',vc:''},
-      {l:'C เฟส C (อนุกรม Y1/Y2)',v:(m.perPhase.C.C1).toFixed(3)+' / '+(m.perPhase.C.C2).toFixed(3),u:'µF',c:'hi-blue',vc:''},
+      {l:'อนุกรม Y1 · A/B/C',v:[m.perPhase.A.C1,m.perPhase.B.C1,m.perPhase.C.C1].map(x=>x.toFixed(3)).join(' / '),u:'µF',c:'hi-blue',vc:''},
+      {l:'อนุกรม Y2 · A\'/B\'/C\'',v:[m.perPhase.A.C2,m.perPhase.B.C2,m.perPhase.C.C2].map(x=>x.toFixed(3)).join(' / '),u:'µF',c:'hi-blue',vc:''},
     ];
     // Per-phase PARALLEL SUM comparison (A vs B vs C, each side) — display only.
     // Lets the engineer eyeball the direct-sum balance alongside the series values;
@@ -44,13 +45,9 @@ function buildEngPanelFull(title,m,topology){
       const spr = a => Math.max.apply(null,a) - Math.min.apply(null,a);
       const y1s = [m.perPhase.A.sum1, m.perPhase.B.sum1, m.perPhase.C.sum1];
       const y2s = [m.perPhase.A.sum2, m.perPhase.B.sum2, m.perPhase.C.sum2];
-      ['A','B','C'].forEach(ph => {
-        items.push({l:'ผลรวมเฟส '+ph+' (Y1/Y2)',
-          v:(m.perPhase[ph].sum1).toFixed(3)+' / '+(m.perPhase[ph].sum2).toFixed(3),u:'µF',c:'hi-teal',vc:''});
-      });
-      items.push({l:'ΔC ผลรวมในฝั่ง (A=B=C / A\'=B\'=C\')',
-        v:Math.max(spr(y1s),spr(y2s)).toFixed(3)+' (Y1 '+spr(y1s).toFixed(3)+' / Y2 '+spr(y2s).toFixed(3)+')',
-        u:'µF',c:'hi-teal',vc:''});
+      items.push({l:'ผลรวม Y1 · A/B/C', v:y1s.map(x=>x.toFixed(3)).join(' / '), u:'µF', c:'hi-teal', vc:''});
+      items.push({l:'ผลรวม Y2 · A\'/B\'/C\'', v:y2s.map(x=>x.toFixed(3)).join(' / '), u:'µF', c:'hi-teal', vc:''});
+      items.push({l:'ΔC ผลรวมในฝั่ง (Y1 / Y2)', v:spr(y1s).toFixed(3)+' / '+spr(y2s).toFixed(3), u:'µF', c:'hi-teal', vc:''});
     }
     // Susceptance per phase (siemens) — wye-1 vs wye-2
     if (m.perPhase && m.S) {
