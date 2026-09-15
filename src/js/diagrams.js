@@ -91,7 +91,7 @@ function busbar(x1, y, x2, label, color) {
   return `
     <rect x="${x1}" y="${y-4}" width="${len}" height="8" fill="${color}" stroke="${PAL.metalDark}" stroke-width="0.8" rx="2"/>
     <rect x="${x1+1}" y="${y-3}" width="${len-2}" height="2" fill="#ffffff" opacity="0.4" rx="1"/>
-    ${label ? `<text x="${x1 + len/2}" y="${y-9}" fill="${PAL.txt2}" font-size="9" text-anchor="middle" font-family="'Rajdhani',sans-serif" font-weight="600">${label}</text>` : ''}
+    ${label ? `<text x="${x1 + 4}" y="${y-9}" fill="${PAL.txt2}" font-size="9" text-anchor="start" font-family="'Rajdhani',sans-serif" font-weight="600">${label}</text>` : ''}
   `;
 }
 

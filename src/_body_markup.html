@@ -1,8 +1,11 @@
 <body>
-<div class="wrap">
+<div class="wrap relative">
+
+  <!-- Tailwind-built ambient glow behind the header (theme-aware via --blue-glow) -->
+  <div aria-hidden="true" class="pointer-events-none absolute -z-10 left-1/2 -translate-x-1/2 top-0 h-72 w-[min(1100px,94%)] rounded-full bg-[var(--blue-glow)] blur-3xl opacity-70"></div>
 
   <header class="app-header">
-    <div class="header-left">
+    <div class="header-left" onclick="goHome()" style="cursor:pointer" title="กลับหน้าแรก">
       <div class="brand-icon"><i class="fas fa-bolt"></i></div>
       <div>
         <div class="brand-title">C-Bank Optimizer</div>
@@ -14,9 +17,62 @@
         <i class="fas fa-moon icon-dark"></i>
         <i class="fas fa-sun icon-light"></i>
       </button>
-      <div class="ver-badge">v8.7</div>
+      <div class="ver-badge">v9.0</div>
     </div>
   </header>
+
+  <!-- ═══ LANDING / HOME ═══ -->
+  <section class="landing" id="landing">
+    <div class="landing-hero">
+      <div class="landing-emblem"><i class="fas fa-bolt"></i></div>
+      <h1 class="landing-title">C-Bank Optimizer</h1>
+      <p class="landing-tagline">เครื่องมือวิเคราะห์และปรับสมดุลกระแส Unbalance (I<sub>no</sub>)<br>ของ Capacitor Bank แบบ Double-Wye Ungrounded / H-Bridge</p>
+
+      <button class="btn-start" onclick="enterApp()">
+        <i class="fas fa-play"></i><span>Start</span>
+      </button>
+
+      <div class="landing-actions">
+        <button class="btn-ghost-lg" onclick="openInfo('howto')">
+          <i class="fas fa-book-open"></i><span>วิธีใช้</span>
+        </button>
+        <button class="btn-ghost-lg" onclick="openInfo('theory')">
+          <i class="fas fa-square-root-variable"></i><span>ทฤษฎีที่เกี่ยวข้อง</span>
+        </button>
+      </div>
+    </div>
+
+    <footer class="landing-foot">
+      <!-- โลโก้มหาวิทยาลัยศรีปทุม (placeholder — ส่งไฟล์โลโก้จริงมาเพื่อฝังแบบ base64 ได้) -->
+      <div class="spu-brand">
+        <div class="spu-logo" aria-hidden="true">SPU</div>
+        <div class="spu-name">
+          <div class="spu-th">มหาวิทยาลัยศรีปทุม</div>
+          <div class="spu-en">SRIPATUM UNIVERSITY</div>
+        </div>
+      </div>
+
+      <div class="team">
+        <div class="team-title"><i class="fas fa-user-graduate"></i> คณะผู้จัดทำ</div>
+        <div class="team-list">
+          <div class="member"><span class="m-name">นายสรวิชญ์ ยะคำ</span><span class="m-id">รหัส 66028126</span></div>
+          <div class="member"><span class="m-name">นายภัครพล บัวเทศ</span><span class="m-id">รหัส 66028133</span></div>
+          <div class="member"><span class="m-name">นางสาวสัณห์สินี ทรัพย์ศิริสิน</span><span class="m-id">รหัส 66049136</span></div>
+        </div>
+      </div>
+    </footer>
+  </section>
+
+  <!-- ═══ INFO MODAL (วิธีใช้ / ทฤษฎี) ═══ -->
+  <div class="modal-overlay" id="infoModal" onclick="if(event.target===this)closeInfo()">
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <div class="modal-title" id="infoTitle">—</div>
+        <button class="modal-close" onclick="closeInfo()" title="ปิด"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body" id="infoContent"></div>
+    </div>
+  </div>
 
   <div class="wizard-bar">
     <div class="wiz-step active" data-step="1" onclick="if(this.classList.contains('completed'))goToStep(1)">

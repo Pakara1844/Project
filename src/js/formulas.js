@@ -22,7 +22,7 @@ const F = {
 };
 
 const F_HZ = 50;                 // system frequency (Hz)
-const PI2F = 2 * Math.PI * 50;   // ω = 2πf, self-contained (no cross-block dep)
+const PI2F_F = 2 * Math.PI * 50;   // ω = 2πf, self-contained (no cross-block dep)
 
 /** Render formula step block */
 function fStep(num, title, tag, desc, ...lines) {
@@ -186,10 +186,10 @@ function buildHBridgeFormulas(vals, m) {
   const dSum = vals.legs.d.map(c=>F.uF(c.val)).join(' + ');
 
   // Calc Xc for each
-  const xcA = 1 / (PI2F * sumA * 1e-6);
-  const xcB = 1 / (PI2F * sumB * 1e-6);
-  const xcC = 1 / (PI2F * sumC_ * 1e-6);
-  const xcD = 1 / (PI2F * sumD * 1e-6);
+  const xcA = 1 / (PI2F_F * sumA * 1e-6);
+  const xcB = 1 / (PI2F_F * sumB * 1e-6);
+  const xcC = 1 / (PI2F_F * sumC_ * 1e-6);
+  const xcD = 1 / (PI2F_F * sumD * 1e-6);
 
   let html = `<div class="formula-section">
     <div class="formula-title"><i class="fas fa-function"></i> การคำนวณ H-Bridge — ทีละขั้น</div>
@@ -225,10 +225,10 @@ function buildHBridgeFormulas(vals, m) {
     'Xc = 1/ωC',
     'แต่ละ Leg มี Xc ต่างกันตามค่าความจุ',
     sym('X<sub>C</sub> = 1 / (2π · f · C)'),
-    eq('X<sub>C,A</sub> = 1 / (' + n(PI2F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumA)) + ' ' + op('×') + ' 10⁻⁶) = ' + r(F.Ohm(xcA)) + ' Ω'),
-    eq('X<sub>C,B</sub> = 1 / (' + n(PI2F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumB)) + ' ' + op('×') + ' 10⁻⁶) = ' + r(F.Ohm(xcB)) + ' Ω'),
-    eq('X<sub>C,C</sub> = 1 / (' + n(PI2F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumC_)) + ' ' + op('×') + ' 10⁻⁶) = ' + r(F.Ohm(xcC)) + ' Ω'),
-    eq('X<sub>C,D</sub> = 1 / (' + n(PI2F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumD)) + ' ' + op('×') + ' 10⁻⁶) = ' + r(F.Ohm(xcD)) + ' Ω')
+    eq('X<sub>C,A</sub> = 1 / (' + n(PI2F_F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumA)) + ' ' + op('×') + ' 10⁻⁶) = ' + r(F.Ohm(xcA)) + ' Ω'),
+    eq('X<sub>C,B</sub> = 1 / (' + n(PI2F_F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumB)) + ' ' + op('×') + ' 10⁻⁶) = ' + r(F.Ohm(xcB)) + ' Ω'),
+    eq('X<sub>C,C</sub> = 1 / (' + n(PI2F_F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumC_)) + ' ' + op('×') + ' 10⁻⁶) = ' + r(F.Ohm(xcC)) + ' Ω'),
+    eq('X<sub>C,D</sub> = 1 / (' + n(PI2F_F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumD)) + ' ' + op('×') + ' 10⁻⁶) = ' + r(F.Ohm(xcD)) + ' Ω')
   );
 
   // Step 4: xa1 and xa2

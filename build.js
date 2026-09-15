@@ -20,11 +20,35 @@
  * model unless you refactor every cross-file reference. Order matters.
  */
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 const ROOT = __dirname;
 const SRC = path.join(ROOT, 'src');
 const DIST = path.join(ROOT, 'dist');
+
+// Compile Tailwind (v4) from src/styles/tailwind.css into a CSS string that gets
+// inlined ahead of main.css. Runs the standalone CLI via node so it works cross-
+// platform (no reliance on the .cmd shim) and needs no network — everything is
+// resolved from the local install, keeping the single-file / offline build intact.
+function buildTailwind() {
+  const cli = path.join(ROOT, 'node_modules', '@tailwindcss', 'cli', 'dist', 'index.mjs');
+  const input = path.join(SRC, 'styles', 'tailwind.css');
+  const outFile = path.join(os.tmpdir(), `egat-tw-${process.pid}.css`);
+  try {
+    execFileSync(process.execPath, [cli, '-i', input, '-o', outFile, '--minify'], {
+      cwd: ROOT, stdio: ['ignore', 'ignore', 'inherit'],
+    });
+    const css = fs.readFileSync(outFile, 'utf8');
+    fs.unlinkSync(outFile);
+    return css;
+  } catch (err) {
+    console.error('✗ Tailwind compile failed:', err.message);
+    console.error('  Run `npm install` (dev deps: tailwindcss, @tailwindcss/cli).');
+    process.exit(1);
+  }
+}
 
 // JS concatenation order. theme-init runs first (in <head>); the rest run after
 // the body markup. calculator defines core math used by everyone else, so it
@@ -41,6 +65,7 @@ function wrapScript(name) {
 
 function build() {
   const head = read(path.join(SRC, '_head.html'));
+  const tailwindCss = buildTailwind();
   const css = read(path.join(SRC, 'styles', 'main.css'));
   const bodyMarkup = read(path.join(SRC, '_body_markup.html'));
 
@@ -59,7 +84,10 @@ function build() {
   const out =
     head +
     headScripts + '\n' +
-    '  <style>\n' + css + '\n  </style>\n' +
+    '  <!-- ==== Tailwind (compiled, utilities only — no Preflight) ==== -->\n' +
+    '  <style id="tw">\n' + tailwindCss + '\n  </style>\n' +
+    '  <!-- ==== app styles (authoritative design system) ==== -->\n' +
+    '  <style id="app">\n' + css + '\n  </style>\n' +
     '</head>\n' +
     bodyWithScripts;
 

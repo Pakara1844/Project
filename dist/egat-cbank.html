@@ -24,7 +24,13 @@
     })();
 
   </script>
-  <style>
+  <!-- ==== Tailwind (compiled, utilities only — no Preflight) ==== -->
+  <style id="tw">
+/*! tailwindcss v4.3.3 | MIT License | https://tailwindcss.com */
+@layer properties{@supports (((-webkit-hyphens:none)) and (not (margin-trim:inline))) or ((-moz-orient:inline) and (not (color:rgb(from red r g b)))){*,:before,:after,::backdrop{--tw-translate-x:0;--tw-translate-y:0;--tw-translate-z:0;--tw-border-style:solid;--tw-blur:initial;--tw-brightness:initial;--tw-contrast:initial;--tw-grayscale:initial;--tw-hue-rotate:initial;--tw-invert:initial;--tw-opacity:initial;--tw-saturate:initial;--tw-sepia:initial;--tw-drop-shadow:initial;--tw-drop-shadow-color:initial;--tw-drop-shadow-alpha:100%;--tw-drop-shadow-size:initial;--tw-backdrop-blur:initial;--tw-backdrop-brightness:initial;--tw-backdrop-contrast:initial;--tw-backdrop-grayscale:initial;--tw-backdrop-hue-rotate:initial;--tw-backdrop-invert:initial;--tw-backdrop-opacity:initial;--tw-backdrop-saturate:initial;--tw-backdrop-sepia:initial}}}@layer theme{:root,:host{--spacing:.25rem;--shadow-sm:0 1px 3px 0 #0000001a, 0 1px 2px -1px #0000001a;--shadow-lg:0 10px 15px -3px #0000001a, 0 4px 6px -4px #0000001a;--blur-3xl:64px;--default-transition-duration:.15s;--default-transition-timing-function:cubic-bezier(.4, 0, .2, 1);--color-surface:var(--bg2);--color-line:var(--border)}}@layer base,components;@layer utilities{.pointer-events-none{pointer-events:none}.collapse{visibility:collapse}.absolute{position:absolute}.fixed{position:fixed}.relative{position:relative}.static{position:static}.top-0{top:0}.left-1{left:var(--spacing)}.left-1\/2{left:50%}.-z-10{z-index:calc(10 * -1)}.container{width:100%}@media (min-width:40rem){.container{max-width:40rem}}@media (min-width:48rem){.container{max-width:48rem}}@media (min-width:64rem){.container{max-width:64rem}}@media (min-width:80rem){.container{max-width:80rem}}@media (min-width:96rem){.container{max-width:96rem}}.block{display:block}.flex{display:flex}.grid{display:grid}.hidden{display:none}.inline{display:inline}.inline-flex{display:inline-flex}.h-72{height:calc(var(--spacing) * 72)}.w-\[min\(1100px\,94\%\)\]{width:min(1100px,94%)}.flex-shrink{flex-shrink:1}.-translate-x-1{--tw-translate-x:calc(var(--spacing) * -1);translate:var(--tw-translate-x) var(--tw-translate-y)}.-translate-x-1\/2{--tw-translate-x:calc(calc(1 / 2 * 100%) * -1);translate:var(--tw-translate-x) var(--tw-translate-y)}.rounded{border-radius:.25rem}.rounded-full{border-radius:3.40282e38px}.border{border-style:var(--tw-border-style);border-width:1px}.border-line{border-color:var(--color-line)}.bg-\[var\(--blue-glow\)\]{background-color:var(--blue-glow)}.bg-surface{background-color:var(--color-surface)}.p-6{padding:calc(var(--spacing) * 6)}.p-6\!{padding:calc(var(--spacing) * 6)!important}.opacity-70{opacity:.7}.blur-3xl{--tw-blur:blur(var(--blur-3xl));filter:var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)}.backdrop-filter{-webkit-backdrop-filter:var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,);backdrop-filter:var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)}.transition{transition-property:color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to,opacity,box-shadow,transform,translate,scale,rotate,filter,-webkit-backdrop-filter,backdrop-filter,display,content-visibility,overlay,pointer-events;transition-timing-function:var(--tw-ease,var(--default-transition-timing-function));transition-duration:var(--tw-duration,var(--default-transition-duration))}}@property --tw-translate-x{syntax:"*";inherits:false;initial-value:0}@property --tw-translate-y{syntax:"*";inherits:false;initial-value:0}@property --tw-translate-z{syntax:"*";inherits:false;initial-value:0}@property --tw-border-style{syntax:"*";inherits:false;initial-value:solid}@property --tw-blur{syntax:"*";inherits:false}@property --tw-brightness{syntax:"*";inherits:false}@property --tw-contrast{syntax:"*";inherits:false}@property --tw-grayscale{syntax:"*";inherits:false}@property --tw-hue-rotate{syntax:"*";inherits:false}@property --tw-invert{syntax:"*";inherits:false}@property --tw-opacity{syntax:"*";inherits:false}@property --tw-saturate{syntax:"*";inherits:false}@property --tw-sepia{syntax:"*";inherits:false}@property --tw-drop-shadow{syntax:"*";inherits:false}@property --tw-drop-shadow-color{syntax:"*";inherits:false}@property --tw-drop-shadow-alpha{syntax:"<percentage>";inherits:false;initial-value:100%}@property --tw-drop-shadow-size{syntax:"*";inherits:false}@property --tw-backdrop-blur{syntax:"*";inherits:false}@property --tw-backdrop-brightness{syntax:"*";inherits:false}@property --tw-backdrop-contrast{syntax:"*";inherits:false}@property --tw-backdrop-grayscale{syntax:"*";inherits:false}@property --tw-backdrop-hue-rotate{syntax:"*";inherits:false}@property --tw-backdrop-invert{syntax:"*";inherits:false}@property --tw-backdrop-opacity{syntax:"*";inherits:false}@property --tw-backdrop-saturate{syntax:"*";inherits:false}@property --tw-backdrop-sepia{syntax:"*";inherits:false}
+  </style>
+  <!-- ==== app styles (authoritative design system) ==== -->
+  <style id="app">
 /* ============================================================
    EGAT C-Bank Optimizer v5 — Modern Dual-Theme UI
    ============================================================ */
@@ -67,11 +73,13 @@
   --txt2:      #475569;
   --txt3:      #94a3b8;
 
-  /* Effects */
-  --shadow-sm: 0 1px 2px rgba(15,20,25,0.04), 0 1px 3px rgba(15,20,25,0.06);
-  --shadow:    0 4px 12px rgba(15,20,25,0.06), 0 2px 4px rgba(15,20,25,0.04);
-  --shadow-lg: 0 12px 32px rgba(15,20,25,0.10), 0 4px 12px rgba(15,20,25,0.06);
+  /* Effects — layered, soft depth */
+  --shadow-sm: 0 1px 2px rgba(15,23,42,0.04), 0 2px 6px rgba(15,23,42,0.05);
+  --shadow:    0 2px 6px rgba(15,23,42,0.05), 0 8px 20px rgba(15,23,42,0.07);
+  --shadow-lg: 0 4px 12px rgba(15,23,42,0.06), 0 18px 44px rgba(15,23,42,0.12);
   --shadow-glow: 0 0 0 4px var(--blue-glow);
+  /* hairline top-highlight that gives cards a subtle "lit" edge */
+  --ring-top:  inset 0 1px 0 rgba(255,255,255,0.65);
 
   /* Diagram colors (used by SVG) */
   --diag-bg: #fafbfc;
@@ -126,10 +134,11 @@
   --txt2:      #94a3b8;
   --txt3:      #64748b;
 
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.3), 0 1px 3px rgba(0,0,0,0.4);
-  --shadow:    0 4px 12px rgba(0,0,0,0.30), 0 2px 4px rgba(0,0,0,0.20);
-  --shadow-lg: 0 12px 32px rgba(0,0,0,0.40), 0 4px 12px rgba(0,0,0,0.25);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.35), 0 2px 6px rgba(0,0,0,0.30);
+  --shadow:    0 2px 6px rgba(0,0,0,0.30), 0 8px 22px rgba(0,0,0,0.42);
+  --shadow-lg: 0 4px 14px rgba(0,0,0,0.35), 0 20px 48px rgba(0,0,0,0.55);
   --shadow-glow: 0 0 0 4px var(--blue-glow);
+  --ring-top:  inset 0 1px 0 rgba(255,255,255,0.06);
 
   --diag-bg: #131825;
   --diag-grid: #2a3346;
@@ -148,9 +157,11 @@ html { scroll-behavior:smooth; }
 body {
   font-family:var(--th); background:var(--bg); color:var(--txt);
   min-height:100vh; transition:background 0.3s, color 0.3s;
+  background-attachment:fixed;
   background-image:
-    radial-gradient(ellipse 70% 30% at 30% 0%, var(--blue-glow), transparent 65%),
-    radial-gradient(ellipse 50% 30% at 80% 0%, var(--amber-soft), transparent 65%);
+    radial-gradient(58% 42% at 12% -6%, var(--blue-glow), transparent 60%),
+    radial-gradient(50% 38% at 88% -2%, var(--amber-soft), transparent 58%),
+    radial-gradient(46% 42% at 50% 116%, var(--blue-soft), transparent 60%);
   font-feature-settings:'cv11','ss01';
 }
 .wrap { max-width:1320px; margin:0 auto; padding:24px 24px 80px; }
@@ -164,16 +175,16 @@ body {
   -webkit-backdrop-filter:blur(20px) saturate(180%);
   border:1px solid var(--border);
   border-radius:var(--rxl);
-  box-shadow:var(--shadow);
+  box-shadow:var(--shadow-lg), var(--ring-top);
   position:sticky; top:16px; z-index:50;
 }
 .header-left { display:flex; align-items:center; gap:14px; }
 .brand-icon {
-  width:44px; height:44px; border-radius:12px;
-  background:linear-gradient(135deg, var(--blue), var(--blue-dim));
+  width:44px; height:44px; border-radius:13px;
+  background:linear-gradient(135deg, var(--blue-2), var(--blue-dim));
   display:flex; align-items:center; justify-content:center;
   font-size:22px; color:#fff;
-  box-shadow:0 4px 12px var(--blue-glow);
+  box-shadow:0 6px 16px var(--blue-glow), inset 0 1px 0 rgba(255,255,255,0.35);
 }
 .brand-title {
   font-family:var(--head); font-size:1.4rem; font-weight:800;
@@ -206,7 +217,7 @@ body {
   display:flex; align-items:center; gap:8px;
   background:var(--bg2); border:1px solid var(--border);
   border-radius:var(--rxl); padding:14px 22px; margin-bottom:20px;
-  box-shadow:var(--shadow-sm);
+  box-shadow:var(--shadow-sm), var(--ring-top);
 }
 .wiz-step { display:flex; align-items:center; gap:12px; flex:1; opacity:0.45; transition:opacity 0.3s; cursor:default; }
 .wiz-step.active { opacity:1; }
@@ -248,8 +259,10 @@ body {
 .card {
   background:var(--bg2); border:1px solid var(--border);
   border-radius:var(--rxl); padding:24px; margin-bottom:18px;
-  box-shadow:var(--shadow-sm);
+  box-shadow:var(--shadow-sm), var(--ring-top);
+  transition:box-shadow 0.25s, border-color 0.25s;
 }
+.card:hover { box-shadow:var(--shadow), var(--ring-top); border-color:var(--border2); }
 .card-title {
   font-family:var(--head); font-size:1.05rem; font-weight:700;
   color:var(--txt); letter-spacing:-0.01em;
@@ -364,11 +377,11 @@ body {
 .btn-outline { background:transparent; color:var(--blue); border:1.5px solid var(--blue); }
 .btn-outline:hover { background:var(--blue-soft); }
 .btn-primary {
-  background:linear-gradient(135deg, var(--blue), var(--blue-dim));
-  color:#fff; box-shadow:0 4px 14px var(--blue-glow);
+  background:linear-gradient(135deg, var(--blue-2), var(--blue-dim));
+  color:#fff; box-shadow:0 6px 18px var(--blue-glow), inset 0 1px 0 rgba(255,255,255,0.28);
   font-family:var(--head); font-weight:700;
 }
-.btn-primary:hover { transform:translateY(-2px); box-shadow:0 6px 20px var(--blue-glow); }
+.btn-primary:hover { transform:translateY(-2px); box-shadow:0 10px 26px var(--blue-glow), inset 0 1px 0 rgba(255,255,255,0.28); }
 .btn-primary:active { transform:translateY(0); }
 .btn-primary:disabled { opacity:0.4; cursor:not-allowed; transform:none; box-shadow:none; }
 .btn-lg { padding:14px 32px; font-size:1.02rem; border-radius:var(--rl); }
@@ -419,10 +432,10 @@ body {
 .totals-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:18px; }
 .total-card {
   background:var(--bg2); border:1px solid var(--border);
-  border-radius:var(--rxl); padding:18px 22px; box-shadow:var(--shadow-sm);
-  transition:transform 0.2s;
+  border-radius:var(--rxl); padding:18px 22px; box-shadow:var(--shadow-sm), var(--ring-top);
+  transition:transform 0.2s, box-shadow 0.2s;
 }
-.total-card:hover { transform:translateY(-2px); box-shadow:var(--shadow); }
+.total-card:hover { transform:translateY(-2px); box-shadow:var(--shadow), var(--ring-top); }
 .total-card.before { border-top:3px solid var(--amber); }
 .total-card.system { border-top:3px solid var(--blue); }
 .tc-head {
@@ -569,10 +582,10 @@ body {
 /* ── Solution card ───────────────────────────────────────────── */
 .sol-card {
   background:var(--bg2); border:1px solid var(--border); border-radius:var(--rxl);
-  margin-bottom:16px; overflow:hidden; box-shadow:var(--shadow-sm);
+  margin-bottom:16px; overflow:hidden; box-shadow:var(--shadow-sm), var(--ring-top);
   transition:transform 0.2s, box-shadow 0.2s;
 }
-.sol-card:hover { transform:translateY(-2px); box-shadow:var(--shadow); }
+.sol-card:hover { transform:translateY(-2px); box-shadow:var(--shadow), var(--ring-top); }
 .sol-card.s1   { border-top:3px solid var(--green); }
 .sol-card.s2   { border-top:3px solid var(--amber); }
 .sol-card.s3   { border-top:3px solid var(--purple); }
@@ -892,13 +905,184 @@ body {
   .wiz-step    { flex-basis:100%; padding:6px 0; }
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   LANDING / HOME — modern hero (Vercel / GitHub Next vibe)
+   ═══════════════════════════════════════════════════════════════ */
+.landing { display:none; }
+body.show-landing .landing { display:flex; }
+body.show-landing .wizard-bar,
+body.show-landing .page { display:none !important; }
+
+.landing {
+  flex-direction:column; align-items:center;
+  min-height:calc(100vh - 150px);
+  padding:20px 20px 8px; text-align:center; position:relative;
+}
+/* faint grid backdrop, masked to a soft vignette behind the hero */
+.landing::before {
+  content:''; position:absolute; inset:-24px 0 0; z-index:-1; pointer-events:none;
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size:46px 46px;
+  -webkit-mask-image:radial-gradient(ellipse 62% 56% at 50% 34%, #000, transparent 74%);
+          mask-image:radial-gradient(ellipse 62% 56% at 50% 34%, #000, transparent 74%);
+  opacity:0.55;
+}
+
+.landing-hero {
+  flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:22px; max-width:780px; padding:48px 0 28px;
+}
+.landing-emblem {
+  width:78px; height:78px; border-radius:22px;
+  background:linear-gradient(135deg, var(--blue-2), var(--blue-dim));
+  display:flex; align-items:center; justify-content:center;
+  color:#fff; font-size:34px;
+  box-shadow:0 14px 34px var(--blue-glow), inset 0 1px 0 rgba(255,255,255,0.38);
+}
+.landing-title {
+  font-family:var(--head);
+  font-size:clamp(2.6rem, 7vw, 4.6rem);
+  font-weight:800; line-height:1.02; letter-spacing:-0.045em; margin:-2px 0;
+  background:linear-gradient(180deg, var(--txt) 30%, var(--blue));
+  -webkit-background-clip:text; background-clip:text;
+  -webkit-text-fill-color:transparent; color:transparent;
+}
+.landing-tagline {
+  font-size:clamp(0.98rem, 2.1vw, 1.18rem);
+  color:var(--txt2); line-height:1.75; font-weight:500; max-width:580px;
+  text-wrap:balance;
+}
+.landing-tagline sub { font-size:0.7em; }
+
+.btn-start {
+  margin-top:6px;
+  display:inline-flex; align-items:center; gap:12px;
+  padding:16px 44px; border:none; cursor:pointer;
+  font-family:var(--head); font-size:1.18rem; font-weight:700; letter-spacing:0.01em;
+  color:#fff; border-radius:16px;
+  background:linear-gradient(135deg, #10b981, #047857);
+  box-shadow:0 14px 32px rgba(16,185,129,0.36), inset 0 1px 0 rgba(255,255,255,0.32);
+  transition:transform .18s cubic-bezier(.16,1,.3,1), box-shadow .18s;
+  animation:startPulse 2.8s ease-in-out infinite;
+}
+.btn-start i { font-size:0.92em; }
+.btn-start:hover { transform:translateY(-3px) scale(1.02); box-shadow:0 20px 44px rgba(16,185,129,0.5), inset 0 1px 0 rgba(255,255,255,0.32); animation:none; }
+.btn-start:active { transform:translateY(-1px) scale(1); }
+@keyframes startPulse {
+  0%,100% { box-shadow:0 14px 32px rgba(16,185,129,0.32), inset 0 1px 0 rgba(255,255,255,0.32); }
+  50%     { box-shadow:0 16px 42px rgba(16,185,129,0.55), inset 0 1px 0 rgba(255,255,255,0.32); }
+}
+
+.landing-actions { display:flex; gap:14px; flex-wrap:wrap; justify-content:center; margin-top:4px; }
+.btn-ghost-lg {
+  display:inline-flex; align-items:center; gap:9px;
+  padding:12px 24px; cursor:pointer;
+  font-family:var(--th); font-size:0.98rem; font-weight:600;
+  color:var(--txt); background:var(--bg2);
+  border:1.5px solid var(--border); border-radius:12px;
+  box-shadow:var(--shadow-sm); transition:transform .18s, border-color .18s, box-shadow .18s;
+}
+.btn-ghost-lg i { color:var(--blue); }
+.btn-ghost-lg:hover { border-color:var(--blue); transform:translateY(-2px); box-shadow:var(--shadow); }
+
+/* ── Footer: SPU brand + team ── */
+.landing-foot {
+  width:100%; max-width:1120px; margin-top:auto;
+  padding:24px 4px 6px; border-top:1px solid var(--border);
+  display:flex; align-items:center; justify-content:space-between; gap:22px 40px;
+  flex-wrap:wrap;
+}
+.spu-brand { display:flex; align-items:center; gap:14px; text-align:left; }
+.spu-logo {
+  width:58px; height:58px; border-radius:50%; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+  font-family:var(--head); font-weight:800; font-size:1.1rem; letter-spacing:0.03em;
+  color:#fff; background:linear-gradient(135deg, #e6007e, #a4005a);
+  box-shadow:0 6px 16px rgba(230,0,126,0.30), inset 0 1px 0 rgba(255,255,255,0.35);
+}
+.spu-name { line-height:1.3; }
+.spu-th { font-family:var(--head); font-weight:800; font-size:1.02rem; color:var(--txt); letter-spacing:-0.01em; }
+.spu-en { font-size:0.7rem; color:var(--txt3); font-weight:600; letter-spacing:0.16em; }
+.team { text-align:right; }
+.team-title { font-size:0.78rem; font-weight:700; color:var(--txt2); margin-bottom:9px; display:flex; align-items:center; gap:7px; justify-content:flex-end; }
+.team-title i { color:var(--blue); }
+.team-list { display:flex; flex-direction:column; gap:6px; }
+.member { display:flex; align-items:baseline; gap:10px; justify-content:flex-end; }
+.m-name { font-size:0.9rem; font-weight:600; color:var(--txt); }
+.m-id { font-family:var(--mono); font-size:0.73rem; color:var(--txt3); }
+
+/* ── Info modal (วิธีใช้ / ทฤษฎี) ── */
+.modal-overlay {
+  display:none; position:fixed; inset:0; z-index:200;
+  background:rgba(10,14,23,0.55);
+  backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+  align-items:center; justify-content:center; padding:20px;
+}
+.modal-overlay.open { display:flex; animation:fadeSlide .22s ease; }
+.modal-card {
+  background:var(--bg2); border:1px solid var(--border);
+  border-radius:var(--rxl); width:100%; max-width:660px; max-height:86vh;
+  display:flex; flex-direction:column; overflow:hidden;
+  box-shadow:var(--shadow-lg), var(--ring-top);
+}
+.modal-head {
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:18px 22px; border-bottom:1px solid var(--border);
+}
+.modal-title { font-family:var(--head); font-size:1.2rem; font-weight:800; letter-spacing:-0.01em; color:var(--txt); display:flex; align-items:center; gap:10px; }
+.modal-title i { color:var(--blue); }
+.modal-close {
+  width:34px; height:34px; border-radius:10px; flex-shrink:0;
+  border:1px solid var(--border); background:var(--bg3); color:var(--txt2);
+  cursor:pointer; font-size:0.95rem; transition:all .15s;
+  display:flex; align-items:center; justify-content:center;
+}
+.modal-close:hover { background:var(--red-soft); color:var(--red); border-color:var(--red); }
+.modal-body { padding:20px 22px; overflow-y:auto; }
+
+.info-lead { font-size:0.92rem; color:var(--txt2); line-height:1.75; margin-bottom:16px; }
+.info-h { font-family:var(--head); font-weight:700; font-size:0.95rem; color:var(--blue); margin:18px 0 10px; }
+.info-h:first-child { margin-top:0; }
+.info-steps { display:flex; flex-direction:column; gap:13px; }
+.info-step { display:flex; gap:12px; align-items:flex-start; text-align:left; }
+.info-step .n {
+  width:26px; height:26px; border-radius:50%; flex-shrink:0; margin-top:1px;
+  background:linear-gradient(135deg, var(--blue-2), var(--blue-dim)); color:#fff;
+  font-family:var(--head); font-weight:700; font-size:0.8rem;
+  display:flex; align-items:center; justify-content:center;
+}
+.info-step .t { font-size:0.9rem; color:var(--txt2); line-height:1.65; }
+.info-step .t b { color:var(--txt); font-weight:700; }
+.info-list { list-style:none; display:flex; flex-direction:column; gap:10px; text-align:left; }
+.info-list li { position:relative; padding-left:20px; font-size:0.9rem; color:var(--txt2); line-height:1.65; }
+.info-list li::before { content:''; position:absolute; left:3px; top:8px; width:8px; height:8px; border-radius:50%; background:var(--blue); }
+.info-list li b { color:var(--txt); font-weight:700; }
+.info-formula {
+  font-family:var(--mono); font-size:0.9rem; text-align:center;
+  background:var(--bg3); border:1px solid var(--border); border-radius:10px;
+  padding:12px 14px; margin:10px 0 2px; color:var(--txt); overflow-x:auto;
+}
+
+@media (max-width:720px) {
+  .landing-foot { flex-direction:column; text-align:center; gap:18px; }
+  .spu-brand { flex-direction:column; text-align:center; gap:10px; }
+  .team, .team-title, .member { text-align:center; justify-content:center; }
+  .landing-actions { width:100%; }
+  .btn-ghost-lg { flex:1 1 auto; justify-content:center; }
+}
+
   </style>
 </head>
 <body>
-<div class="wrap">
+<div class="wrap relative">
+
+  <!-- Tailwind-built ambient glow behind the header (theme-aware via --blue-glow) -->
+  <div aria-hidden="true" class="pointer-events-none absolute -z-10 left-1/2 -translate-x-1/2 top-0 h-72 w-[min(1100px,94%)] rounded-full bg-[var(--blue-glow)] blur-3xl opacity-70"></div>
 
   <header class="app-header">
-    <div class="header-left">
+    <div class="header-left" onclick="goHome()" style="cursor:pointer" title="กลับหน้าแรก">
       <div class="brand-icon"><i class="fas fa-bolt"></i></div>
       <div>
         <div class="brand-title">C-Bank Optimizer</div>
@@ -910,9 +1094,62 @@ body {
         <i class="fas fa-moon icon-dark"></i>
         <i class="fas fa-sun icon-light"></i>
       </button>
-      <div class="ver-badge">v8.7</div>
+      <div class="ver-badge">v9.0</div>
     </div>
   </header>
+
+  <!-- ═══ LANDING / HOME ═══ -->
+  <section class="landing" id="landing">
+    <div class="landing-hero">
+      <div class="landing-emblem"><i class="fas fa-bolt"></i></div>
+      <h1 class="landing-title">C-Bank Optimizer</h1>
+      <p class="landing-tagline">เครื่องมือวิเคราะห์และปรับสมดุลกระแส Unbalance (I<sub>no</sub>)<br>ของ Capacitor Bank แบบ Double-Wye Ungrounded / H-Bridge</p>
+
+      <button class="btn-start" onclick="enterApp()">
+        <i class="fas fa-play"></i><span>Start</span>
+      </button>
+
+      <div class="landing-actions">
+        <button class="btn-ghost-lg" onclick="openInfo('howto')">
+          <i class="fas fa-book-open"></i><span>วิธีใช้</span>
+        </button>
+        <button class="btn-ghost-lg" onclick="openInfo('theory')">
+          <i class="fas fa-square-root-variable"></i><span>ทฤษฎีที่เกี่ยวข้อง</span>
+        </button>
+      </div>
+    </div>
+
+    <footer class="landing-foot">
+      <!-- โลโก้มหาวิทยาลัยศรีปทุม (placeholder — ส่งไฟล์โลโก้จริงมาเพื่อฝังแบบ base64 ได้) -->
+      <div class="spu-brand">
+        <div class="spu-logo" aria-hidden="true">SPU</div>
+        <div class="spu-name">
+          <div class="spu-th">มหาวิทยาลัยศรีปทุม</div>
+          <div class="spu-en">SRIPATUM UNIVERSITY</div>
+        </div>
+      </div>
+
+      <div class="team">
+        <div class="team-title"><i class="fas fa-user-graduate"></i> คณะผู้จัดทำ</div>
+        <div class="team-list">
+          <div class="member"><span class="m-name">นายสรวิชญ์ ยะคำ</span><span class="m-id">รหัส 66028126</span></div>
+          <div class="member"><span class="m-name">นายภัครพล บัวเทศ</span><span class="m-id">รหัส 66028133</span></div>
+          <div class="member"><span class="m-name">นางสาวสัณห์สินี ทรัพย์ศิริสิน</span><span class="m-id">รหัส 66049136</span></div>
+        </div>
+      </div>
+    </footer>
+  </section>
+
+  <!-- ═══ INFO MODAL (วิธีใช้ / ทฤษฎี) ═══ -->
+  <div class="modal-overlay" id="infoModal" onclick="if(event.target===this)closeInfo()">
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <div class="modal-title" id="infoTitle">—</div>
+        <button class="modal-close" onclick="closeInfo()" title="ปิด"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body" id="infoContent"></div>
+    </div>
+  </div>
 
   <div class="wizard-bar">
     <div class="wiz-step active" data-step="1" onclick="if(this.classList.contains('completed'))goToStep(1)">
@@ -2468,7 +2705,7 @@ function busbar(x1, y, x2, label, color) {
   return `
     <rect x="${x1}" y="${y-4}" width="${len}" height="8" fill="${color}" stroke="${PAL.metalDark}" stroke-width="0.8" rx="2"/>
     <rect x="${x1+1}" y="${y-3}" width="${len-2}" height="2" fill="#ffffff" opacity="0.4" rx="1"/>
-    ${label ? `<text x="${x1 + len/2}" y="${y-9}" fill="${PAL.txt2}" font-size="9" text-anchor="middle" font-family="'Rajdhani',sans-serif" font-weight="600">${label}</text>` : ''}
+    ${label ? `<text x="${x1 + 4}" y="${y-9}" fill="${PAL.txt2}" font-size="9" text-anchor="start" font-family="'Rajdhani',sans-serif" font-weight="600">${label}</text>` : ''}
   `;
 }
 
@@ -2754,7 +2991,7 @@ const F = {
 };
 
 const F_HZ = 50;                 // system frequency (Hz)
-const PI2F = 2 * Math.PI * 50;   // ω = 2πf, self-contained (no cross-block dep)
+const PI2F_F = 2 * Math.PI * 50;   // ω = 2πf, self-contained (no cross-block dep)
 
 /** Render formula step block */
 function fStep(num, title, tag, desc, ...lines) {
@@ -2918,10 +3155,10 @@ function buildHBridgeFormulas(vals, m) {
   const dSum = vals.legs.d.map(c=>F.uF(c.val)).join(' + ');
 
   // Calc Xc for each
-  const xcA = 1 / (PI2F * sumA * 1e-6);
-  const xcB = 1 / (PI2F * sumB * 1e-6);
-  const xcC = 1 / (PI2F * sumC_ * 1e-6);
-  const xcD = 1 / (PI2F * sumD * 1e-6);
+  const xcA = 1 / (PI2F_F * sumA * 1e-6);
+  const xcB = 1 / (PI2F_F * sumB * 1e-6);
+  const xcC = 1 / (PI2F_F * sumC_ * 1e-6);
+  const xcD = 1 / (PI2F_F * sumD * 1e-6);
 
   let html = `<div class="formula-section">
     <div class="formula-title"><i class="fas fa-function"></i> การคำนวณ H-Bridge — ทีละขั้น</div>
@@ -2957,10 +3194,10 @@ function buildHBridgeFormulas(vals, m) {
     'Xc = 1/ωC',
     'แต่ละ Leg มี Xc ต่างกันตามค่าความจุ',
     sym('X<sub>C</sub> = 1 / (2π · f · C)'),
-    eq('X<sub>C,A</sub> = 1 / (' + n(PI2F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumA)) + ' ' + op('×') + ' 10⁻⁶) = ' + r(F.Ohm(xcA)) + ' Ω'),
-    eq('X<sub>C,B</sub> = 1 / (' + n(PI2F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumB)) + ' ' + op('×') + ' 10⁻⁶) = ' + r(F.Ohm(xcB)) + ' Ω'),
-    eq('X<sub>C,C</sub> = 1 / (' + n(PI2F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumC_)) + ' ' + op('×') + ' 10⁻⁶) = ' + r(F.Ohm(xcC)) + ' Ω'),
-    eq('X<sub>C,D</sub> = 1 / (' + n(PI2F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumD)) + ' ' + op('×') + ' 10⁻⁶) = ' + r(F.Ohm(xcD)) + ' Ω')
+    eq('X<sub>C,A</sub> = 1 / (' + n(PI2F_F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumA)) + ' ' + op('×') + ' 10⁻⁶) = ' + r(F.Ohm(xcA)) + ' Ω'),
+    eq('X<sub>C,B</sub> = 1 / (' + n(PI2F_F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumB)) + ' ' + op('×') + ' 10⁻⁶) = ' + r(F.Ohm(xcB)) + ' Ω'),
+    eq('X<sub>C,C</sub> = 1 / (' + n(PI2F_F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumC_)) + ' ' + op('×') + ' 10⁻⁶) = ' + r(F.Ohm(xcC)) + ' Ω'),
+    eq('X<sub>C,D</sub> = 1 / (' + n(PI2F_F.toFixed(4)) + ' ' + op('×') + ' ' + n(F.uF(sumD)) + ' ' + op('×') + ' 10⁻⁶) = ' + r(F.Ohm(xcD)) + ' Ω')
   );
 
   // Step 4: xa1 and xa2
@@ -3711,8 +3948,74 @@ window.addEventListener('DOMContentLoaded',()=>{
   const saved = localStorage.getItem('cbank-theme')||'light';
   document.documentElement.setAttribute('data-theme', saved);
   renderDiagram('yy-unground','diagramContainer');
-  goToStep(1);
+  goToStep(1);                       // pre-initialise the wizard (hidden under landing)
+  document.body.classList.add('show-landing');
+  // Esc closes the info modal
+  document.addEventListener('keydown', e => { if(e.key==='Escape') closeInfo(); });
 });
+
+// ── Landing / home navigation ──
+function enterApp(){
+  document.body.classList.remove('show-landing');
+  goToStep(1);
+}
+function goHome(){
+  closeInfo();
+  document.body.classList.add('show-landing');
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+// ── Info modal (วิธีใช้ / ทฤษฎีที่เกี่ยวข้อง) ──
+const INFO = {
+  howto: {
+    title: '<i class="fas fa-book-open"></i> วิธีใช้งาน',
+    html: `
+      <p class="info-lead">โปรแกรมช่วยหาว่าต้องสับเปลี่ยน/เปลี่ยนตัวเก็บประจุ (Capacitor) อย่างไร
+        ให้กระแส unbalance ที่จุด neutral (I<sub>no</sub>) ต่ำกว่าเกณฑ์รีเลย์ โดยใช้จำนวนครั้งน้อยที่สุด</p>
+      <div class="info-steps">
+        <div class="info-step"><div class="n">1</div><div class="t"><b>เลือกรูปแบบการต่อ</b> — Y-Y Ungrounded (ป้องกันด้วยรีเลย์แรงดัน 59N/ΔV) หรือ H-Bridge (ป้องกันด้วย Bridge CT 60P)</div></div>
+        <div class="info-step"><div class="n">2</div><div class="t"><b>ตั้งค่าและกรอกข้อมูล</b> — ใส่แรงดันระบบ V<sub>S</sub> (kV), เลือกค่า unbalance สูงสุดที่ยอมรับ (mA), แล้วกรอกค่าความจุ C ของแต่ละเฟส/ขา (µF)</div></div>
+        <div class="info-step"><div class="n">3</div><div class="t">ช่องที่เป็น <b>คู่ขนาน</b> ให้ติ๊ก “ต่อขนาน” (ล็อกเป็น Tier 2) — ถ้าวัดแยกทีละตัวให้กดปุ่ม <b>กรรไกร ✂</b> แล้วกรอก 2 ค่า ระบบจะใช้ผลรวม</div></div>
+        <div class="info-step"><div class="n">4</div><div class="t">กด <b>“วิเคราะห์”</b> เพื่อคำนวณ</div></div>
+        <div class="info-step"><div class="n">5</div><div class="t">ดูผลได้ 3 มุมมอง: <b>ค่าวิศวกรรม</b> (I<sub>no</sub>, V<sub>no</sub>, Q), <b>สูตรการคำนวณ</b>, และ <b>ผลการสับเปลี่ยน</b> (Quick Mode / Full Optimal)</div></div>
+        <div class="info-step"><div class="n">6</div><div class="t">กด <b>“Export Excel”</b> เพื่อออกรายงานตามฟอร์มของ กฟผ. (ก่อนสับ 3 ชีต + หลังสับ 3 ชีต)</div></div>
+      </div>`
+  },
+  theory: {
+    title: '<i class="fas fa-square-root-variable"></i> ทฤษฎีที่เกี่ยวข้อง',
+    html: `
+      <div class="info-h">Capacitor Bank แบบ Double-Wye Ungrounded</div>
+      <ul class="info-list">
+        <li>ต่อเป็น 2 สตริง (<b>Y1, Y2</b>) ต่อเฟส โดยจุด neutral <b>ลอย</b> (ไม่ต่อลงดิน)</li>
+        <li>ป้องกันด้วยรีเลย์วัด <b>แรงดันที่จุด neutral</b> (Neutral Voltage Relay · 59N / ΔV)</li>
+      </ul>
+      <div class="info-h">กระแส Unbalance ที่ neutral (I<sub>no</sub>)</div>
+      <ul class="info-list">
+        <li>เมื่อความจุแต่ละเฟส<b>ไม่สมดุล</b> จะเกิดแรงดัน neutral displacement (V<sub>no</sub>) และกระแส unbalance ไหลผ่าน CT ที่ neutral</li>
+        <li>คำนวณด้วยวิธี <b>เชิงเวกเตอร์ (complex-phasor)</b> มุมเฟส A=0°, B=−120°, C=+120° — ไม่ใช่ผลรวมขนาดสูงสุด</li>
+        <li>ความจุต่อเฟสเป็นการต่อ <b>อนุกรม</b>: C<sub>phase</sub> = 1 / Σ(1/Cᵢ)</li>
+      </ul>
+      <div class="info-h">สมการหลัก (ตรงกับ Excel ของ กฟผ.)</div>
+      <div class="info-formula">V<sub>ph</sub> = V<sub>S</sub> / √3&nbsp;&nbsp;•&nbsp;&nbsp;S<sub>k</sub> = 2πf·C<sub>k</sub><br>I<sub>no</sub> = √(I<sub>nx</sub>² + I<sub>ny</sub>²)</div>
+      <div class="info-h">เป้าหมายการสับเปลี่ยน</div>
+      <ul class="info-list">
+        <li>ปรับให้ <b>A = B = C</b> ในแต่ละ wye (บาลานซ์เฟส) เพื่อให้ I<sub>no</sub> ต่ำกว่าเกณฑ์รีเลย์</li>
+        <li>ใช้การสับเปลี่ยน/เปลี่ยนตัวเก็บประจุ <b>น้อยครั้งที่สุด</b> โดยเรียงตามระยะในแร็ค (ใกล้→ไกล) และใช้ spare ท้ายสุด เพื่อลดเวลาหน้างาน</li>
+      </ul>`
+  }
+};
+function openInfo(kind){
+  const data = INFO[kind]; if(!data) return;
+  document.getElementById('infoTitle').innerHTML = data.title;
+  document.getElementById('infoContent').innerHTML = data.html;
+  const m = document.getElementById('infoModal');
+  m.classList.add('open');
+  m.querySelector('.modal-body').scrollTop = 0;
+}
+function closeInfo(){
+  const m = document.getElementById('infoModal');
+  if(m) m.classList.remove('open');
+}
 
 function toggleTheme(){
   const html = document.documentElement;

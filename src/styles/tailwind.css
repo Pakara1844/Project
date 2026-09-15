@@ -1,0 +1,47 @@
+/* ============================================================
+   Tailwind v4 entry — compiled by build.js via @tailwindcss/cli
+   into a <style> that is inlined ahead of main.css (offline, no CDN).
+
+   NOTE: Preflight (Tailwind's CSS reset) is deliberately NOT imported.
+   The app already ships a hand-tuned reset + a full component design
+   system in main.css; loading Preflight would wipe those base styles.
+   We only pull in the utility + theme layers, so Tailwind is purely
+   additive on top of the existing design.
+   ============================================================ */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+/* Dark mode is driven by the app's <html data-theme="dark"> attribute
+   (set by theme-init.js), not by media query or a .dark class. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Scan the real source for class names (v4 auto-detects, but be explicit
+   so the dynamically-generated markup in ui.js is always covered). */
+@source "../_body_markup.html";
+@source "../js";
+
+/* Expose the existing design tokens as Tailwind colors so utilities such as
+   bg-surface / text-ink2 / border-line stay theme-aware (they resolve to the
+   same CSS variables main.css flips between light and dark). */
+@theme {
+  --color-bg:        var(--bg);
+  --color-surface:   var(--bg2);
+  --color-surface-2: var(--bg3);
+  --color-surface-3: var(--bg4);
+
+  --color-line:      var(--border);
+  --color-line-2:    var(--border2);
+
+  --color-brand:     var(--blue);
+  --color-brand-dim: var(--blue-dim);
+  --color-amber:     var(--amber);
+  --color-green:     var(--green);
+  --color-red:       var(--red);
+  --color-teal:      var(--teal);
+  --color-purple:    var(--purple);
+
+  --color-ink:       var(--txt);
+  --color-ink-2:     var(--txt2);
+  --color-ink-3:     var(--txt3);
+}

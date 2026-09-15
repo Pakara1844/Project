@@ -8,8 +8,74 @@ window.addEventListener('DOMContentLoaded',()=>{
   const saved = localStorage.getItem('cbank-theme')||'light';
   document.documentElement.setAttribute('data-theme', saved);
   renderDiagram('yy-unground','diagramContainer');
-  goToStep(1);
+  goToStep(1);                       // pre-initialise the wizard (hidden under landing)
+  document.body.classList.add('show-landing');
+  // Esc closes the info modal
+  document.addEventListener('keydown', e => { if(e.key==='Escape') closeInfo(); });
 });
+
+// ── Landing / home navigation ──
+function enterApp(){
+  document.body.classList.remove('show-landing');
+  goToStep(1);
+}
+function goHome(){
+  closeInfo();
+  document.body.classList.add('show-landing');
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+// ── Info modal (วิธีใช้ / ทฤษฎีที่เกี่ยวข้อง) ──
+const INFO = {
+  howto: {
+    title: '<i class="fas fa-book-open"></i> วิธีใช้งาน',
+    html: `
+      <p class="info-lead">โปรแกรมช่วยหาว่าต้องสับเปลี่ยน/เปลี่ยนตัวเก็บประจุ (Capacitor) อย่างไร
+        ให้กระแส unbalance ที่จุด neutral (I<sub>no</sub>) ต่ำกว่าเกณฑ์รีเลย์ โดยใช้จำนวนครั้งน้อยที่สุด</p>
+      <div class="info-steps">
+        <div class="info-step"><div class="n">1</div><div class="t"><b>เลือกรูปแบบการต่อ</b> — Y-Y Ungrounded (ป้องกันด้วยรีเลย์แรงดัน 59N/ΔV) หรือ H-Bridge (ป้องกันด้วย Bridge CT 60P)</div></div>
+        <div class="info-step"><div class="n">2</div><div class="t"><b>ตั้งค่าและกรอกข้อมูล</b> — ใส่แรงดันระบบ V<sub>S</sub> (kV), เลือกค่า unbalance สูงสุดที่ยอมรับ (mA), แล้วกรอกค่าความจุ C ของแต่ละเฟส/ขา (µF)</div></div>
+        <div class="info-step"><div class="n">3</div><div class="t">ช่องที่เป็น <b>คู่ขนาน</b> ให้ติ๊ก “ต่อขนาน” (ล็อกเป็น Tier 2) — ถ้าวัดแยกทีละตัวให้กดปุ่ม <b>กรรไกร ✂</b> แล้วกรอก 2 ค่า ระบบจะใช้ผลรวม</div></div>
+        <div class="info-step"><div class="n">4</div><div class="t">กด <b>“วิเคราะห์”</b> เพื่อคำนวณ</div></div>
+        <div class="info-step"><div class="n">5</div><div class="t">ดูผลได้ 3 มุมมอง: <b>ค่าวิศวกรรม</b> (I<sub>no</sub>, V<sub>no</sub>, Q), <b>สูตรการคำนวณ</b>, และ <b>ผลการสับเปลี่ยน</b> (Quick Mode / Full Optimal)</div></div>
+        <div class="info-step"><div class="n">6</div><div class="t">กด <b>“Export Excel”</b> เพื่อออกรายงานตามฟอร์มของ กฟผ. (ก่อนสับ 3 ชีต + หลังสับ 3 ชีต)</div></div>
+      </div>`
+  },
+  theory: {
+    title: '<i class="fas fa-square-root-variable"></i> ทฤษฎีที่เกี่ยวข้อง',
+    html: `
+      <div class="info-h">Capacitor Bank แบบ Double-Wye Ungrounded</div>
+      <ul class="info-list">
+        <li>ต่อเป็น 2 สตริง (<b>Y1, Y2</b>) ต่อเฟส โดยจุด neutral <b>ลอย</b> (ไม่ต่อลงดิน)</li>
+        <li>ป้องกันด้วยรีเลย์วัด <b>แรงดันที่จุด neutral</b> (Neutral Voltage Relay · 59N / ΔV)</li>
+      </ul>
+      <div class="info-h">กระแส Unbalance ที่ neutral (I<sub>no</sub>)</div>
+      <ul class="info-list">
+        <li>เมื่อความจุแต่ละเฟส<b>ไม่สมดุล</b> จะเกิดแรงดัน neutral displacement (V<sub>no</sub>) และกระแส unbalance ไหลผ่าน CT ที่ neutral</li>
+        <li>คำนวณด้วยวิธี <b>เชิงเวกเตอร์ (complex-phasor)</b> มุมเฟส A=0°, B=−120°, C=+120° — ไม่ใช่ผลรวมขนาดสูงสุด</li>
+        <li>ความจุต่อเฟสเป็นการต่อ <b>อนุกรม</b>: C<sub>phase</sub> = 1 / Σ(1/Cᵢ)</li>
+      </ul>
+      <div class="info-h">สมการหลัก (ตรงกับ Excel ของ กฟผ.)</div>
+      <div class="info-formula">V<sub>ph</sub> = V<sub>S</sub> / √3&nbsp;&nbsp;•&nbsp;&nbsp;S<sub>k</sub> = 2πf·C<sub>k</sub><br>I<sub>no</sub> = √(I<sub>nx</sub>² + I<sub>ny</sub>²)</div>
+      <div class="info-h">เป้าหมายการสับเปลี่ยน</div>
+      <ul class="info-list">
+        <li>ปรับให้ <b>A = B = C</b> ในแต่ละ wye (บาลานซ์เฟส) เพื่อให้ I<sub>no</sub> ต่ำกว่าเกณฑ์รีเลย์</li>
+        <li>ใช้การสับเปลี่ยน/เปลี่ยนตัวเก็บประจุ <b>น้อยครั้งที่สุด</b> โดยเรียงตามระยะในแร็ค (ใกล้→ไกล) และใช้ spare ท้ายสุด เพื่อลดเวลาหน้างาน</li>
+      </ul>`
+  }
+};
+function openInfo(kind){
+  const data = INFO[kind]; if(!data) return;
+  document.getElementById('infoTitle').innerHTML = data.title;
+  document.getElementById('infoContent').innerHTML = data.html;
+  const m = document.getElementById('infoModal');
+  m.classList.add('open');
+  m.querySelector('.modal-body').scrollTop = 0;
+}
+function closeInfo(){
+  const m = document.getElementById('infoModal');
+  if(m) m.classList.remove('open');
+}
 
 function toggleTheme(){
   const html = document.documentElement;

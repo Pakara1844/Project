@@ -71,7 +71,10 @@ project/
   src/
     _head.html         <head> markup (fonts, xlsx CDN) up to <style>
     _body_markup.html  <body> markup with NO <script> blocks (build injects them)
-    styles/main.css    all CSS (dual light/dark theme)
+    styles/main.css    all CSS (dual light/dark theme) — the authoritative design system
+    styles/tailwind.css Tailwind v4 entry (utilities + theme only, NO Preflight);
+                         build.js compiles it via @tailwindcss/cli and inlines the
+                         result ahead of main.css (see below)
     js/
       theme-init.js    runs in <head>, sets theme before paint
       calculator.js    ★ core math: calcYYMetrics, calcHBridgeMetrics,
@@ -261,12 +264,35 @@ formatting, merges, drawings, formulas — is preserved verbatim.
   prompt. All structural checks (valid zip, well-formed XML, parts registered) pass;
   confirm by opening a real export if you touch this.
 
+## Styling — Tailwind v4 + the design system
+
+`main.css` is the **authoritative design system** (tokens, components, dual
+light/dark theme). Tailwind is layered in **additively** for utility classes:
+
+- Source of truth for utilities: `src/styles/tailwind.css`. It imports only the
+  Tailwind **theme + utilities** layers — **Preflight (Tailwind's reset) is
+  deliberately omitted** so it does NOT wipe main.css's base styles. It also maps
+  the existing CSS-var tokens to Tailwind colors (`bg-surface`, `text-ink2`,
+  `border-line`, …) and wires the `dark:` variant to the app's
+  `[data-theme="dark"]` attribute (not media / `.dark`).
+- `build.js` compiles it with `@tailwindcss/cli` (run via `node`, no network, no
+  CDN — offline build stays intact) and inlines the purged result in a
+  `<style id="tw">` **before** `<style id="app">` (main.css).
+- **Cascade caveat:** Tailwind utilities live in `@layer utilities`; main.css is
+  unlayered, and **unlayered CSS beats layered CSS**. So a utility will NOT
+  override a component rule that sets the *same* property — add utilities to
+  elements/props main.css doesn't already style, or use the `!` important
+  modifier (e.g. `p-6!`) when you must win. For broad visual changes, prefer
+  editing main.css.
+- Dev deps `tailwindcss` + `@tailwindcss/cli` are required now — run
+  `npm install` before `npm run build`.
+
 ## Build / test / run
 
 ```bash
-npm install        # one-time (only dev deps; app itself has none)
-npm run build      # src/ → dist/egat-cbank.html + dist/index.html
-npm test           # verifies I_no matches Excel reference values
+npm install        # one-time (dev deps: tailwindcss, @tailwindcss/cli, test runner)
+npm run build      # compiles Tailwind + bundles src/ → dist/*.html + root index.html
+npm test           # verifies I_no matches Excel reference values + swap optimizer
 npm run serve      # local static server on http://localhost:8080 (serves dist/)
 ```
 
@@ -278,6 +304,14 @@ Deploy = copy `dist/index.html` to the GitHub Pages repo root.
   used in `calcYYMetrics` in another → `F_HZ is not defined`. Calculator now uses
   the locally-declared `PI2F`. Keep each block self-sufficient for its globals,
   or declare shared constants in a block that loads first.
+- **Top-level `const` collides ACROSS `<script>` blocks.** Each `src/js/*.js`
+  becomes its own classic `<script>`, but top-level `const`/`let` share ONE global
+  lexical scope — so the same name declared in two files throws `Identifier '…' has
+  already been declared`, which aborts the *entire* second block. This bit us: both
+  `calculator.js` and `formulas.js` declared `const PI2F`, silently killing
+  `formulas.js` (the formula view). Fixed by renaming the formulas.js copy to
+  `PI2F_F`. When two blocks need the same constant, give them distinct names (or
+  reference the one from the earlier-loaded block).
 - **GitHub Pages caching.** After deploy the old file is served for a while;
   hard-refresh (Ctrl+Shift+R). The version badge (top-right, e.g. `v5.4`) is the
   quickest way to confirm which build is live — bump it in
