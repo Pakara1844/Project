@@ -17,7 +17,7 @@
         <i class="fas fa-moon icon-dark"></i>
         <i class="fas fa-sun icon-light"></i>
       </button>
-      <div class="ver-badge">v9.0</div>
+      <div class="ver-badge">v9.1</div>
     </div>
   </header>
 
@@ -74,6 +74,15 @@
     </div>
   </div>
 
+  <!-- ═══ CALCULATING OVERLAY ═══ -->
+  <div class="calc-overlay" id="calcOverlay" aria-hidden="true">
+    <div class="calc-box">
+      <div class="calc-spinner"></div>
+      <div class="calc-text">กำลังวิเคราะห์…</div>
+      <div class="calc-sub" id="calcSub">กำลังคำนวณกระแส Unbalance และหาแนวทางสับเปลี่ยน</div>
+    </div>
+  </div>
+
   <div class="wizard-bar">
     <div class="wiz-step active" data-step="1" onclick="if(this.classList.contains('completed'))goToStep(1)">
       <div class="wiz-num">1</div>
@@ -96,7 +105,7 @@
     <div class="card">
       <div class="card-title"><i class="fas fa-project-diagram"></i> เลือกรูปแบบการต่อ C-Bank</div>
       <div class="conn-row">
-        <div class="conn-opt active" data-conn="yy-unground" onclick="highlightConn(this)">
+        <div class="conn-opt" data-conn="yy-unground" onclick="highlightConn(this)">
           <div class="conn-head">
             <div class="conn-icon-box"><i class="fas fa-grip-lines-vertical"></i></div>
             <div>
@@ -120,13 +129,18 @@
         </div>
       </div>
     </div>
-    <div class="diagram-wrap">
-      <div class="card-title"><i class="fas fa-sitemap"></i> วงจร — <span id="diagramLabel" style="font-weight:500;">Y-Y Ungrounded</span></div>
+    <!-- prompt shown until a topology is chosen -->
+    <div class="diagram-hint" id="diagramHint">
+      <i class="fas fa-hand-pointer"></i>
+      <span>เลือกรูปแบบการต่อด้านบน เพื่อแสดงวงจร</span>
+    </div>
+    <div class="diagram-wrap is-collapsed" id="diagramWrap">
+      <div class="card-title"><i class="fas fa-sitemap"></i> วงจร — <span id="diagramLabel" style="font-weight:500;">—</span></div>
       <div id="diagramContainer"></div>
     </div>
     <div class="page-nav">
       <div></div>
-      <button class="btn btn-primary btn-lg" onclick="goToStep2()">ถัดไป&nbsp;<i class="fas fa-arrow-right"></i></button>
+      <button class="btn btn-primary btn-lg" id="btnNext1" onclick="goToStep2()" disabled>ถัดไป&nbsp;<i class="fas fa-arrow-right"></i></button>
     </div>
   </section>
 

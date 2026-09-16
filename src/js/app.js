@@ -2,13 +2,12 @@
 // APP — with fetch() replaced by clientCalculate()
 // ═══════════════════════════════════════
 'use strict';
-let currentConn='yy-unground', lastCalcData=null;
+let currentConn=null, lastCalcData=null;   // no topology chosen until the user picks one
 
 window.addEventListener('DOMContentLoaded',()=>{
   const saved = localStorage.getItem('cbank-theme')||'light';
   document.documentElement.setAttribute('data-theme', saved);
-  renderDiagram('yy-unground','diagramContainer');
-  goToStep(1);                       // pre-initialise the wizard (hidden under landing)
+  goToStep(1);                       // pre-initialise the wizard (hidden under landing; no topology preselected)
   document.body.classList.add('show-landing');
   // Esc closes the info modal
   document.addEventListener('keydown', e => { if(e.key==='Escape') closeInfo(); });
@@ -111,6 +110,7 @@ function goToStep(n){
 }
 
 function goToStep2(){
+  if(!currentConn) return;   // must pick a topology first (button stays disabled anyway)
   const labelTh={'yy-unground':'Y-Y ไม่ต่อลงดิน','h-bridge':'H-Bridge (4 Legs)'};
   var ct = document.getElementById('confirmedType');
   if (ct) ct.textContent=labelTh[currentConn]||currentConn;
@@ -120,7 +120,12 @@ function goToStep2(){
 
 function restartWizard(){
   lastCalcData=null;
-  highlightConn(document.querySelector('.conn-opt[data-conn="yy-unground"]'));
+  currentConn=null;
+  document.querySelectorAll('.conn-opt').forEach(o=>o.classList.remove('active'));
+  const wrap=document.getElementById('diagramWrap');
+  if(wrap){ wrap.classList.add('is-collapsed'); wrap.classList.remove('reveal'); }
+  const hint=document.getElementById('diagramHint'); if(hint) hint.classList.remove('is-hidden');
+  const next=document.getElementById('btnNext1'); if(next) next.disabled=true;
   goToStep(1);
 }
 
@@ -129,8 +134,16 @@ function highlightConn(el){
   el.classList.add('active');
   currentConn=el.dataset.conn;
   const labels={'yy-unground':'Y-Y Ungrounded','h-bridge':'H-Bridge'};
-  document.getElementById('diagramLabel').textContent=labels[currentConn]||''
+  document.getElementById('diagramLabel').textContent=labels[currentConn]||'';
   renderDiagram(currentConn,'diagramContainer');
+  // reveal the circuit on demand (hidden until a topology is chosen)
+  const hint=document.getElementById('diagramHint'); if(hint) hint.classList.add('is-hidden');
+  const wrap=document.getElementById('diagramWrap');
+  if(wrap){
+    wrap.classList.remove('is-collapsed');
+    wrap.classList.remove('reveal'); void wrap.offsetWidth; wrap.classList.add('reveal'); // restart the entrance
+  }
+  const next=document.getElementById('btnNext1'); if(next) next.disabled=false;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -519,14 +532,30 @@ function getInputValues(){
 // ═══════════════════════════════════════════════════════
 // CALCULATE — target: Ino < ค่า unbalance ที่กรอก (default ALARM_MA) with minimum swaps
 // ═══════════════════════════════════════════════════════
+function showCalcOverlay(){
+  const o=document.getElementById('calcOverlay');
+  if(o){ o.classList.add('open'); o.setAttribute('aria-hidden','false'); }
+}
+function hideCalcOverlay(){
+  const o=document.getElementById('calcOverlay');
+  if(o){ o.classList.remove('open'); o.setAttribute('aria-hidden','true'); }
+}
+
 async function handleCalculate(){
   const vals=getInputValues();
   if(!vals) return;
   const btn=document.getElementById('btnCalc');
   btn.disabled=true;
   btn.innerHTML='<i class="fas fa-spinner fa-spin"></i>&nbsp;กำลังคำนวณ…';
+  showCalcOverlay();
+  // let the overlay paint before the (synchronous, blocking) optimizer runs
+  await new Promise(r=>setTimeout(r,30));
+  const started=Date.now();
   try{
     const result = await clientCalculate(vals);
+    // keep the overlay up for a moment so it reads as "working" even on fast banks
+    const MIN_MS=950, elapsed=Date.now()-started;
+    if(elapsed<MIN_MS) await new Promise(r=>setTimeout(r, MIN_MS-elapsed));
     renderResults(vals, result);
     lastCalcData={connType:currentConn,vals,timestamp:new Date().toLocaleString('th-TH'),...result};
     document.getElementById('exportRow').style.display='block';
@@ -534,6 +563,7 @@ async function handleCalculate(){
   }catch(e){
     alert('เกิดข้อผิดพลาด: '+e.message);
   }finally{
+    hideCalcOverlay();
     btn.disabled=false;
     btn.innerHTML='<i class="fas fa-cogs"></i>&nbsp;วิเคราะห์&nbsp;<i class="fas fa-arrow-right"></i>';
   }
