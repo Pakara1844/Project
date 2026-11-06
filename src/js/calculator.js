@@ -35,6 +35,15 @@ if (typeof window !== 'undefined') window.NAMEPLATE_UF = NAMEPLATE_UF;
 const PHASE_SPREAD_UF = 0.005;
 if (typeof window !== 'undefined') window.PHASE_SPREAD_UF = PHASE_SPREAD_UF;
 
+// I_no "tie" band (mA). Once a plan already PASSES the relay AND the phase-balance
+// gate, two plans whose I_no differ by less than this are treated as EQUALLY good,
+// so the picker stops chasing a few more mA at the cost of burning extra spares.
+// It only acts as a tiebreaker BELOW the two gates (spare-conservation wins inside
+// the band); it never lets a relay-failing or unbalanced plan through. See better()
+// / chooseBudget(). (YY only.)
+const INO_TIE_MA = 2.0;
+if (typeof window !== 'undefined') window.INO_TIE_MA = INO_TIE_MA;
+
 // PHYSICAL RACK LAYOUT (left → right): A A' B B' C C'. The technician's effort to
 // swap two caps grows with how far apart they sit — so the optimizer prefers the
 // NEAREST swap first (e.g. a failed A' is fixed from A or B before C'), and uses a
@@ -767,59 +776,81 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   })();
 
   // ── merge: best candidate per budget ──
-  // relay-pass GATE (I_no < THR beats a failing one) → PHASE BALANCE gate (spread ≤
-  // tol, boolean) → LOWEST I_no (even if it needs a spare — product decision 2026-07)
-  // → LEAST EFFORT (`cost` = near rack swaps first, spare last) → fewest swaps / fewest
-  // spares. If nothing passes the relay, lowest I_no (closest to safe) → least effort.
-  // (Nameplate failed-count no longer gates.)
-  function better(c, best) {
+  // relay-pass GATE (I_no < THR) → PHASE-BALANCE gate (spread ≤ tol, boolean) → then
+  // the MODE decides (v9.3, field decision 2026-11):
+  //   • 'thrifty'   — once BOTH gates pass, CONSERVE spares/effort: fewest spares →
+  //                   nearest swaps (cost) → fewest swaps → I_no only beyond INO_TIE_MA.
+  //                   "ผ่านแล้วพอ" — stop burning spares to shave the last few mA.
+  //   • 'maxeffort' — keep the old LOWEST-I_no-first (the MAX budget "use resources
+  //                   fully"); spares used freely.
+  //   • 'minspare'  — like thrifty (spare-count is the hard primary) but allowed the
+  //                   full swap budget, so it reaches the absolute fewest spares.
+  // If nothing passes the relay, LOWEST I_no (closest to safe) wins in every mode.
+  // The INO_TIE_MA band only bites AFTER both gates pass — it never admits a failing
+  // or unbalanced plan.
+  const inoTie = (a, b) => Math.abs(a - b) <= INO_TIE_MA;   // near-equal I_no = a tie
+  function betterBy(c, best, mode) {
     const cp = c.ino < THR, bp = best.ino < THR;
     if (cp !== bp) return cp;                                             // 1. relay-pass gate
-    if (cp) {                                                            // both pass relay
-      // 2. balance = BOOLEAN gate (spread ≤ tol), NOT a continuous compare. The old
-      //    continuous spread-first made a spare (spread→0) always beat a cheaper
-      //    in-rack plan, then the cost tiebreaker flipped back — the picker oscillated
-      //    between all-spare and all-rack. Boolean gate keeps it monotone.
+    if (cp) {
       const cok = c.spread <= PHASE_SPREAD_UF + 1e-9;
       const bok = best.spread <= PHASE_SPREAD_UF + 1e-9;
-      if (cok !== bok) return cok;
-      if (!cok && Math.abs(c.spread - best.spread) > 1e-9) return c.spread < best.spread; // both unbalanced → tighter
-      // 3. LOWEST I_no — even if it needs a spare (product decision 2026-07: I_no
-      //    quality beats spare-conservation; spare-last is only the next tiebreaker).
-      if (Math.abs(c.ino - best.ino) > 1e-9) return c.ino < best.ino;
-      if (c.cost !== best.cost) return c.cost < best.cost;               // 4. least effort (near→far→spare-last)
-    } else {                                                             // neither passes → closest to safe
-      if (Math.abs(c.ino - best.ino) > 1e-9) return c.ino < best.ino;
-      if (c.cost !== best.cost) return c.cost < best.cost;
-      if (Math.abs(c.spread - best.spread) > 1e-9) return c.spread < best.spread;
+      if (cok !== bok) return cok;                                        // 2. phase-balance gate
+      if (!cok) {                                                         // both pass relay, neither balanced
+        if (Math.abs(c.spread - best.spread) > 1e-9) return c.spread < best.spread;   // tighter spread
+        if (!inoTie(c.ino, best.ino)) return c.ino < best.ino;
+        if (c.cost !== best.cost) return c.cost < best.cost;
+        if (c.sp !== best.sp) return c.sp < best.sp;
+        return c.swaps < best.swaps;
+      }
+      // ── both pass BOTH gates → the mode decides ──
+      if (mode === 'maxeffort') {
+        if (Math.abs(c.ino - best.ino) > 1e-9) return c.ino < best.ino;   // 3a. lowest I_no (strict)
+        if (c.cost !== best.cost) return c.cost < best.cost;
+        if (c.swaps !== best.swaps) return c.swaps < best.swaps;
+        return c.sp < best.sp;
+      }
+      // 'thrifty' / 'minspare' — conserve spares/effort; I_no only breaks ties > band
+      if (c.sp !== best.sp) return c.sp < best.sp;                        // 3b. fewest spares
+      if (c.cost !== best.cost) return c.cost < best.cost;                //     nearest swaps (near→far)
+      if (c.swaps !== best.swaps) return c.swaps < best.swaps;            //     fewest swaps
+      if (!inoTie(c.ino, best.ino)) return c.ino < best.ino;              //     I_no last (ε band)
+      return false;
     }
-    if (c.swaps !== best.swaps) return c.swaps < best.swaps;             // 5. fewer swaps
-    return c.sp < best.sp;                                               // 6. fewer spares used
+    // neither passes the relay → closest to safe
+    if (Math.abs(c.ino - best.ino) > 1e-9) return c.ino < best.ino;
+    if (c.cost !== best.cost) return c.cost < best.cost;
+    if (Math.abs(c.spread - best.spread) > 1e-9) return c.spread < best.spread;
+    if (c.swaps !== best.swaps) return c.swaps < best.swaps;
+    return c.sp < best.sp;
   }
-  function pick(maxSwaps) {
-    let best = candidates[0];
+  function pick(maxSwaps, mode) {
+    let best = null;
     for (const c of candidates) {
       if (c.swaps > maxSwaps) continue;
-      if (better(c, best)) best = c;
+      if (best === null || betterBy(c, best, mode)) best = c;
     }
-    return best;
+    return best || candidates[0];
   }
-  const results = targets.map(target => {
-    const b = pick(target);
-    return {
-      swapCount: target,
-      actualSwaps: b.swaps,
-      diff: b.ino,            // = Ino in mA
-      Ino_mA: b.ino,
-      spreadInner: b.spread,  // 6-phase series-C spread the search minimized (µF)
-      sparesUsed: b.sp,
-      swapCost: b.cost,       // total effort = rack distance + spare penalty
-      y1: b.y1, y2: b.y2, spare: b.spare,
-      acts: b.acts,           // raw actions — UI pairs each swap to its units
-      steps: b.steps
-    };
+  const fmt = (b, target) => ({
+    swapCount: target,
+    actualSwaps: b.swaps,
+    diff: b.ino,            // = Ino in mA
+    Ino_mA: b.ino,
+    spreadInner: b.spread,  // within-wye series-C spread the search minimized (µF)
+    sparesUsed: b.sp,
+    swapCost: b.cost,       // total effort = rack distance + spare penalty
+    y1: b.y1, y2: b.y2, spare: b.spare,
+    acts: b.acts,           // raw actions — UI pairs each swap to its units
+    steps: b.steps
   });
-  return { baseDiff: baseIno, baseIno, swaps: results };
+  // Budgets: the LAST one = MAX effort (lowest I_no, spares freely); the rest thrifty.
+  const results = targets.map((target, idx) =>
+    fmt(pick(target, idx === targets.length - 1 ? 'maxeffort' : 'thrifty'), target));
+  // Extra plan: the FEWEST spares that still passes (may use more in-rack swaps, up to
+  // the MAX budget) — a distinct option from the swap-capped thrifty budgets.
+  const minSpare = fmt(pick(targets[targets.length - 1], 'minspare'), targets[targets.length - 1]);
+  return { baseDiff: baseIno, baseIno, swaps: results, minSpare };
 }
 
 function findBest1to3Swaps(origY1, origY2, origS, baseline) {
@@ -1179,7 +1210,8 @@ async function clientCalculate(payload) {
     function runPass(swapY1, swapY2, lockY1, lockY2, level) {
       const baseline = { y1ByPhase: sumByPhase(lockY1), y2ByPhase: sumByPhase(lockY2) };
       const res = findPhaseAwareYYSwaps(swapY1, swapY2, spare || [], baseline, kv, lockY1, lockY2, NAMEPLATE_UF, null, THRESHOLD_MA);
-      res.swaps.forEach(sw => {
+      function decorate(sw) {
+        if (!sw) return sw;
         const fullY1 = [...sw.y1, ...lockY1];
         const fullY2 = [...sw.y2, ...lockY2];
         sw.engAfter = calcYYMetrics(fullY1, fullY2, kv);
@@ -1192,7 +1224,10 @@ async function clientCalculate(payload) {
         sw.y1Full = fullY1; sw.y2Full = fullY2;
         sw.level = level;
         sw.tier = level >= 1 ? 2 : 1;
-      });
+        return sw;
+      }
+      res.swaps.forEach(decorate);
+      decorate(res.minSpare);               // the "fewest spares" plan, same metrics
       return res;
     }
 
@@ -1210,30 +1245,58 @@ async function clientCalculate(payload) {
       [...(sw.y1Full || []), ...(sw.y2Full || [])].forEach(u => { if (u.origin !== 'Spare' && isFailedUnit(u)) n++; });
       return n;
     }
-    // Per budget: relay-pass GATE → phase balance gate → LOWEST I_no (even if it
-    // needs a spare) → LEAST EFFORT (rack distance + spare-last, via `cost`) → fewest
-    // swaps → fewest grouped touched. (Kept consistent with better() above.)
-    function chooseBudget(i) {
+    // Cross-level comparator — mirrors betterBy() in findPhaseAwareYYSwaps:
+    // relay-pass GATE → phase-balance gate → MODE. 'maxeffort' = lowest I_no first
+    // (MAX budget); 'thrifty'/'minspare' = conserve spares (fewest sparesUsed → cost →
+    // swaps → I_no only beyond INO_TIE_MA). Nothing passing → lowest I_no (safest).
+    function rankSw(a, b, mode) {
+      const ut = (b.underThreshold ? 1 : 0) - (a.underThreshold ? 1 : 0); if (ut) return ut;   // relay gate
+      if (a.underThreshold) {
+        const so = (b.spreadOK ? 1 : 0) - (a.spreadOK ? 1 : 0); if (so) return so;              // balance gate
+        if (!a.spreadOK) {                                                                      // both pass relay, unbalanced
+          if (Math.abs(a.spread.max - b.spread.max) > 1e-9) return a.spread.max - b.spread.max;
+          if (Math.abs(a.Ino_mA - b.Ino_mA) > INO_TIE_MA) return a.Ino_mA - b.Ino_mA;
+          if (a.cost !== b.cost) return a.cost - b.cost;
+          const sp = (a.sparesUsed || 0) - (b.sparesUsed || 0); if (sp) return sp;
+          return a.actualSwaps - b.actualSwaps;
+        }
+        if (mode === 'maxeffort') {                                                             // both pass both gates
+          if (Math.abs(a.Ino_mA - b.Ino_mA) > 1e-6) return a.Ino_mA - b.Ino_mA;                 // lowest I_no (strict)
+          if (a.cost !== b.cost) return a.cost - b.cost;
+          if (a.actualSwaps !== b.actualSwaps) return a.actualSwaps - b.actualSwaps;
+          return (a.sparesUsed || 0) - (b.sparesUsed || 0);
+        }
+        const sp = (a.sparesUsed || 0) - (b.sparesUsed || 0); if (sp) return sp;                // thrifty/minspare: fewest spares
+        if (a.cost !== b.cost) return a.cost - b.cost;
+        if (a.actualSwaps !== b.actualSwaps) return a.actualSwaps - b.actualSwaps;
+        if (Math.abs(a.Ino_mA - b.Ino_mA) > INO_TIE_MA) return a.Ino_mA - b.Ino_mA;             // I_no last (ε band)
+        return a.level - b.level;
+      }
+      // Neither passes → closest to safe (lowest I_no), then least effort.
+      if (Math.abs(a.Ino_mA - b.Ino_mA) > 1e-6) return a.Ino_mA - b.Ino_mA;
+      if (a.cost !== b.cost) return a.cost - b.cost;
+      if (Math.abs(a.spread.max - b.spread.max) > 1e-9) return a.spread.max - b.spread.max;
+      return a.actualSwaps - b.actualSwaps || a.level - b.level;
+    }
+    function chooseBudget(i, mode) {
       const cands = levels.map(p => p.swaps[i]).filter(Boolean);
       cands.forEach(c => { c._fail = failRemain(c); });
-      cands.sort((a, b) => {
-        const ut = (b.underThreshold ? 1 : 0) - (a.underThreshold ? 1 : 0); if (ut) return ut; // relay-pass GATE
-        if (a.underThreshold) {
-          const so = (b.spreadOK ? 1 : 0) - (a.spreadOK ? 1 : 0); if (so) return so;             // balanced ≤ tol
-          if (!a.spreadOK && Math.abs(a.spread.max - b.spread.max) > 1e-9) return a.spread.max - b.spread.max;
-          if (Math.abs(a.Ino_mA - b.Ino_mA) > 1e-6) return a.Ino_mA - b.Ino_mA;                  // lowest I_no
-          if (a.cost !== b.cost) return a.cost - b.cost;                                          // then nearest swaps / spare-last
-          return a.actualSwaps - b.actualSwaps || a.level - b.level;
-        }
-        // Neither passes → closest to safe (lowest I_no), then least effort.
-        if (Math.abs(a.Ino_mA - b.Ino_mA) > 1e-6) return a.Ino_mA - b.Ino_mA;
-        if (a.cost !== b.cost) return a.cost - b.cost;
-        if (Math.abs(a.spread.max - b.spread.max) > 1e-9) return a.spread.max - b.spread.max;
-        return a.actualSwaps - b.actualSwaps || a.level - b.level;
-      });
+      cands.sort((a, b) => rankSw(a, b, mode));
       return cands[0];
     }
-    quickResult = { baseDiff: levels[0].baseIno, baseIno: levels[0].baseIno, swaps: [0, 1, 2].map(chooseBudget) };
+    function chooseMinSpare() {
+      const cands = levels.map(p => p.minSpare).filter(Boolean);
+      if (!cands.length) return null;
+      cands.forEach(c => { c._fail = failRemain(c); });
+      cands.sort((a, b) => rankSw(a, b, 'minspare'));
+      return cands[0];
+    }
+    const lastIdx = levels[0].swaps.length - 1;   // last budget = MAX effort
+    quickResult = {
+      baseDiff: levels[0].baseIno, baseIno: levels[0].baseIno,
+      swaps: levels[0].swaps.map((_, i) => chooseBudget(i, i === lastIdx ? 'maxeffort' : 'thrifty'))
+    };
+    quickResult.minSpare     = chooseMinSpare();                              // extra "fewest spares" option
     quickResult.usedGood     = true;                                          // rack swaps may touch any good unit
     quickResult.usedSpare    = quickResult.swaps.some(sw => sw.sparesUsed > 0);
     quickResult.fallbackUsed = quickResult.swaps.some(sw => sw.level >= 1);   // grouped Tier-2 fallback

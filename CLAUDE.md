@@ -132,10 +132,12 @@ being hoisted into the shared global scope, so:
      all three balances the bank). Beam prunes those rising paths, so this track
      greedily replaces the worst per-phase outlier (mode deviation) with the
      closest spare, **accepting temporary I_no rises**, recording each state.
-  For each budget (2 / 4 / 6) it applies the ranking in `better()`/`chooseBudget()`
-  (relay-pass gate → balance gate → **lowest I_no** → least effort → fewest swaps →
-  **fewest spares**). Reports `actualSwaps` and `sparesUsed`. Do NOT revert to
-  beam-only — you will reintroduce the "doesn't use spares / collapses to 1 swap" bug.
+  For each budget (**2 / 6 / 12**) it applies `pick(target, mode)` with `betterBy()`
+  (relay gate → balance gate → MODE; thrifty budgets conserve spares, the last/MAX
+  budget chases lowest I_no — see the Swap-priority section). It also returns a
+  **`minSpare`** plan (fewest spares that passes). Reports `actualSwaps` and
+  `sparesUsed`. Do NOT revert to beam-only — you will reintroduce the "doesn't use
+  spares / collapses to 1 swap" bug.
   NOTE (v8.0): `sparesUsed` counts ONLY spare-consuming actions
   (`replace-y1`/`replace-y2`/`piece-replace` — the set `SPARE_ACTION_TYPES`);
   `piece-swap` and `exchange` use no spare and must not inflate it.
@@ -166,28 +168,35 @@ being hoisted into the shared global scope, so:
   **disabled** — the optimizer swaps ONLY the measured-separately units + spares
   and never touches the grouped units, even if I_no stays above the threshold.
   (`hasScissors` in `clientCalculate`, both YY and H-bridge paths.)
-- **Swap priority = LOWEST I_no first, then rack distance / spare LAST** (product
-  decision, v8.0 — supersedes the strict "spare LAST" of v7.9). The rack is wired
-  left→right **A A' B B' C C'** (`RACK_ORDER`). Effort grows with how far apart two
-  caps sit; the NEAREST swap is preferred and a SPARE is the last resort — expressed
-  as a per-candidate **`cost`** (rack distance for an exchange, `SWAP_SPARE_COST`=100
-  for a spare, see `swapActionCost`). BUT the field engineer decided getting I_no as
-  low as possible matters MORE than conserving spares: so `cost` (spare-last) is only
-  a **tiebreaker below I_no**, not above it. A lower-I_no plan that uses a spare beats
-  a higher-I_no all-rack plan. Two levels:
+- **Swap priority — "ผ่านแล้วพอ แล้วค่อยประหยัด spare"** (field decision 2026-11,
+  v9.3 — SUPERSEDES the v8.0 "lowest-I_no-first even if it needs a spare"). The rack is
+  wired left→right **A A' B B' C C'** (`RACK_ORDER`). Effort grows with how far apart
+  two caps sit; expressed as a per-candidate **`cost`** (rack distance for an exchange,
+  `SWAP_SPARE_COST`=100 for a spare). Two gates then a per-budget **mode** decide:
+  1. **relay-pass gate** — I_no < threshold.
+  2. **phase-balance gate** — within-wye spread ≤ `PHASE_SPREAD_UF` (boolean).
+  3. **mode** (once BOTH gates pass):
+     - **thrifty** (budgets 2 & 6, and the recommended card): **fewest spares → lowest
+       `cost` (near→far) → fewest swaps → lowest I_no** — but I_no only breaks ties
+       beyond **`INO_TIE_MA` = 2.0 mA** (the ε band). Rationale: once the bank is safe
+       and balanced, stop burning spares to shave the last couple of mA.
+     - **maxeffort** (the LAST / MAX budget "เต็มที่"): **lowest I_no first** (strict),
+       then cost/swaps/spares — the old behaviour, kept on purpose so there is always
+       an option that uses the resources fully.
+  `findPhaseAwareYYSwaps` also returns a **`minSpare`** plan: the FEWEST spares that
+  still passes, allowed the full swap budget (so it may use more in-rack swaps to drop
+  a spare). Shown as the "♻️ ใช้ spare น้อยสุด" card. If NEITHER gate-set passes the
+  relay, **lowest I_no** (closest to safe) wins in every mode. `better()`/`pick(mode)`
+  (inside the search) and `rankSw()`/`chooseBudget(i,mode)`/`chooseMinSpare()` (across
+  L0/L1 in `clientCalculate`) apply the SAME order. Two levels:
   - **L0** — Tier-1 units, all in-rack exchanges + spares (`cost` orders near→far→spare).
   - **L1** — + grouped Tier-2 units, fallback (skipped when scissors used).
-  `better()` (per-budget pick) and `chooseBudget()` (across L0/L1) both apply the SAME
-  monotone order: **relay-pass gate → phase-balance BOOLEAN gate (spreadOK, ≤
-  PHASE_SPREAD_UF) → lowest I_no → lowest `cost` (nearest swaps, spare-last) → fewest
-  swaps → fewest spares/grouped touched**. If nothing passes the relay, lowest I_no
-  wins (closest to safe), then lowest cost. (v7.9 compared the CONTINUOUS spread
-  before cost, which made a spare always beat a cheaper in-rack plan then flip back on
-  the cost tiebreaker — the picker oscillated between all-spare and all-rack. The
-  boolean gate + I_no-before-cost order fixes that; do NOT revert to a continuous
-  spread compare ahead of cost.) A CONCEPT "Track 3 / assembly" that structurally
-  combines near+far+spare in one plan (to beat beam-width collapse on big banks) is
-  designed but NOT built — see the memory note if revisiting.
+  **Do NOT** re-promote I_no above spare-count in the thrifty modes, or remove the
+  `INO_TIE_MA` band — that reintroduces the "uses every spare / adds a spare and it
+  grabs it too" bug (see `test/swap.test.js` Case 8, which guards this). The ε band
+  only bites AFTER both gates pass; it never admits a failing/unbalanced plan. (The
+  older v8.0 note said "I_no quality beats spare-conservation" — that is the behaviour
+  we deliberately reversed; keep it only in the MAX/maxeffort budget.)
   - **Nameplate** (`NAMEPLATE_UF = 27.00 µF`, `window.NAMEPLATE_UF`): a unit below
     it is "failed" (เสีย). Failed units are NO LONGER removed-first — they're moved
     in-rack like any other, and a spare is fetched only if the rack can't balance

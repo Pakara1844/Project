@@ -164,6 +164,35 @@ console.log('\nCase 7 — MAX-effort budget uses spares + more swaps (scattered 
   assertConsistent('scattered', res);
 }
 
+// Case 8 — SPARE CONSERVATION (v9.3). Once a plan passes the relay AND the balance
+// gate, the thrifty budgets + the new minSpare option must use the FEWEST spares that
+// still passes — and must NOT grab more spares just because the pool is bigger. The
+// MAX-effort budget keeps chasing the lowest I_no (may use more spares).
+console.log('\nCase 8 — spare conservation: thrifty/minSpare use only what is needed');
+{
+  const mk = (o, arr) => arr.map((v, i) => ({ id: `${o}-${i + 1}`, val: v, origin: o }));
+  // noisy within-wye values so EXTRA clean spares could keep shaving I_no (the trap)
+  const makeBank = () => ({
+    y1: [...mk('A', [27, 27, 27, 28]), ...mk('B', [27.2, 27, 27, 27]), ...mk('C', [26.8, 27, 27, 27])],
+    y2: [...mk("A'", [27, 27, 27, 27]), ...mk("B'", [27, 27, 27, 27]), ...mk("C'", [27, 27, 27, 27])],
+  });
+  const run = n => { const b = makeBank(); return optimize(b.y1, b.y2, spares(Array(n).fill(27.0)), null, KV, [], [], 27.0, null, THR); };
+  const r3 = run(3), r8 = run(8);
+  const pass = s => s.Ino_mA < THR && s.spreadInner <= 0.005 + 1e-9;
+
+  check('minSpare passes relay + balance', pass(r3.minSpare));
+  check('minSpare consistent (sparesUsed == real spare actions)', r3.minSpare.sparesUsed === realSpareActions(r3.minSpare));
+  check('thrifty budget-0 passes', pass(r3.swaps[0]));
+  // growing the pool 3 → 8 must NOT increase spare usage of the thrifty/minSpare plans
+  check('minSpare spares do NOT grow with pool (3→8)', r8.minSpare.sparesUsed <= r3.minSpare.sparesUsed);
+  check('thrifty budget-0 spares do NOT grow with pool (3→8)', r8.swaps[0].sparesUsed <= r3.swaps[0].sparesUsed);
+  // minSpare should not use MORE spares than the MAX-effort budget
+  check('minSpare spares ≤ MAX-effort spares', r8.minSpare.sparesUsed <= r8.swaps[r8.swaps.length - 1].sparesUsed);
+  // MAX-effort still allowed to chase a lower I_no (uses resources fully)
+  check('MAX-effort I_no ≤ minSpare I_no (still chases lowest)', r8.swaps[r8.swaps.length - 1].Ino_mA <= r8.minSpare.Ino_mA + 1e-6);
+  assertConsistent('thrifty', r3);
+}
+
 console.log('');
 if (failures) {
   console.error(`✗ ${failures} assertion(s) FAILED — swap optimizer has regressed.`);

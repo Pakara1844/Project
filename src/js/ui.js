@@ -241,12 +241,24 @@ function renderResults(vals,result){
     return buildSolCard(cls, label, sw, true, topology);
   }).join('');
 
+  // Extra option: the plan that uses the FEWEST spares (YY only; may use more in-rack
+  // swaps). Distinct from the swap-capped budget cards — for when spares are precious.
+  const ms = quickResult.minSpare;
+  const minSpareCard = ms
+    ? `<div style="margin:18px 0 8px;font-weight:700;color:var(--txt2,#555);font-size:0.95rem;">
+         <i class="fas fa-recycle"></i> ตัวเลือกประหยัด spare</div>` +
+      buildSolCard('full',
+        `♻️ ใช้ spare น้อยสุด — สับ ${ms.actualSwaps} ครั้ง · ใช้ spare ${ms.sparesUsed} ตัว`,
+        ms, true, topology)
+    : '';
+
   const budgetList = quickResult.swaps.map(s=>s.swapCount).filter(n=>n!=null).join(' / ');
   const quickIntro = `<div class="locked-note" style="background:var(--green-soft,#e8f5e9);border-color:var(--green,#4caf50);">
-    <i class="fas fa-bolt"></i> <b>Quick Mode</b> เลือกการสับที่ทำให้ Ino ต่ำสุดโดยใช้จำนวนครั้งน้อยที่สุดให้อัตโนมัติ ·
-    ด้านล่างเป็นตัวเลือกแบบกำหนดจำนวน ${budgetList||'2 / 6 / 12'} ครั้ง (ตัวสุดท้าย = เต็มที่) ให้หน้างานเลือกใช้ได้เลย</div>`;
+    <i class="fas fa-bolt"></i> <b>Quick Mode</b> เลือกการสับที่ "ผ่านรีเลย์+บาลานซ์" โดย<b>ประหยัด spare</b>และจำนวนครั้งให้อัตโนมัติ ·
+    ด้านล่างมีตัวเลือก "ใช้ spare น้อยสุด" และแบบกำหนดจำนวน ${budgetList||'2 / 6 / 12'} ครั้ง (ตัวสุดท้าย = เต็มที่ Ino ต่ำสุด)</div>`;
 
   document.getElementById('tabQuick').innerHTML = summaryBanner + lockedBanner + quickIntro + autoCard +
+    minSpareCard +
     `<div style="margin:18px 0 8px;font-weight:700;color:var(--txt2,#555);font-size:0.95rem;">
       <i class="fas fa-hand-pointer"></i> ตัวเลือกแบบกำหนดจำนวนครั้ง (เลือกได้ตามสะดวกหน้างาน)</div>` +
     fixedCards;
