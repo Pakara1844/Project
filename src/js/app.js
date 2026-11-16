@@ -114,7 +114,7 @@ function updateCapBand(){
 function useInoRef(r){
   const btn = document.querySelector('.bubble[data-val="' + r + '"]');
   if (btn) selectAlarm(btn);
-  handleCalculate();
+  handleCalculate(r);          // v10.1: that row's plan becomes the recommendation
 }
 
 function goToStep(n){
@@ -569,9 +569,10 @@ function hideCalcOverlay(){
   if(o){ o.classList.remove('open'); o.setAttribute('aria-hidden','true'); }
 }
 
-async function handleCalculate(){
+async function handleCalculate(pickRef){
   const vals=getInputValues();
   if(!vals) return;
+  if (typeof pickRef === 'number') vals.pickRef = pickRef;   // v10.1 picked from the ref table
   const btn=document.getElementById('btnCalc');
   btn.disabled=true;
   btn.innerHTML='<i class="fas fa-spinner fa-spin"></i>&nbsp;กำลังคำนวณ…';

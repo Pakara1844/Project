@@ -300,6 +300,18 @@ being hoisted into the shared global scope, so:
       slot shows its two pieces, each with "← อะไหล่ S-2 / ชิ้นจาก B'-10.a (เดิม x)"
       and its swap number (`pairRow`, `pieceHistory` in ui.js). Step text names the
       pair, the piece and the new pair totals. Guarded by Case 21.
+  - **v10.1 — flexible I_no ref table (user request).** The optimizer now returns TWO
+    per-ref tables: `refPlans[r]` = the comparison table rows = LEAST WORK under r
+    (fewest swaps → spares) and, among equal work, the plan CLOSEST to r (highest
+    I_no still < r) — so rows form a real gradient (<50 ≈ 49.8 mA/2 swaps … <5 ≈ 4.9
+    mA/3 on SNO-CAY3) instead of one balanced plan repeated; and `refBest[r]` = the
+    old balance-first → least-work rule, which drives the DEFAULT recommendation
+    (`quickResult.refBest`). Both keep failed-out-as-far-as-possible + no overvoltage.
+    The table's "บาลานซ์ในฝั่ง" ⚠ marks rows that pass only by mirroring; a bottom row
+    "⚖ บาลานซ์ครบ" shows the refBest plan. "ใช้ค่านี้" → `useInoRef(r)` →
+    `handleCalculate(r)` sets `vals.pickRef`, and ui.js then recommends (and Excel
+    exports) THAT row's plan; "ใช้แผนนี้" on the balance row re-runs the default.
+    Tests that assert balance-first expectations read `refBest`.
   - **Display (v9.6):** the "ก่อนสับเปลี่ยน" card (YY) no longer shows Σ Y1 / Σ Y2 /
     |ΣY1−ΣY2| (that difference does NOT drive I_no — two balanced wyes can differ);
     it shows ΔC within Y1, ΔC within Y2, per-phase total ratio max/min (IEC ≤ 1.08)

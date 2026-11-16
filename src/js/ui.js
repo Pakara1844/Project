@@ -227,8 +227,13 @@ function renderResults(vals,result){
   // F3: if the comparison table has a plan for the SELECTED ref, recommend that one —
   // it is the least work (fewest swaps, then spares) that gets below the ref with the
   // failed units out. Otherwise fall back to the budget cards (logic above).
-  const refRow = (topology!=='h-bridge' && quickResult.refTable)
-    ? quickResult.refTable.find(r => r.ref === ALARM && r.plan) : null;
+  // v10.1: "ใช้ค่านี้" in the comparison table → THAT row's plan is the recommendation;
+  // otherwise the balance-first plan for the selected ref (refBest).
+  const picked = !!(vals && vals.pickRef === ALARM);
+  const refRow = (topology!=='h-bridge')
+    ? ((picked && quickResult.refTable) ? quickResult.refTable.find(r => r.ref === ALARM && r.plan)
+       : (quickResult.refBest || quickResult.refTable || []).find(r => r.ref === ALARM && r.plan)) || null
+    : null;
   let autoSw, recFromRef = false;
   // v9.9: spare shortage → TEMPORARY plan (failed units may move to balance each side)
   const tempPlan = (topology!=='h-bridge') ? (quickResult.tempPlan || null) : null;
@@ -253,7 +258,8 @@ function renderResults(vals,result){
   const bestRow = (topology!=='h-bridge' && quickResult.refTable)
     ? quickResult.refTable.find(r => r.bestValue && r.plan && r.gainPerSwap != null) : null;
   const maxD = quickResult.maxDepth || 6;
-  const autoWhy = recFromRef ? `แรงงานน้อยสุดที่ต่ำกว่า I${'<sub>no</sub>'} ref ${ALARM} mA`
+  const autoWhy = recFromRef ? (picked ? `ตามที่เลือกจากตาราง: แรงงานน้อยสุดที่ I${'<sub>no</sub>'} < ${ALARM} mA`
+                                      : `บาลานซ์ก่อน แล้วแรงงานน้อยสุดที่ต่ำกว่า I${'<sub>no</sub>'} ref ${ALARM} mA`)
                 : rec.full ? 'น้อยสุดที่ผ่านครบ (รีเลย์+บาลานซ์)'
                 : rec.pass ? 'น้อยสุดที่ผ่านรีเลย์ (พอสำหรับหน้างาน)'
                 : `ยังไม่ผ่าน — ดีที่สุดเท่าที่ทำได้ภายใน ${maxD} ครั้ง`;
@@ -599,15 +605,31 @@ function buildRefTable(quickResult, topology) {
   const fmtV = p => !p.unitV ? '—' : (p.unitV.maxPctRated != null
     ? `<span class="${p.unitV.ovCount ? 'rt-bad' : ''}">${p.unitV.maxPctRated.toFixed(1)}% พิกัด</span>`
     : `${p.unitV.maxPctShare.toFixed(1)}% เฉลี่ย`);
+  // v10.1 — extra row: the balance-first plan for the selected ref (A=B=C on each side),
+  // so the field can compare it with the least-work rows above.
+  const bRow = (quickResult.refBest || []).find(r => r.ref === cur && r.plan);
+  const balRow = (() => {
+    if (!bRow) return '';
+    const p = bRow.plan, isRec = p === quickResult.recommended;
+    return `<tr class="rt-balrow ${isRec ? 'rt-cur' : ''}">
+      <td><b>⚖ บาลานซ์ครบ</b> <small>(&lt; ${cur} mA)</small> ${isRec ? '<span class="rt-tag rt-tag-cur">✔ แผนที่แนะนำ</span>' : ''}</td>
+      <td><b>${p.actualSwaps}</b></td><td>${p.sparesUsed || 0}</td><td>${p.Ino_mA.toFixed(2)}</td>
+      <td class="${(p._fail || 0) ? 'rt-bad' : ''}">${p._fail || 0}</td>
+      <td class="${p.spread && p.spread.ok ? '' : 'rt-bad'}">${p.spread ? (p.spread.ok ? '✓ ' : '⚠ ') + p.spread.max.toFixed(4) : '—'}</td>
+      <td>—</td><td>${fmtV(p)}</td>
+      <td>${isRec ? '' : '<button class="rt-use" onclick="handleCalculate()">ใช้แผนนี้</button>'}</td></tr>`;
+  })();
   const body = rows.map(row => {
     const p = row.plan, isCur = row.ref === cur;
     if (!p) return `<tr class="${isCur ? 'rt-cur' : ''}"><td><b>&lt; ${row.ref}</b> mA</td>
       <td colspan="7" class="rt-na">ทำไม่ได้ภายใน ${quickResult.maxDepth || 6} ครั้ง (ด้วย spare ที่มี)</td><td></td></tr>`;
     const extra = row.extraSwaps > 0 ? ` <span class="rt-extra">+${row.extraSwaps}</span>` : '';
     const rate = row.gainPerSwap != null ? row.gainPerSwap.toFixed(1) : '—';
+    const isRec = p === quickResult.recommended;
     const tags = (row.bestValue ? '<span class="rt-tag">⭐ คุ้มสุด</span>' : '') +
                  (row.leastWork ? '<span class="rt-tag rt-tag-work">🛠 แรงงานน้อยสุด</span>' : '') +
-                 (isCur ? '<span class="rt-tag rt-tag-cur">ที่เลือก</span>' : '');
+                 (isCur ? '<span class="rt-tag rt-tag-cur">ref ที่เลือก</span>' : '') +
+                 (isRec ? '<span class="rt-tag rt-tag-cur">✔ แผนที่แนะนำ</span>' : '');
     const failLeft = p._fail || 0;
     return `<tr class="${row.bestValue ? 'rt-best' : ''} ${isCur ? 'rt-cur' : ''}">
       <td><b>&lt; ${row.ref}</b> mA ${tags}</td>
@@ -618,11 +640,12 @@ function buildRefTable(quickResult, topology) {
       <td class="${p.spread && p.spread.ok ? '' : 'rt-bad'}">${p.spread ? (p.spread.ok ? '✓ ' : '⚠ ') + p.spread.max.toFixed(4) : '—'}</td>
       <td>${rate}</td>
       <td>${fmtV(p)}</td>
-      <td>${isCur ? '' : `<button class="rt-use" onclick="useInoRef(${row.ref})">ใช้ค่านี้</button>`}</td></tr>`;
-  }).join('');
+      <td>${isRec ? '' : `<button class="rt-use" onclick="useInoRef(${row.ref})">ใช้ค่านี้</button>`}</td></tr>`;
+  }).join('') + balRow;
   return `<div class="ref-compare">
     <div class="ref-title"><i class="fas fa-scale-balanced"></i> เปรียบเทียบ I<sub>no</sub> ref — ต้องสับกี่ครั้งถึงจะต่ำกว่าแต่ละค่า</div>
-    <div class="ref-sub">ทุกแถว: ถอดตัวเสียออกก่อน (ตัวที่เสียหนักสุดก่อน) · ไม่ให้ตัวไหนรับแรงดันเกิน · <b>บาลานซ์ A=B=C ในแต่ละฝั่งก่อน</b> · แล้วเลือกแผนที่สับน้อยที่สุด (แล้วใช้ spare น้อยที่สุด).
+    <div class="ref-sub">แต่ละแถว = <b>แผนที่สับน้อยที่สุดที่ทำให้ I<sub>no</sub> ต่ำกว่าค่านั้น</b> (ถ้าแรงงานเท่ากัน เลือกตัวที่ใกล้ค่า ref ที่สุด) · ถอดตัวเสียออกเท่าที่ spare ดีมี · ไม่ให้ตัวไหนรับแรงดันเกิน ·
+      ช่อง "บาลานซ์ในฝั่ง" ⚠ = I<sub>no</sub> ผ่านเพราะสองฝั่งหักล้างกัน ยังไม่ A=B=C · แถว <b>⚖ บาลานซ์ครบ</b> = แผนบาลานซ์ก่อนแล้วแรงงานน้อยสุด (ค่าแนะนำเริ่มต้น) · กด <b>ใช้ค่านี้</b> เพื่อใช้แผนของแถวนั้นเป็นแผนแนะนำ (และ Excel).
       <b>🛠 แรงงานน้อยสุด</b> = สับน้อยที่สุดที่ทำได้ · <b>+n</b> = ต้องสับเพิ่มจากนั้น ·
       <b>⭐ คุ้มสุด</b> = แผนที่ลด I<sub>no</sub> ได้มากที่สุดต่อการสับเพิ่ม 1 ครั้ง (ต้องลดได้ ≥ ${(typeof INO_WORTH_MA_PER_SWAP!=='undefined'?INO_WORTH_MA_PER_SWAP:5)} mA/ครั้ง ไม่งั้นแผนแรงงานน้อยสุดคือคุ้มสุด)</div>
     <div class="ref-scroll"><table class="ref-table">

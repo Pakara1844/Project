@@ -268,7 +268,7 @@ console.log('\nCase 13 — same-side cross-phase swap balances a wye without a s
   const res = run(bank(8, 27.0, [["A'-1", 28.0], ["A'-2", 28.0], ["B'-1", 26.0], ["B'-2", 26.0]]), []);
   const side = u => (u.origin || '').includes("'") ? 2 : 1;
   const base = u => (u.origin || '').replace("'", '');
-  const lw = res.refPlans[50];
+  const lw = res.refBest[50];
   check('budget-2 passes the relay with no spares', res.swaps[0].Ino_mA < THR && res.swaps[0].sparesUsed === 0);
   check('least-work plan for ref 50: 1 swap, 0 spares', !!lw && lw.actualSwaps === 1 && lw.sparesUsed === 0);
   check("…and it is a same-side cross-phase exchange (A'↔B')",
@@ -320,7 +320,7 @@ async function case1516() {
   console.log('\nCase 15 — too few spares (5 for 8 failed): replace the WORST, never move a failed unit (G1)');
   {
     const q = (await run2(5)).quickResult;
-    const rec = q.refTable.find(x => x.ref === 50 && x.plan).plan;
+    const rec = q.refBest.find(x => x.ref === 50 && x.plan).plan;
     check(`only the least-severe failed units stay (got ${failedVals(rec).join(', ')})`, failedVals(rec).join(',') === '24,25,25');
     check('no failed unit is moved by an exchange (any budget / ref plan)',
       ![...q.swaps, ...q.refTable.filter(x => x.plan).map(x => x.plan)].some(movedFailed));
@@ -331,7 +331,7 @@ async function case1516() {
   console.log('\nCase 16 — enough spares (8): balance-first gives A=B=C on each wye, all failed out');
   {
     const q = (await run2(8)).quickResult;
-    const rec = q.refTable.find(x => x.ref === 50 && x.plan).plan;
+    const rec = q.refBest.find(x => x.ref === 50 && x.plan).plan;
     check('every failed unit replaced', failedVals(rec).length === 0);
     check(`each wye balanced (ΔC Y1 ${rec.spread.y1.toFixed(4)} / Y2 ${rec.spread.y2.toFixed(4)} ≤ 0.005)`, rec.spread.max <= 0.005);
     check('passes I_no ref 50', rec.Ino_mA < 50);
@@ -379,7 +379,7 @@ async function case171819() {
   console.log("\nCase 19 — a direct C↔B' swap when that's the real fix");
   {
     const res = run(bank(10, 27.0, [['C-1', 28.0], ["B'-1", 26.0]]), []);
-    const lw = res.refPlans[50];
+    const lw = res.refBest[50];
     const side = u => (u.origin || '').includes("'") ? 2 : 1, base = u => (u.origin || '').replace("'", '');
     check('least-work plan for ref 50 is ONE swap', !!lw && lw.actualSwaps === 1);
     check("…a cross-side cross-phase exchange (C↔B')", !!lw && lw.acts.some(a => a.type === 'exchange' && side(a.from) !== side(a.to) && base(a.from) !== base(a.to)));

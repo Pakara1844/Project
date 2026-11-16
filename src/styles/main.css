@@ -1169,6 +1169,7 @@ body.show-landing .page { display:none !important; }
 .ref-table td:first-child { font-family:var(--th); white-space:nowrap; }
 .ref-table tr.rt-best td { background:var(--green-soft); }
 .ref-table tr.rt-cur td:first-child { box-shadow:inset 3px 0 0 var(--blue); }
+.ref-table tr.rt-balrow td { border-top:2px solid var(--border); background:var(--bg2); }
 .rt-tag { display:inline-block; margin-left:6px; padding:2px 8px; border-radius:99px; font-size:0.68rem; font-weight:700; background:var(--green); color:#fff; }
 .rt-tag-cur { background:var(--blue); }
 .rt-extra { color:var(--amber); font-weight:700; font-size:0.78rem; }

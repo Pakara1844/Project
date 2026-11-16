@@ -913,10 +913,22 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   // spares, then lowest I_no. null = not reachable within MAXDEPTH swaps.
   const minBelow = candidates.reduce((m, c) => Math.min(m, c.below), Infinity);
   const minSev = candidates.filter(c => c.below === minBelow).reduce((m, c) => Math.min(m, c.sev), Infinity);
-  const refPlans = {};
+  // v10.1 — TWO tables per ref r:
+  //  • refBest[r]  (drives the default recommendation): balance-first → least work.
+  //  • refPlans[r] (the comparison table the field picks from): the LEAST WORK that
+  //    gets I_no < r (fewest swaps → fewest spares), and among equal work the plan
+  //    CLOSEST to r (highest I_no still below it) — so each row is a real option
+  //    (<50 ≈ 48 mA in 2 swaps … <5 ≈ 4 mA in 7) instead of one plan repeated.
+  //    Both keep the safety rules: failed out as far as possible, no overvoltage.
+  const refBest = {}, refPlans = {};
   INO_REF_LIST.forEach(r => {
+    const flex = candidates.filter(c => c.below === minBelow && c.sev <= minSev + 1e-9 && (MOVE_FAILED || c.ov === 0) && c.ino < r);
+    let fb = null;
+    for (const c of flex) if (!fb || c.swaps < fb.swaps || (c.swaps === fb.swaps && (c.sp < fb.sp || (c.sp === fb.sp && c.ino > fb.ino)))) fb = c;
+    refPlans[r] = fb ? fmt(fb, fb.swaps) : null;
+
     const elig = candidates.filter(c => (BALF || (c.below === minBelow && c.sev <= minSev + 1e-9)) && (MOVE_FAILED || c.ov === 0) && c.ino < r);
-    if (!elig.length) { refPlans[r] = null; return; }
+    if (!elig.length) { refBest[r] = null; return; }
     // balance first (v9.7): balanced plans if any; else the tightest spread (± tie band)
     const bal = elig.filter(c => c.spread <= TOL + 1e-9);
     const minSpr = elig.reduce((m, c) => Math.min(m, c.spread), Infinity);
@@ -926,9 +938,9 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
     for (const c of pool) if (!b || (BALF
         ? (c.below < b.below || (c.below === b.below && (c.sev < b.sev - 1e-9 || (Math.abs(c.sev - b.sev) <= 1e-9 && lessWork(c, b)))))
         : lessWork(c, b))) b = c;
-    refPlans[r] = fmt(b, b.swaps);
+    refBest[r] = fmt(b, b.swaps);
   });
-  return { baseDiff: baseIno, baseIno, swaps: results, refPlans, minBelow, maxDepth: MAXDEPTH };
+  return { baseDiff: baseIno, baseIno, swaps: results, refPlans, refBest, minBelow, maxDepth: MAXDEPTH };
 }
 
 function findBest1to3Swaps(origY1, origY2, origS, baseline) {
@@ -1318,6 +1330,7 @@ async function clientCalculate(payload) {
       }
       res.swaps.forEach(decorate);
       Object.values(res.refPlans || {}).forEach(decorate);
+      Object.values(res.refBest || {}).forEach(decorate);
       return res;
     }
 
@@ -1415,8 +1428,19 @@ async function clientCalculate(payload) {
     // Merge the per-level plans: fewest failed left → no overvoltage → fewest swaps →
     // fewest spares → lowest level → lowest I_no. "best value" = the TIGHTEST ref that
     // costs no more work (swaps, then spares) than the cheapest reachable ref.
+    // v10.1 — comparison table (field options): fewest failed left → sev → no overvoltage
+    // → fewest swaps → fewest spares → CLOSEST to the ref (highest I_no below it) → level.
     quickResult.refTable = INO_REF_LIST.map(r => {
       const cands = levels.map(p => p.refPlans && p.refPlans[r]).filter(Boolean);
+      cands.forEach(c => { c._fail = failRemain(c); c._sev = failSev(c); });
+      cands.sort((a, b) => a._fail - b._fail || (a._sev - b._sev) || ((a.overV ? 1 : 0) - (b.overV ? 1 : 0))
+        || a.actualSwaps - b.actualSwaps || (a.sparesUsed || 0) - (b.sparesUsed || 0)
+        || b.Ino_mA - a.Ino_mA || a.level - b.level);
+      return { ref: r, plan: cands[0] || null };
+    });
+    // Default-recommendation table (balance-first → least work), v9.7 rule.
+    quickResult.refBest = INO_REF_LIST.map(r => {
+      const cands = levels.map(p => p.refBest && p.refBest[r]).filter(Boolean);
       cands.forEach(c => { c._fail = failRemain(c); c._sev = failSev(c); });
       cands.sort((a, b) => BAL_FIRST
         ? (((balOf(b) ? 1 : 0) - (balOf(a) ? 1 : 0))
@@ -1460,7 +1484,7 @@ async function clientCalculate(payload) {
     // wait for spares and be re-arranged anyway). The plan becomes: replace the WORST
     // failed units with the good spares on hand, and report how many more are needed.
     {
-      const anyPass = budgetPicks.some(sw => sw.underThreshold) || quickResult.refTable.some(r => r.plan);
+      const anyPass = budgetPicks.some(sw => sw.underThreshold) || quickResult.refTable.some(r => r.plan) || quickResult.refBest.some(r => r.plan);
       const goodSp = (spare || []).filter(sp => !capValOutOfTol(sp.val, CAP))
         .sort((a, b) => Math.abs(a.val - CAP.uf) - Math.abs(b.val - CAP.uf));
       const nFailedTotal = [...y1Flat, ...y2Flat].filter(isFailedUnit).length;
