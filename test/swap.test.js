@@ -18,13 +18,14 @@ const src = fs.readFileSync(
   path.join(__dirname, '..', 'src', 'js', 'calculator.js'), 'utf8'
 ).replace(/\r\n/g, '\n');
 
-const ctx = { window: {}, console, Math, Object, Array, Set, JSON, isFinite, parseFloat, alert() {} };
+const ctx = { window: {}, console, Math, Object, Array, Set, JSON, isFinite, parseFloat, alert() {}, Promise };
 vm.createContext(ctx);
 // findPhaseAwareYYSwaps is a top-level function (not on window) — export it explicitly.
 vm.runInContext(src + '\n;window.__opt = findPhaseAwareYYSwaps; window.__spread = phaseSpreadOf;', ctx);
 const optimize = ctx.window.__opt;
 const calcYY   = ctx.window._calcYYMetrics;
 const spreadOf = ctx.window.__spread;
+const unitVoltageStats = ctx.window.unitVoltageStats;
 const SPARE    = new Set(['replace-y1', 'replace-y2', 'piece-replace']);
 const KV = 115, THR = 50;
 
@@ -57,7 +58,8 @@ function assertConsistent(tag, res) {
 }
 
 // Case 1 — sparesUsed must NOT count piece-swap (bug 1). Scissored bank, no spare:
-// the only repair is a piece-swap (สับชิ้นกันเอง) which consumes NO spare.
+// the only repair is a piece-swap (สับชิ้นกันเอง) which consumes NO spare. The off
+// pieces are INSIDE the IEC band (v9.7: a failed piece is never moved, only replaced).
 console.log('Case 1 — scissored bank, piece-swap only (sparesUsed must be 0)');
 {
   const mk = (origins) => { const a = []; for (const o of origins) for (let i = 0; i < 5; i++)
@@ -65,7 +67,7 @@ console.log('Case 1 — scissored bank, piece-swap only (sparesUsed must be 0)')
   const y1 = mk(['A', 'B', 'C']), y2 = mk(["A'", "B'", "C'"]);
   const setPiece = (id, pc, v) => { const t = y1.find(x => x.id === id) || y2.find(x => x.id === id);
     if (pc === 'a') t.measuredA = v; else t.measuredB = v; t.val = t.measuredA + t.measuredB; };
-  setPiece('A-2', 'a', 25.0); setPiece("A'-3", 'b', 29.4);   // symmetric off pieces → one piece-swap fixes
+  setPiece('A-2', 'a', 26.2); setPiece("A'-3", 'b', 28.2);   // symmetric in-tolerance off pieces → one piece-swap fixes
   const res = optimize(y1, y2, [], null, KV, [], [], 27.0, null, THR);
   const b6 = res.swaps[res.swaps.length - 1];
   check('reaches relay pass with a piece-swap', b6.Ino_mA < THR);
@@ -73,23 +75,27 @@ console.log('Case 1 — scissored bank, piece-swap only (sparesUsed must be 0)')
   assertConsistent('scissors', res);
 }
 
-// Case 2 — v9.4 (restored v6.5) rules on a messy bank with 5 FAILED (<27 µF) units:
-// budgets are 2/4/6, every exchange stays WITHIN its phase (A↔A', B↔B', C↔C'), and
-// failed units are taken out first (a bigger budget never leaves MORE failed units).
-console.log('\nCase 2 — in-phase exchanges only + failed units out first (budgets 2/4/6)');
+// Case 2 — exchange rules on a messy bank: budgets are 2/4/6 (default depth); since
+// v9.8 any two positions may be exchanged (A↔A', A↔B, A↔B'), but each physical unit
+// is moved at most ONCE per plan (no detours), and failed units are taken out first
+// (a bigger budget never leaves MORE failed units).
+console.log('\nCase 2 — exchange rules (each unit moved once) + failed units out first');
 {
   const b = bank(10, 27.2, [['A-1', 27.45], ['A-2', 27.45], ["A'-1", 26.95], ["A'-2", 26.95],
                             ["B'-1", 24.0],
                             ['C-1', 27.5], ['C-2', 27.5], ["C'-1", 26.9], ["C'-2", 26.9]]);
   const res = run(b, spares([27.2, 27.2]));
   const base = s => (s.origin || '').replace("'", '');
-  const failedLeft = sw => [...sw.y1, ...sw.y2].filter(u => u.val < 27.0).length;
+  const failedLeft = sw => [...sw.y1, ...sw.y2].filter(u => u.val < 25.65 || u.val > 29.7).length;   // IEC band 27 µF −5%/+10%
   check('budgets are 2 / 4 / 6', res.swaps.map(s => s.swapCount).join('/') === '2/4/6');
-  check('every exchange stays within its phase', res.swaps.every(sw =>
-    sw.acts.filter(a => a.type === 'exchange').every(a => base(a.from) === base(a.to))));
+  check('no physical unit is moved more than once in any plan', res.swaps.every(sw => {
+    const ids = sw.acts.filter(a => a.type === 'exchange').flatMap(a => [a.from.id, a.to.id]);
+    return new Set(ids).size === ids.length;
+  }));
+  void base;
   check('failed units left never grow with budget', res.swaps.every((sw, i) =>
     i === 0 || failedLeft(sw) <= failedLeft(res.swaps[i - 1])));
-  check('budget-2 already removes failed units (fewer than the 5 at start)', failedLeft(res.swaps[0]) < 5);
+  check("budget-2 already removes the failed unit (B'-1 = 24.0 is outside -5%)", failedLeft(res.swaps[0]) === 0);
   assertConsistent('inphase', res);
 }
 
@@ -175,9 +181,284 @@ console.log('\nCase 8 — one failed cap: 1 spare used, pool size (1 vs 6) does 
   assertConsistent('onefail', r6);
 }
 
-console.log('');
-if (failures) {
-  console.error(`✗ ${failures} assertion(s) FAILED — swap optimizer has regressed.`);
-  process.exit(1);
+// ── v9.5 cases ──────────────────────────────────────────────────────────────
+const outTol = v => v < 25.65 || v > 29.7;   // 27 µF, IEC 60871-1 −5 % … +10 %
+
+// Case 9 — failed is TWO-SIDED: a unit reading too HIGH (shorted elements) is failed
+// too, and is taken out with a good spare.
+console.log('\nCase 9 — two-sided tolerance: a HIGH unit (30.2 > 29.7 µF) is failed');
+{
+  const res = run(bank(8, 27.3, [['C-3', 30.2]]), spares([27.3, 27.3]));
+  res.swaps.forEach(sw => {
+    check(`budget ${sw.swapCount}: high unit removed`, ![...sw.y1, ...sw.y2].some(u => outTol(u.val)));
+    check(`budget ${sw.swapCount}: passes`, sw.Ino_mA < THR);
+  });
+  assertConsistent('highfail', res);
 }
-console.log('✓ All swap optimizer tests passed.');
+
+// Case 10 — a failed unit is NEVER put back in service: 2 failed units, but only one
+// GOOD spare (the other spare is itself out of tolerance). One failed unit must stay
+// (flagged), the bad spare must never be installed, and no removed unit is reused.
+console.log('\nCase 10 — failed spares / removed units are never reinstalled');
+{
+  const res = run(bank(8, 27.3, [['A-2', 24.0], ["B'-5", 24.5]]), spares([27.3, 24.8]));
+  res.swaps.forEach(sw => {
+    const installedBad = sw.acts.filter(a => SPARE.has(a.type) && a.to && outTol(a.to.val));
+    check(`budget ${sw.swapCount}: no failed unit installed`, installedBad.length === 0);
+    check(`budget ${sw.swapCount}: exactly 1 failed left (only 1 good spare)`,
+      [...sw.y1, ...sw.y2].filter(u => outTol(u.val)).length === 1);
+  });
+  check('minBelow reported = 1', res.minBelow === 1);
+  assertConsistent('noreuse', res);
+}
+
+// Case 11 — I_no reference plans: each reaches I_no < ref with the fewest failed
+// left; a TIGHTER ref never needs FEWER swaps than a looser one.
+console.log('\nCase 11 — reference plans: below ref, failed-out, tighter ref ≥ swaps');
+{
+  const res = run(bank(10, 27.2, [['A-1', 27.45], ['A-2', 27.45], ["A'-1", 26.95], ["A'-2", 26.95],
+                                  ["B'-1", 24.0], ['C-1', 27.5], ["C'-1", 26.9]]),
+                  spares([27.2, 27.2, 27.2]));
+  const refs = [5, 10, 20, 30, 40, 50];
+  const plans = refs.map(r => res.refPlans[r]);
+  check('ref 50 is reachable', !!res.refPlans[50]);
+  plans.forEach((p, i) => { if (p) {
+    check(`ref ${refs[i]}: I_no ${p.Ino_mA.toFixed(2)} < ${refs[i]}`, p.Ino_mA < refs[i]);
+    check(`ref ${refs[i]}: failed units out`, ![...p.y1, ...p.y2].some(u => outTol(u.val)));
+    check(`ref ${refs[i]}: sparesUsed consistent`, p.sparesUsed === realSpareActions(p));
+  }});
+  for (let i = 0; i + 1 < refs.length; i++) {
+    const a = plans[i], b = plans[i + 1];          // a = tighter, b = looser
+    if (a && b) check(`ref ${refs[i]} needs ≥ swaps than ref ${refs[i + 1]}`, a.actualSwaps >= b.actualSwaps);
+    if (a) check(`ref ${refs[i]} reachable ⇒ ref ${refs[i + 1]} reachable`, !!b);
+  }
+}
+
+// Case 12 — a HIDDEN (equalizing / mirrored) weak pair. A1 and A'1 both at 26.0 µF
+// (still inside −5 %): the two wyes cancel, so I_no = 0. v9.7 balance-first sees that
+// each wye is unbalanced (A low on both sides) and fixes it even WITHOUT a rated
+// voltage; with rated 6.2 kV the 110 % gate (6.91 kV = 111.5 %) also demands it.
+console.log('\nCase 12 — mirrored weak pair: balance-first + 110 % gate both catch it');
+{
+  const vs = unitVoltageStats(bank(10, 27.2, [['A-1', 25.0]]).y1, [], KV, null);
+  check('voltage share of a 25.0 µF unit among 27.2 µF = 107.85 %', Math.abs(vs.maxPctShare - 107.85) < 0.01);
+  const b = () => bank(10, 27.2, [['A-1', 26.0], ["A'-1", 26.0]]);
+  check('before: I_no ≈ 0 (mirrored) but each wye unbalanced',
+    calcYY(b().y1, b().y2, KV).Ino_mA < 1e-6 && spreadOf(calcYY(b().y1, b().y2, KV)).max > 0.005);
+  const noRated = optimize(b().y1, b().y2, spares([27.2, 27.2]), null, KV, [], [], 27.0, null, THR);
+  const nr = noRated.swaps[0], nrSp = spreadOf(calcYY(nr.y1, nr.y2, KV));
+  check(`without rated voltage: budget 2 balances each wye (ΔC ${nrSp.max.toFixed(4)} ≤ 0.005)`, nrSp.max <= 0.005);
+  const rated = optimize(b().y1, b().y2, spares([27.2, 27.2]), null, KV, [], [],
+                         { uf: 27.0, ratedKV: 6.2 }, null, THR);
+  rated.swaps.forEach(sw => {
+    const st = unitVoltageStats(sw.y1, sw.y2, KV, 6.2);
+    check(`with rated 6.2 kV, budget ${sw.swapCount}: no unit > 110 % (max ${st.maxPctRated.toFixed(1)} %)`, st.ovCount === 0);
+  });
+  check('with rated 6.2 kV: the weak pair is replaced (2 spares)', rated.swaps[0].sparesUsed === 2);
+}
+
+// Case 13 — F5 (v9.6): an imbalance BETWEEN PHASES OF ONE WYE (A' high, B' low, Y1
+// perfect). In-phase swaps can only MIRROR it (A↔A' + B↔B': I_no = 0 but BOTH wyes
+// end up unbalanced, ΔC 0.031 µF each, 2 swaps). A same-side swap A'↔B' truly balances
+// Y2 in ONE swap with no spare (I_no ≈ 12 mA). The least-work plan for ref 50 must be
+// that 1-swap same-side plan. (Budget cards still rank lowest I_no → they may show
+// the mirror — documented trade-off.)
+console.log('\nCase 13 — same-side cross-phase swap balances a wye without a spare');
+{
+  const res = run(bank(8, 27.0, [["A'-1", 28.0], ["A'-2", 28.0], ["B'-1", 26.0], ["B'-2", 26.0]]), []);
+  const side = u => (u.origin || '').includes("'") ? 2 : 1;
+  const base = u => (u.origin || '').replace("'", '');
+  const lw = res.refPlans[50];
+  check('budget-2 passes the relay with no spares', res.swaps[0].Ino_mA < THR && res.swaps[0].sparesUsed === 0);
+  check('least-work plan for ref 50: 1 swap, 0 spares', !!lw && lw.actualSwaps === 1 && lw.sparesUsed === 0);
+  check("…and it is a same-side cross-phase exchange (A'↔B')",
+    !!lw && lw.acts.some(a => a.type === 'exchange' && side(a.from) === side(a.to) && base(a.from) !== base(a.to)));
+  const sp = spreadOf(calcYY(lw.y1, lw.y2, KV));
+  check(`…which really balances Y2 (ΔC ${sp.y2.toFixed(4)} ≤ 0.005 µF)`, sp.y2 <= 0.005 && sp.y1 <= 0.005);
+  assertConsistent('sameside', res);
+}
+
+// Case 14 — the field bank that exposed F1/F2 (69 kV): 5 failed units in B (21–25 µF)
+// + an over-capacitive A' (29,28,26,29,28), 10 good spares. It needs ~8 swaps:
+//  • F2: 6 swaps can't pass → the search must extend (quickResult.extended).
+//  • F1: when nothing passes, the lower-I_no plan must win over the "lower level"
+//        one (v9.5 picked L0 at 306.9 mA over L1 at ~188 mA for budget 6).
+//  • the deepest budget passes with every failed unit out.
+async function case14() {
+  console.log('\nCase 14 — field bank: adaptive depth (F2) + no-pass ranking (F1)');
+  const cc = vm.runInContext('clientCalculate', ctx);
+  const mk = (o, arr) => arr.map((v, i) => ({ id: `${o}-${i + 1}`, val: v, origin: o, pos: i }));
+  const n27 = () => Array(10).fill(27);
+  const r = await cc({ topology: 'yy-unground', systemKV: 69, alarmMA: 50,
+    y1: [...mk('A', n27()), ...mk('B', [27, 27, 24, 23, 22, 21, 25, 26, 28, 27.5]), ...mk('C', n27())],
+    y2: [...mk("A'", [27, 29, 28, 26, 27, 29, 28, 27, 27, 27]), ...mk("B'", n27()), ...mk("C'", n27())],
+    spare: spares(Array(10).fill(27)) });
+  const q = r.quickResult, sw = q.swaps, last = sw[sw.length - 1];
+  check('search extended beyond 6 swaps', q.extended === true && q.maxDepth > 6);
+  check('budget 6 picks the lower-I_no plan (< 306.9 mA)', sw[2].Ino_mA < 306);
+  check(`deepest budget passes (I_no ${last.Ino_mA.toFixed(2)} < 50)`, last.underThreshold);
+  check('deepest budget has every failed unit out', ![...last.y1Full, ...last.y2Full].some(u => u.origin !== 'Spare' && outTol(u.val)));
+  check('ref < 50 mA is reachable in the comparison table', !!q.refTable.find(x => x.ref === 50 && x.plan));
+}
+
+// Cases 15–16 — field bank #2 (69 kV): phase C on BOTH wyes damaged
+//   C  = 23,24,25,26,28,29,27,25,26,27   C' = 22,21,19,17,26,27,28,29,27,27
+// 8 failed units (outside 25.65–29.70). v9.6 with 5 spares left C'-2 = 21 µF in
+// (125.8 % voltage share) and passed only by MIRRORING (ΔC 0.06 per wye).
+async function case1516() {
+  const cc = vm.runInContext('clientCalculate', ctx);
+  const mk = (o, arr) => arr.map((v, i) => ({ id: `${o}-${i + 1}`, val: v, origin: o, pos: i }));
+  const n27 = () => Array(10).fill(27);
+  const run2 = nSp => cc({ topology: 'yy-unground', systemKV: 69, alarmMA: 50,
+    y1: [...mk('A', n27()), ...mk('B', n27()), ...mk('C', [23, 24, 25, 26, 28, 29, 27, 25, 26, 27])],
+    y2: [...mk("A'", n27()), ...mk("B'", n27()), ...mk("C'", [22, 21, 19, 17, 26, 27, 28, 29, 27, 27])],
+    spare: spares(Array(nSp).fill(27)) });
+  const failedVals = p => [...p.y1Full, ...p.y2Full].filter(u => u.origin !== 'Spare' && outTol(u.val)).map(u => u.val).sort((a, b) => a - b);
+  const movedFailed = p => p.acts.some(a => (a.type === 'exchange' && (outTol(a.from.val) || outTol(a.to.val))) ||
+                                            (a.type === 'piece-swap' && (outTol(a.v1) || outTol(a.v2))));
+
+  console.log('\nCase 15 — too few spares (5 for 8 failed): replace the WORST, never move a failed unit (G1)');
+  {
+    const q = (await run2(5)).quickResult;
+    const rec = q.refTable.find(x => x.ref === 50 && x.plan).plan;
+    check(`only the least-severe failed units stay (got ${failedVals(rec).join(', ')})`, failedVals(rec).join(',') === '24,25,25');
+    check('no failed unit is moved by an exchange (any budget / ref plan)',
+      ![...q.swaps, ...q.refTable.filter(x => x.plan).map(x => x.plan)].some(movedFailed));
+    check(`worst unit voltage share < 115 % (got ${rec.unitV.maxPctShare.toFixed(1)} %)`, rec.unitV.maxPctShare < 115);
+    check('passes I_no ref 50', rec.Ino_mA < 50);
+  }
+
+  console.log('\nCase 16 — enough spares (8): balance-first gives A=B=C on each wye, all failed out');
+  {
+    const q = (await run2(8)).quickResult;
+    const rec = q.refTable.find(x => x.ref === 50 && x.plan).plan;
+    check('every failed unit replaced', failedVals(rec).length === 0);
+    check(`each wye balanced (ΔC Y1 ${rec.spread.y1.toFixed(4)} / Y2 ${rec.spread.y2.toFixed(4)} ≤ 0.005)`, rec.spread.max <= 0.005);
+    check('passes I_no ref 50', rec.Ino_mA < 50);
+  }
+}
+
+// Cases 17–19 (v9.8)
+async function case171819() {
+  const cc = vm.runInContext('clientCalculate', ctx);
+  const mk = (o, arr) => arr.map((v, i) => ({ id: `${o}-${i + 1}`, val: v, origin: o, pos: i }));
+  const n27 = () => Array(10).fill(27);
+  const bank3 = nSp => cc({ topology: 'yy-unground', systemKV: 69, alarmMA: 50,
+    y1: [...mk('A', n27()), ...mk('B', n27()), ...mk('C', [29, 28, 27, 22, 21, 19, 25, 26, 24, 25])],
+    y2: [...mk("A'", n27()), ...mk("B'", [26, 22, 21, 27, 25, 29, 28, 26, 25, 24]), ...mk("C'", n27())],
+    spare: spares(Array(nSp).fill(27)) });
+  const onceOnly = p => { const ids = p.acts.filter(a => a.type === 'exchange').flatMap(a => [a.from.id, a.to.id]); return new Set(ids).size === ids.length; };
+
+  // Case 17 — field bank #3: 11 failed units, only 4 good spares → nothing can pass.
+  // The recommendation must be ONLY "replace the 4 worst" + "need 7 more spares";
+  // in-rack shuffling now would be wasted (the bank is re-arranged when spares come).
+  console.log('\nCase 17 — too few spares to pass: recommend only the worst replacements (#4)');
+  {
+    const q = (await bank3(4)).quickResult, so = q.sparesOnly;
+    check('a spares-only plan is produced', !!so);
+    check('it is 4 spare replacements and nothing else', so && so.actualSwaps === 4 && so.acts.every(a => a.type !== 'exchange'));
+    const out = so ? so.acts.map(a => a.from.val).sort((a, b) => a - b).join(',') : '';
+    check(`it removes the WORST failed units (got ${out})`, out === '19,21,21,22');
+    check('reports 7 more good spares needed', q.sparesShort === 7);
+  }
+
+  // Case 18 — move-once: no plan ever moves the same physical unit twice (the v9.7
+  // plan for bank #3 moved C-2 three times and B-1 twice through A/A').
+  console.log('\nCase 18 — move-once: no unit moved twice (bank #3 and the other field banks)');
+  {
+    const q4 = (await bank3(4)).quickResult, q11 = (await bank3(11)).quickResult;
+    const plans = [...q4.swaps, ...q11.swaps, ...[q4, q11].flatMap(q => q.refTable.filter(x => x.plan).map(x => x.plan))];
+    check(`every plan moves each unit at most once (${plans.length} plans)`, plans.every(onceOnly));
+    const p11 = q11.refTable.find(x => x.ref === 50 && x.plan);
+    check('with 11 spares the bank passes ref 50 and every failed unit is out', !!p11 && p11.plan._fail === 0);
+  }
+
+  // Case 19 — direct cross-side cross-phase swap (v9.8): C (Y1) has one 28, B' (Y2)
+  // has one 26. ONE swap C-28 ↔ B'-27 balances both wyes (C all 27; B' gets 28+26).
+  // Without cross-side moves it takes 2 (C↔C', then C'↔B').
+  console.log("\nCase 19 — a direct C↔B' swap when that's the real fix");
+  {
+    const res = run(bank(10, 27.0, [['C-1', 28.0], ["B'-1", 26.0]]), []);
+    const lw = res.refPlans[50];
+    const side = u => (u.origin || '').includes("'") ? 2 : 1, base = u => (u.origin || '').replace("'", '');
+    check('least-work plan for ref 50 is ONE swap', !!lw && lw.actualSwaps === 1);
+    check("…a cross-side cross-phase exchange (C↔B')", !!lw && lw.acts.some(a => a.type === 'exchange' && side(a.from) !== side(a.to) && base(a.from) !== base(a.to)));
+    const sp = lw ? spreadOf(calcYY(lw.y1, lw.y2, KV)) : { max: 1 };
+    check(`…that balances both wyes (ΔC ${sp.max.toFixed(4)} ≤ 0.005)`, sp.max <= 0.005);
+  }
+}
+
+// Case 20 (v9.9) — spare SHORTAGE → temporary plan. Field bank #4 (115 kV): C has 9
+// failed units (19–25 µF), B' has 5 (16–21 µF); only 4 good spares. With failed units
+// pinned, C can never reach A/B (ΔC 0.27 µF, I_no > 2 A). Temp mode replaces the 4 WORST
+// and moves the remaining failed units (each once) so A=B=C on each side.
+async function case20() {
+  console.log('\nCase 20 — spare shortage: temporary plan moves failed units to balance each side');
+  const cc = vm.runInContext('clientCalculate', ctx);
+  const mk = (o, arr) => arr.map((v, i) => ({ id: `${o}-${i + 1}`, val: v, origin: o, pos: i }));
+  const n27 = () => Array(10).fill(27);
+  const run4 = nSp => cc({ topology: 'yy-unground', systemKV: 115, alarmMA: 50,
+    y1: [...mk('A', n27()), ...mk('B', n27()), ...mk('C', [22, 19, 21, 23, 25, 26, 25, 24, 25, 25])],
+    y2: [...mk("A'", n27()), ...mk("B'", [21, 19, 18, 16, 17, 28, 27, 29, 29, 28]), ...mk("C'", n27())],
+    spare: spares(Array(nSp).fill(27)) });
+  const q = (await run4(4)).quickResult, tp = q.tempPlan;
+  check('a temporary plan is produced', !!tp && tp.tempMove === true);
+  check(`it passes I_no 50 (got ${tp ? tp.Ino_mA.toFixed(2) : '-'} mA)`, !!tp && tp.Ino_mA < 50);
+  check(`each side nearly balanced (ΔC ${tp ? tp.spread.max.toFixed(4) : '-'} ≤ 0.012 µF)`, !!tp && tp.spread.max <= 0.012);
+  const out = tp ? tp.acts.filter(a => SPARE.has(a.type)).map(a => a.from.val).sort((a, b) => a - b) : [];
+  check(`all 4 spares replace the worst units (got ${out.join(', ')})`, out.length === 4 && out.slice(0, 3).join(',') === '16,17,18');
+  const ids = tp ? tp.acts.filter(a => a.type === 'exchange').flatMap(a => [a.from.id, a.to.id]) : [];
+  check('each unit moved at most once', new Set(ids).size === ids.length);
+  check('reports 10 more good spares needed', q.sparesShort === 10);
+  const q14 = (await run4(14)).quickResult;
+  check('with enough spares (14) there is NO temporary plan', !q14.tempPlan);
+}
+
+// Case 21 (v10.0) — real field bank SNO-CAY5 (115 kV, 11/phase): Y1 single units, Y2
+// parallel pairs (A' all measured separately, B'-10/C'-10 scissored, rest grouped
+// ~54 µF), 3 spares. Guards bug A (grouped 54 µF slots are NOT failed), bug B (each
+// scissored piece position changes at most once) and the balance-first spare mode.
+async function case21() {
+  console.log('\nCase 21 — field bank SNO-CAY5: grouped slots, piece move-once, balance-first');
+  const cc = vm.runInContext('clientCalculate', ctx);
+  const spec = ctx.window.capSpecOf(27);
+  const oot = ctx.window.unitOutOfTolerance;
+  check('grouped 2×27 slot reading 54.9 µF is NOT failed (bug A)', !oot({ val: 54.9, isLocked: true }, spec));
+  check('grouped slot reading 49.0 µF (24.5 per unit) IS failed', oot({ val: 49.0, isLocked: true }, spec));
+  const Y1 = { A: [27.5, 26.7, 27.6, 26.7, 27.5, 26.1, 27.4, 24.1, 27.5, 27.5, 27.4], B: [26.7, 27.5, 26.8, 27.6, 27.4, 27.7, 27.5, 27.1, 27.7, 27.4, 27.5], C: [27.2, 26.7, 27.6, 27.5, 27.4, 27.2, 27.5, 27.5, 27.1, 27.1, 27.7] };
+  const Ap = [[27.6, 24.5], [26.7, 23.6], [24.3, 27.5], [26.7, 22.4], [24.3, 27.3], [26.6, 27.4], [23.4, 27.4], [25, 24.3], [27.5, 24.5], [27.4, 21.2], [27.1, 27.5]];
+  const Bp = [55.1, 54.3, 54.2, 55.1, 54.8, 54.9, 54.9, 54.9, 54.4, [26.5, 27.5], 54.5], Cp = [55.2, 55, 55, 54.9, 54, 54.9, 54.9, 53.4, 54.3, [27.3, 27.4], 54.9];
+  const y1 = []; for (const p of 'ABC') Y1[p].forEach((v, i) => y1.push({ id: `${p}-${i + 1}`, val: v, origin: p, pos: i }));
+  const y2 = []; const add = (o, arr) => arr.forEach((v, i) => y2.push(Array.isArray(v)
+    ? { id: `${o}-${i + 1}`, val: v[0] + v[1], origin: o, pos: i, isLocked: false, isSplit: true, measuredA: v[0], measuredB: v[1] }
+    : { id: `${o}-${i + 1}`, val: v, origin: o, pos: i, isLocked: true }));
+  add("A'", Ap); add("B'", Bp); add("C'", Cp);
+  const q = (await cc({ topology: 'yy-unground', systemKV: 115, alarmMA: 50, y1, y2, balSumUF: 0.1, sparePriority: 'balance',
+    spare: spares([27.3, 27.4, 27.5]) })).quickResult;
+  check(`failed count = 10 slots, not 30 (got ${q.failedTotal})`, q.failedTotal === 10);
+  const plans = [q.tempPlan, ...q.swaps, ...q.refTable.filter(x => x.plan).map(x => x.plan)].filter(Boolean);
+  const pieceOnce = p => { const k = []; p.acts.forEach(a => {
+    if (a.type === 'piece-swap') k.push(a.u1.id + '.' + a.p1, a.u2.id + '.' + a.p2);
+    if (a.type === 'piece-replace') k.push(a.from.id + '.' + a.piece); }); return new Set(k).size === k.length; };
+  check(`every plan changes each piece position at most once (${plans.length} plans, bug B)`, plans.every(pieceOnce));
+  const tp = q.tempPlan;
+  check(`balance-first temp plan passes I_no 50 (got ${tp ? tp.Ino_mA.toFixed(1) : '-'} mA)`, !!tp && tp.Ino_mA < 50);
+  check(`…with each side tighter than worst-first (ΔC ${tp ? tp.spread.y1.toFixed(4) + '/' + tp.spread.y2.toFixed(4) : '-'} ≤ 0.01/0.025)`,
+    !!tp && tp.spread.y1 <= 0.01 && tp.spread.y2 <= 0.025);
+  check(`…in ≤ 10 swaps (got ${tp ? tp.actualSwaps : '-'})`, !!tp && tp.actualSwaps <= 10);
+}
+
+(async () => {
+  await case14();
+  await case1516();
+  await case171819();
+  await case20();
+  await case21();
+  console.log('');
+  if (failures) {
+    console.error(`✗ ${failures} assertion(s) FAILED — swap optimizer has regressed.`);
+    process.exit(1);
+  }
+  console.log('✓ All swap optimizer tests passed.');
+})();
+

@@ -34,6 +34,16 @@ if (typeof window !== 'undefined') window.NAMEPLATE_UF = NAMEPLATE_UF;
 // expect; a looser value makes the balance badge pass while the relay still trips.
 const PHASE_SPREAD_UF = 0.005;
 if (typeof window !== 'undefined') window.PHASE_SPREAD_UF = PHASE_SPREAD_UF;
+// v10.0 — the field engineer sets the balance target in Step 2 the way the field sheet
+// does it: the per-phase (rack) SUM ΣC within a wye may differ by at most X µF (field
+// practice 0.1 µF = the Step-2 default). For n units in series per phase,
+// ΔC_series ≈ ΔΣC / n² (first order), so clientCalculate converts it to the series
+// tolerance BAL_TOL_UF used everywhere. If no value is passed (tests / legacy callers)
+// BAL_SUM_DEFAULT 0.5 µF ≈ the pre-v10 0.005 µF series at 10 units/phase.
+const BAL_SUM_DEFAULT = 0.5;
+let BAL_TOL_UF = PHASE_SPREAD_UF;            // set per calculation by clientCalculate
+let BAL_FIRST = false;                        // v10.0 spare priority "balance first" (per calc)
+if (typeof window !== 'undefined') window.BAL_SUM_DEFAULT = BAL_SUM_DEFAULT;
 
 // I_no "tie" band (mA). When two candidate plans BOTH pass the relay threshold,
 // I_no values within this band count as equal, so the picker prefers the plan that
@@ -41,6 +51,10 @@ if (typeof window !== 'undefined') window.PHASE_SPREAD_UF = PHASE_SPREAD_UF;
 // when either plan fails the relay. See better() in findPhaseAwareYYSwaps. (YY only.)
 const INO_TIE_MA = 2.0;
 if (typeof window !== 'undefined') window.INO_TIE_MA = INO_TIE_MA;
+// v9.7: when NO plan can reach within-side balance (≤ PHASE_SPREAD_UF), spreads that
+// differ by less than this are treated as equal so the picker prefers less work
+// instead of chasing a sliver of balance with many extra swaps.
+const SPREAD_TIE_UF = 0.001;
 
 // PHYSICAL RACK LAYOUT (left → right): A A' B B' C C'. Used only to describe a swap
 // to the technician (how far apart the two caps sit) — the v9.4 optimizer swaps
@@ -54,6 +68,110 @@ function rackDist(originP, originQ) {
 // `exchange` (in-phase) and `piece-swap` (scissored piece↔piece) use no spare.
 const SPARE_ACTION_TYPES = new Set(['replace-y1', 'replace-y2', 'piece-replace']);
 
+// Capacitance tolerance of a capacitor UNIT vs its rated (nameplate) capacitance —
+// IEC 60871-1:2005 §7.2 (identical: IS 13925-1:2012): −5 % … +10 %. A unit measuring
+// OUTSIDE this band is treated as FAILED (เสีย) — too LOW = lost elements / blown
+// internal fuses, too HIGH = shorted elements. These are only the DEFAULTS; the field
+// engineer can change rated C and the band in Step 2 (v9.5).
+const TOL_MINUS_PCT = 5;
+const TOL_PLUS_PCT  = 10;
+// IEEE Std 18: a capacitor must withstand 110 % of its rated rms voltage continuously.
+// When the unit rated voltage is entered, no arrangement may load a unit above this.
+const UNIT_OV_LIMIT = 1.10;
+// I_no reference targets compared side by side in the results (= the Step-2 bubbles).
+const INO_REF_LIST = [5, 10, 20, 30, 40, 50];
+// "Worth it" bar for extra work in the ref comparison: an extra-effort plan is marked
+// ⭐ คุ้มสุด only if it lowers I_no by at least this many mA PER EXTRA SWAP compared
+// with the least-work plan. Engineering judgement (10 % of a 50 mA relay per swap),
+// NOT a standard value — tune here.
+const INO_WORTH_MA_PER_SWAP = 5;
+// Search depth (v9.6, F2): every bank is searched to BASE_DEPTH swaps (budgets 2/4/6);
+// if that can't pass the I_no ref — or can't get the failed units out while good
+// spares remain — the search is re-run to EXT_DEPTH and a "สูงสุด" budget is added.
+const BASE_DEPTH = 6;
+const EXT_DEPTH  = 12;
+const TEMP_DEPTH = 16;   // v9.9 — temp mode (failed units may move): spreading needs more swaps
+if (typeof window !== 'undefined') {
+  window.TOL_MINUS_PCT = TOL_MINUS_PCT; window.TOL_PLUS_PCT = TOL_PLUS_PCT;
+  window.UNIT_OV_LIMIT = UNIT_OV_LIMIT; window.INO_REF_LIST = INO_REF_LIST; window.INO_WORTH_MA_PER_SWAP = INO_WORTH_MA_PER_SWAP;
+}
+
+// Normalize the capacitor rating spec. Accepts a plain number (legacy: rated µF) or
+// { uf, minusPct, plusPct, ratedKV }. Missing fields fall back to the defaults.
+function capSpecOf(spec) {
+  const s = (spec && typeof spec === 'object') ? spec : { uf: spec };
+  const num = (v, d) => (typeof v === 'number' && isFinite(v) && v >= 0) ? v : d;
+  const uf = (typeof s.uf === 'number' && s.uf > 0) ? s.uf : NAMEPLATE_UF;
+  return {
+    uf,
+    minusPct: num(s.minusPct, TOL_MINUS_PCT),
+    plusPct:  num(s.plusPct,  TOL_PLUS_PCT),
+    ratedKV:  (typeof s.ratedKV === 'number' && s.ratedKV > 0) ? s.ratedKV : null,
+    lo: uf * (1 - num(s.minusPct, TOL_MINUS_PCT) / 100),
+    hi: uf * (1 + num(s.plusPct,  TOL_PLUS_PCT)  / 100),
+  };
+}
+// One capacitance reading outside the tolerance band?
+function capValOutOfTol(v, spec) {
+  const s = spec && spec.lo != null ? spec : capSpecOf(spec);
+  return v < s.lo - 1e-9 || v > s.hi + 1e-9;
+}
+// A slot is failed if its reading (or, for a scissored pair, either measured piece)
+// is outside the band. A scissored slot's .val is the PAIR sum, so never test that.
+function unitOutOfTolerance(u, spec) {
+  if (!u) return false;
+  if (u.measuredA != null && u.measuredB != null) return capValOutOfTol(u.measuredA, spec) || capValOutOfTol(u.measuredB, spec);
+  return capValOutOfTol(u.val / parallelCountOf(u, spec), spec);
+}
+// v10.0 (bug A): a parallel-GROUP slot (side "ต่อขนาน", not measured separately) holds
+// n units in parallel and its reading is their SUM (~54 µF for 2×27). Judge it per unit
+// (val / n) — before v10 every 54 µF slot counted as "failed high".
+function parallelCountOf(u, spec) {
+  if (!u || !u.isLocked) return 1;
+  const s = spec && spec.lo != null ? spec : capSpecOf(spec);
+  return Math.max(1, Math.round(u.val / s.uf));
+}
+// Relative deviation of a slot from rated (scissored → its worse piece; group → per unit).
+function unitDevOf(u, spec) {
+  const s = spec && spec.lo != null ? spec : capSpecOf(spec);
+  if (u.measuredA != null && u.measuredB != null)
+    return Math.max(Math.abs(u.measuredA / s.uf - 1), Math.abs(u.measuredB / s.uf - 1));
+  return Math.abs(u.val / parallelCountOf(u, s) / s.uf - 1);
+}
+// Voltage across every series element: within one phase string the current is common,
+// so V_i = Vph · (1/C_i) / Σ(1/C_j). (The tiny neutral shift is ignored — tens of volts
+// vs tens of kV.) Returns the worst unit as % of its balanced share and, if the unit
+// rated voltage is known, as % of rated + how many units exceed UNIT_OV_LIMIT.
+function unitVoltageStats(y1, y2, systemKV, ratedKV) {
+  const vph = (systemKV || 69) / Math.sqrt(3);
+  const groups = {};
+  [...(y1 || []), ...(y2 || [])].forEach(u => {
+    if (!u || u.origin === 'Spare' || !(u.val > 0)) return;
+    (groups[u.origin] = groups[u.origin] || []).push(u);
+  });
+  let maxKV = 0, maxPctShare = 0, worst = null, ovCount = 0;
+  Object.values(groups).forEach(str => {
+    const inv = str.reduce((s, u) => s + 1 / u.val, 0);
+    const share = vph / str.length;
+    str.forEach(u => {
+      const v = vph * (1 / u.val) / inv;
+      if (v > maxKV) { maxKV = v; worst = u; }
+      maxPctShare = Math.max(maxPctShare, 100 * v / share);
+      if (ratedKV && v > UNIT_OV_LIMIT * ratedKV + 1e-12) ovCount++;
+    });
+  });
+  return {
+    maxKV, maxPctShare, ovCount,
+    maxPctRated: ratedKV ? 100 * maxKV / ratedKV : null,
+    worstId: worst ? worst.id : null,
+  };
+}
+if (typeof window !== 'undefined') {
+  window.capSpecOf = capSpecOf; window.unitOutOfTolerance = unitOutOfTolerance;
+  window.unitVoltageStats = unitVoltageStats;
+  window.unitDevOf = unitDevOf; window.parallelCountOf = parallelCountOf;
+}
+
 function sumC(arr) { return arr.reduce((t, c) => t + c.val, 0); }
 
 // Phase spread from a calcYYMetrics() result: the max−min of the per-phase SERIES
@@ -66,7 +184,7 @@ function sumC(arr) { return arr.reduce((t, c) => t + c.val, 0); }
 // gate anything. Balance compares the SERIES value per phase (engineer's choice — the
 // same C_phase shown as "อนุกรม"); the sum1/sum2 fields exist but are NOT used here.
 function phaseSpreadOf(metrics, tol) {
-  const t = (typeof tol === 'number' && tol > 0) ? tol : PHASE_SPREAD_UF;
+  const t = (typeof tol === 'number' && tol > 0) ? tol : BAL_TOL_UF;
   const p = metrics && metrics.perPhase;
   if (!p) return { y1: NaN, y2: NaN, all: NaN, max: NaN, ok: false, tol: t };
   const sp = a => Math.max.apply(null, a) - Math.min.apply(null, a);
@@ -218,10 +336,15 @@ function describeSwap(action) {
     const near = d <= 1 ? ' — ใกล้' : (d >= 4 ? ' — ไกล' : '');
     return `สลับ [${from.origin}] ↔ [${to.origin}] (ระยะ ${d}${near}): [${from.id}] ${from.val.toFixed(3)} ↔ [${to.id}] ${to.val.toFixed(3)} µF`;
   }
-  if (type === 'replace-y1') return `ถอด [${from.id}] (${from.val.toFixed(3)} µF) จาก Y1 → แทนด้วย [${to.id}] (${to.val.toFixed(3)} µF)`;
-  if (type === 'replace-y2') return `ถอด [${from.id}] (${from.val.toFixed(3)} µF) จาก Y2 → แทนด้วย [${to.id}] (${to.val.toFixed(3)} µF)`;
-  if (type === 'piece-replace') return `แทนชิ้น [${from.id}.${action.piece}] (${action.oldVal.toFixed(3)} µF) ด้วยอะไหล่ (${to.val.toFixed(3)} µF) → คู่เป็น ${action.newPairVal.toFixed(3)} µF`;
-  if (type === 'piece-swap')    return `สลับชิ้น [${action.u1.id}.${action.p1}] (${action.v1.toFixed(3)}) ↔ [${action.u2.id}.${action.p2}] (${action.v2.toFixed(3)} µF)`;
+  const srcTxt = to && to.pulledPiece ? `ชิ้นที่ถอดจาก [${to.id}]` : `[${to && to.id}]`;
+  if (type === 'replace-y1') return `ถอด [${from.id}] (${from.val.toFixed(3)} µF) จาก Y1 → แทนด้วย ${srcTxt} (${to.val.toFixed(3)} µF)`;
+  if (type === 'replace-y2') return `ถอด [${from.id}] (${from.val.toFixed(3)} µF) จาก Y2 → แทนด้วย ${srcTxt} (${to.val.toFixed(3)} µF)`;
+  // v10.0: say which PAIR, which piece, where the new piece comes from, and the new pair totals
+  if (type === 'piece-replace') return `คู่ขนาน [${from.id}] เปลี่ยนชิ้น ${action.piece} (${action.oldVal.toFixed(2)} µF) → ใส่ ${to.pulledPiece ? 'ชิ้นที่ถอดจาก' : 'อะไหล่'} [${to.id}] (${to.val.toFixed(2)} µF) · คู่ ${from.id} = ${action.newPairVal.toFixed(2)} µF`;
+  if (type === 'piece-swap') {
+    const n1 = action.u1.val - action.v1 + action.v2, n2 = action.u2.val - action.v2 + action.v1;
+    return `สลับชิ้นระหว่างคู่ขนาน: [${action.u1.id}] ชิ้น ${action.p1} (${action.v1.toFixed(2)}) ↔ [${action.u2.id}] ชิ้น ${action.p2} (${action.v2.toFixed(2)} µF) · คู่ ${action.u1.id} = ${n1.toFixed(2)}, คู่ ${action.u2.id} = ${n2.toFixed(2)} µF`;
+  }
   return '';
 }
 
@@ -302,10 +425,10 @@ function allSingleSwaps(y1, y2, spare, baseline) {
 
 // ═══════════════════════════════════════════════════════
 // PHASE-AWARE YY SWAP (fixes Ino mismatch + "Ino unchanged" bugs)
-// Unbalance is corrected WITHIN each phase: A(Y1)↔A'(Y2), B↔B', C↔C'.
-// A capacitor never leaves its phase, so its origin tag stays valid and
-// calcYYMetrics computes per-phase Ino correctly. The optimizer minimizes
-// each phase's |B_y1 - B_y2| (i.e. that phase's Ino), summed across phases.
+// Moves: exchanges between any two positions (in-phase A↔A', same-side A↔B, cross-
+// side A↔B' — v9.8; each unit moved at most once) and spare replacements. A moved unit takes the
+// origin tag of its NEW position, so calcYYMetrics always groups it into the right
+// phase string. Every candidate is scored by the real phasor I_no.
 // ═══════════════════════════════════════════════════════
 function phaseOf(item, isY2) {
   // Normalize origin to plain phase letter (strip prime). Spare has no phase.
@@ -335,25 +458,47 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   //  greedily replaces the worst per-phase outlier with the closest spare,
   //  ACCEPTING temporary Ino rises, recording the state after each swap.
   //
-  //  All visited states from BOTH tracks become candidates. Exchanges stay WITHIN a
-  //  phase (A↔A', B↔B', C↔C') or pull from Spare, so a capacitor never leaves its
-  //  phase. lockedY1Arr/lockedY2Arr are always included in every Ino evaluation but
-  //  never moved. `swapMode` is legacy/unused.
+  //  All visited states from BOTH tracks become candidates. Exchanges may pair any two
+  //  positions (in-phase A↔A', same-side A↔B, cross-side A↔B' — v9.8), each physical
+  //  unit moved at most once, never a failed unit.
+  //  lockedY1Arr/lockedY2Arr are always included in every Ino evaluation but never
+  //  moved. `swapMode` now carries options { maxDepth } (v9.6).
   const PHASES = ['A', 'B', 'C'];
-  const targets = [2, 4, 6];
+  // v9.6 — `swapMode` (legacy, unused) now carries options: { maxDepth }. Default 6
+  // (budgets 2/4/6). clientCalculate re-runs with a deeper search (e.g. 12) when 6
+  // swaps can't pass or can't get the failed units out; the extra budget is MAXDEPTH.
+  const OPTS = (swapMode && typeof swapMode === 'object') ? swapMode : {};
+  const MAXDEPTH = Math.max(6, Math.min(16, Math.floor(OPTS.maxDepth) || 6));
+  const targets = MAXDEPTH > 6 ? [2, 4, 6, MAXDEPTH] : [2, 4, 6];
+  // v9.9 — TEMPORARY mode (field decision): when there are more failed units than good
+  // spares, some failed units MUST stay in service. Then they may be MOVED (still at most
+  // once each) to spread their deficit evenly so A=B=C on each side — the bank is usable
+  // now; it is re-arranged properly when spares arrive. Ranking puts within-side balance
+  // ahead of the per-unit overvoltage count in this mode (the stress is reported).
+  const MOVE_FAILED = !!OPTS.moveFailed;
+  const TOL = BAL_TOL_UF;                       // v10.0 user-set within-side balance tolerance
+  const BALF = BAL_FIRST;                       // v10.0 spare priority: balance first (field way)
   const kv = systemKV || 69;
   const lockY1 = lockedY1Arr || [];
   const lockY2 = lockedY2Arr || [];
-  const MAXDEPTH = 6;
   const THR = (typeof thresholdMA === 'number' && thresholdMA > 0) ? thresholdMA : ALARM_MA;
-  // Nameplate-failure awareness (optional). When set, the search treats units
-  // reading below `nameplate` as FAILED and prioritizes getting them OUT.
-  const NP = (typeof nameplate === 'number' && nameplate > 0) ? nameplate : null;
-  function isBelow(u) {
-    if (!NP || !u || u.origin === 'Spare') return false;
-    if (u.measuredA != null && u.measuredB != null) return u.measuredA < NP || u.measuredB < NP;
-    return u.val < NP;
+  // Capacitor rating (v9.5). `nameplate` is a number (rated µF, legacy) or the spec
+  // object { uf, minusPct, plusPct, ratedKV }. A unit OUTSIDE the tolerance band (either
+  // side) is FAILED and is taken OUT first. Failed spares — including units pulled out
+  // earlier — are never put back in service. If ratedKV is given, an arrangement that
+  // loads any unit above UNIT_OV_LIMIT × rated is ranked behind one that doesn't.
+  const HAS_NP = (typeof nameplate === 'number' && nameplate > 0) ||
+                 (nameplate && typeof nameplate === 'object');
+  const SPEC = HAS_NP ? capSpecOf(nameplate) : null;
+  const NP = SPEC ? SPEC.uf : null;
+  const RATED = SPEC ? SPEC.ratedKV : null;
+  function isBelow(u) {             // name kept from v6.5 — now means "out of tolerance"
+    if (!SPEC || !u || u.origin === 'Spare') return false;
+    return unitOutOfTolerance(u, SPEC);
   }
+  const goodSpare = s => !SPEC || !capValOutOfTol(s.val, SPEC);
+  // relative deviation of a failed unit (scissored → its worse piece)
+  const devOf = u => unitDevOf(u, SPEC);
 
   function bucket(arr) {
     const m = { A: [], B: [], C: [] };
@@ -367,9 +512,12 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   // Adaptive search width. When the candidate space is small we keep ALL depth-1
   // states so the 2-swap optimum is found EXACTLY (the budget the field worker
   // uses most); otherwise we cap to keep one calculation well under a second.
+  const sameSidePairs = side => side.A.length * side.B.length + side.A.length * side.C.length + side.B.length * side.C.length;
   const nSingles = PHASES.reduce((t, ph) =>
     t + y1ByPhase[ph].length * y2ByPhase[ph].length +
-    (y1ByPhase[ph].length + y2ByPhase[ph].length) * sparePool.length, 0);
+    (y1ByPhase[ph].length + y2ByPhase[ph].length) * sparePool.length, 0) +
+    sameSidePairs(y1ByPhase) + sameSidePairs(y2ByPhase) +
+    PHASES.reduce((t, P) => t + PHASES.reduce((u, Q) => u + (P === Q ? 0 : y1ByPhase[P].length * y2ByPhase[Q].length), 0), 0);
   const small = nSingles <= 200;
   const KEEP1 = small ? Math.max(nSingles, 1) : 60;
   const BEAM  = small ? 40 : 24;
@@ -390,17 +538,26 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
     const y1 = [...y1obj.A, ...y1obj.B, ...y1obj.C];
     const y2 = [...y2obj.A, ...y2obj.B, ...y2obj.C];
     const below = NP ? (y1.filter(isBelow).length + y2.filter(isBelow).length) : 0;
-    candidates.push({
-      ino, swaps: actions.length, sp: spUsed, below,
+    // v9.7 (G1): severity of what is LEFT — the worst relative deviation from rated C
+    // among failed units still installed. With too few spares, replace the WORST first.
+    const sev = NP ? [...y1, ...y2].filter(isBelow).reduce((m, u) => Math.max(m, devOf(u)), 0) : 0;
+    // v9.7: within-side balance (A=B=C per wye, series C) — the balance objective.
+    const spObj = phaseSpreadOf(calcYYMetrics([...y1, ...lockY1], [...y2, ...lockY2], kv));
+    const spread = spObj.max, spreadMin = Math.min(spObj.y1, spObj.y2);   // v10.0: the better side too
+    const ov = RATED ? unitVoltageStats([...y1, ...lockY1], [...y2, ...lockY2], kv, RATED).ovCount : 0;
+    const cand = {
+      ino, swaps: actions.length, sp: spUsed, below, ov, sev, spread, spreadMin,
       y1, y2, spare: spareArr.slice(),
       acts: actions.slice(),   // raw actions — UI pairs each swap to its units
       steps: actions.length ? actions.map(describeSwap) : ['ไม่มีการสับเปลี่ยนที่ลด Ino ได้']
-    });
+    };
+    candidates.push(cand);
+    return cand;
   }
   record(y1ByPhase, y2ByPhase, sparePool, [], baseIno);
 
   function sig(st) {
-    const f = a => a.map(u => u.val.toFixed(4)).join(',');
+    const f = a => a.map(u => u.val.toFixed(4)).sort().join(',');   // multiset: order is irrelevant
     return f(st.y1.A) + '|' + f(st.y1.B) + '|' + f(st.y1.C) + '#' +
            f(st.y2.A) + '|' + f(st.y2.B) + '|' + f(st.y2.C) + '@' +
            st.spare.map(u => u.val.toFixed(4)).sort().join(',');
@@ -422,14 +579,35 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   // a piece can be exchanged with another scissored slot's piece ("สับกันเอง"),
   // or replaced by a spare cap ("สลับจาก spare"). Grouped/locked units never move.
   // Equal-valued swaps are no-ops and are skipped (pure speed win).
+  // Representatives: the first index of each DISTINCT value (non-scissored units).
+  // Swapping any of several equal-valued units yields the same arrangement, so only
+  // one is evaluated (v9.6 speed-up; the field result is identical).
+  // goodOnly (exchanges): skip FAILED units — v9.7 user decision: a failed unit is
+  // either replaced by a spare or left where it is; it is never moved to another
+  // position to "spread" its deficit (that hides it and keeps it stressed).
+  // moved (v9.8): ids already moved by this plan — each physical unit is moved at most
+  // ONCE per plan (no detours through other phases; a technician moves a can once).
+  function reps(arr, goodOnly, moved) {
+    const seenV = new Set(), out = [];
+    arr.forEach((u, i) => { if (isScis(u)) return; if (goodOnly && !MOVE_FAILED && isBelow(u)) return; if (moved && moved.has(u.id)) return;
+      const k = u.val.toFixed(4); if (!seenV.has(k)) { seenV.add(k); out.push(i); } });
+    return out;
+  }
   function expand(st) {
     const kids = [];
+    const movedIds = new Set();                      // v9.8 move-once
+    st.actions.forEach(a => { if (a.type === 'exchange') { movedIds.add(a.from.id); movedIds.add(a.to.id); }
+                              else if (a.type === 'piece-replace') movedIds.add(a.from.id + '.' + a.piece);
+                              else if (a.type === 'piece-swap') { movedIds.add(a.u1.id + '.' + a.p1); movedIds.add(a.u2.id + '.' + a.p2); }
+                              else if (a.to && a.to.id) movedIds.add(a.to.id); });
+    const spReps = (() => { const seenV = new Set(), out = [];
+      st.spare.forEach((u, k) => { if (!goodSpare(u)) return; const v = u.val.toFixed(4); if (!seenV.has(v)) { seenV.add(v); out.push(k); } });
+      return out; })();
     for (const ph of PHASES) {
       const a1 = st.y1[ph], a2 = st.y2[ph], tag1 = ph, tag2 = ph + "'";
-      for (let i = 0; i < a1.length; i++) {
-        if (isScis(a1[i])) continue;
-        for (let j = 0; j < a2.length; j++) {
-          if (isScis(a2[j])) continue;
+      const r1 = reps(a1), r2 = reps(a2), g1 = reps(a1, true, movedIds), g2 = reps(a2, true, movedIds);
+      for (const i of g1) {
+        for (const j of g2) {
           const u1 = a1[i], u2 = a2[j];
           if (u1.val === u2.val) continue;
           const c = clone(st);
@@ -440,9 +618,11 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
           c.actions.push({ type: 'exchange', from: u1, to: u2 });
           kids.push(c);
         }
-        for (let k = 0; k < st.spare.length; k++) {
+      }
+      for (const i of r1) {
+        for (const k of spReps) {
           const removed = a1[i], sp = st.spare[k];
-          if (sp.val === removed.val) continue;
+          if (sp.val === removed.val || !goodSpare(sp)) continue;   // never install a failed unit
           const c = clone(st);
           c.y1[ph] = a1.slice();
           c.y1[ph][i] = Object.assign({}, sp, { origin: tag1 });
@@ -453,11 +633,10 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
           kids.push(c);
         }
       }
-      for (let j = 0; j < a2.length; j++) {
-        if (isScis(a2[j])) continue;
-        for (let k = 0; k < st.spare.length; k++) {
+      for (const j of r2) {
+        for (const k of spReps) {
           const removed = a2[j], sp = st.spare[k];
-          if (sp.val === removed.val) continue;
+          if (sp.val === removed.val || !goodSpare(sp)) continue;   // never install a failed unit
           const c = clone(st);
           c.y2[ph] = a2.slice();
           c.y2[ph][j] = Object.assign({}, sp, { origin: tag2 });
@@ -467,6 +646,55 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
           c.actions.push({ type: 'replace-y2', from: removed, to: sp });
           kids.push(c);
         }
+      }
+    }
+
+    // ── SAME-SIDE cross-phase exchanges (v9.6, F5) ──
+    // In-phase exchanges (A↔A') can only MIRROR an imbalance across the two wyes; they
+    // cannot balance a side. Swapping between phases of the SAME side (A↔B↔C on Y1,
+    // A'↔B'↔C' on Y2) redistributes capacitance so A=B=C within a wye WITHOUT a spare.
+    // (Cross-side cross-phase swaps such as A↔B' are generated separately below, v9.8.)
+    // The moved unit takes the phase tag of its new position.
+    for (const side of [1, 2]) {
+      const S = side === 1 ? st.y1 : st.y2, sfx = side === 1 ? '' : "'";
+      for (let p = 0; p < PHASES.length; p++) for (let q = p + 1; q < PHASES.length; q++) {
+        const P = PHASES[p], Q = PHASES[q], aP = S[P], aQ = S[Q];
+        const rP = reps(aP, true, movedIds), rQ = reps(aQ, true, movedIds);
+        for (const i of rP) {
+          for (const j of rQ) {
+            const u1 = aP[i], u2 = aQ[j];
+            if (u1.val === u2.val) continue;
+            const c = clone(st), C = side === 1 ? c.y1 : c.y2;
+            C[P] = aP.slice(); C[Q] = aQ.slice();
+            C[P][i] = Object.assign({}, u2, { origin: P + sfx });
+            C[Q][j] = Object.assign({}, u1, { origin: Q + sfx });
+            c.ino = inoOf(c.y1, c.y2);
+            c.actions.push({ type: 'exchange', from: u1, to: u2 });
+            kids.push(c);
+          }
+        }
+      }
+    }
+
+    // ── CROSS-SIDE cross-phase exchanges (v9.8) ──
+    // e.g. C (Y1) ↔ B' (Y2). Units share one rating, so this is one physical swap.
+    // Before v9.8 the search could only reach this through a 3-step detour via other
+    // phases (moving equal 27 µF units around for nothing); with move-once that detour
+    // is impossible, so the direct move is generated here instead.
+    for (const P of PHASES) for (const Q of PHASES) {
+      if (P === Q) continue;                       // same phase = in-phase exchange above
+      const aP = st.y1[P], aQ = st.y2[Q];
+      const rP = reps(aP, true, movedIds), rQ = reps(aQ, true, movedIds);
+      for (const i of rP) for (const j of rQ) {
+        const u1 = aP[i], u2 = aQ[j];
+        if (u1.val === u2.val) continue;
+        const c = clone(st);
+        c.y1[P] = aP.slice(); c.y2[Q] = aQ.slice();
+        c.y1[P][i] = Object.assign({}, u2, { origin: P });
+        c.y2[Q][j] = Object.assign({}, u1, { origin: Q + "'" });
+        c.ino = inoOf(c.y1, c.y2);
+        c.actions.push({ type: 'exchange', from: u1, to: u2 });
+        kids.push(c);
       }
     }
 
@@ -481,16 +709,17 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
     for (const loc of scis) {
       const u = arrOf(st, loc)[loc.i];
       for (const pc of ['a', 'b']) {
+        if (movedIds.has(u.id + '.' + pc)) continue;            // v10.0: each piece position changed once
         const oldVal = pc === 'a' ? u.measuredA : u.measuredB;
         for (let k = 0; k < st.spare.length; k++) {
           const sp = st.spare[k];
-          if (sp.val === oldVal) continue;
+          if (sp.val === oldVal || !goodSpare(sp)) continue;
           const c = clone(st);
           const nu = pc === 'a' ? pieceUnit(u, sp.val, u.measuredB) : pieceUnit(u, u.measuredA, sp.val);
           (loc.side === 1 ? c.y1 : c.y2)[loc.ph] = arrOf(st, loc).slice();
           arrOf(c, loc)[loc.i] = nu;
           c.spare = st.spare.slice();
-          c.spare[k] = Object.assign({}, sp, { val: oldVal, origin: 'Spare' });
+          c.spare[k] = { id: u.id + '.' + pc, val: oldVal, origin: 'Spare', pos: sp.pos, pulledPiece: true };
           c.ino = inoOf(c.y1, c.y2);
           c.actions.push({ type: 'piece-replace', from: u, piece: pc, oldVal, to: sp, newPairVal: nu.val });
           kids.push(c);
@@ -503,9 +732,11 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
         const A = scis[m], B = scis[n];
         const uA = arrOf(st, A)[A.i], uB = arrOf(st, B)[B.i];
         for (const pa of ['a', 'b']) for (const pb of ['a', 'b']) {
+          if (movedIds.has(uA.id + '.' + pa) || movedIds.has(uB.id + '.' + pb)) continue;   // v10.0 move-once
           const va = pa === 'a' ? uA.measuredA : uA.measuredB;
           const vb = pb === 'a' ? uB.measuredA : uB.measuredB;
           if (va === vb) continue;
+          if (!MOVE_FAILED && SPEC && (capValOutOfTol(va, SPEC) || capValOutOfTol(vb, SPEC))) continue;   // never move a failed piece (except temp mode)
           const c = clone(st);
           (A.side === 1 ? c.y1 : c.y2)[A.ph] = arrOf(st, A).slice();
           (B.side === 1 ? c.y1 : c.y2)[B.ph] = arrOf(st, B).slice();
@@ -534,10 +765,23 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
     const uniq = [];
     for (const k of kids) {
       const s = sig(k);
-      if (!seen.has(s)) { seen.add(s); uniq.push(k); record(k.y1, k.y2, k.spare, k.actions, k.ino); }
+      if (!seen.has(s)) { seen.add(s); uniq.push(k); const cd = record(k.y1, k.y2, k.spare, k.actions, k.ino); k.below = cd.below; k.ov = cd.ov; k.sev = cd.sev; k.spread = cd.spread; k.spreadMin = cd.spreadMin; }
     }
-    uniq.sort((a, b) => a.ino - b.ino);
-    beam = uniq.slice(0, d === 1 ? KEEP1 : BEAM);
+    // v9.6 (F4): keep BOTH the states that get failed units out (even if I_no rises
+    // for now — removing a failure can unmask another) AND the lowest-I_no states.
+    const cap = d === 1 ? KEEP1 : BEAM;
+    // v9.7: thirds — failed-out (count, severity, overvoltage), within-side balance,
+    // and lowest I_no — so balancing paths survive even while I_no is still high.
+    const byFail = uniq.slice().sort((a, b) => (a.below - b.below) || (a.sev - b.sev) || (a.ov - b.ov) || (a.ino - b.ino));
+    const bySpr  = uniq.slice().sort((a, b) => BALF ? ((a.spread - b.spread) || (a.spreadMin - b.spreadMin) || (a.ino - b.ino))
+                                                   : ((a.below - b.below) || (a.sev - b.sev) || (a.spread - b.spread) || (a.ino - b.ino)));
+    const byIno  = uniq.slice().sort((a, b) => a.ino - b.ino);
+    const third = Math.ceil(cap / 3), pickSet = new Set();
+    beam = [];
+    for (const L of [byFail, bySpr, byIno]) {
+      let n = 0;
+      for (const k of L) { if (n >= third || beam.length >= cap) break; if (!pickSet.has(k)) { pickSet.add(k); beam.push(k); n++; } }
+    }
     if (!beam.length) break;
   }
 
@@ -578,7 +822,7 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
       if (!best) break;
       // pick the spare closest to that phase's mode
       let bk = -1, bd = Infinity;
-      sp.forEach((s, k) => { const dd = Math.abs(s.val - best.mode); if (dd < bd) { bd = dd; bk = k; } });
+      sp.forEach((s, k) => { if (!goodSpare(s)) return; const dd = Math.abs(s.val - best.mode); if (dd < bd) { bd = dd; bk = k; } });
       if (bk < 0) break;
       const arr = best.side === 1 ? cy1[best.ph] : cy2[best.ph];
       const removed = arr[best.idx], spUnit = sp[bk], tag = removed.origin;
@@ -589,19 +833,58 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
     }
   })();
 
-  // ── merge: best candidate per budget ──
-  // 1. get FAILED (below-nameplate) units OUT first (fewest left installed) — v6.5
-  // 2. lowest I_no — but when BOTH plans pass the relay, I_no within INO_TIE_MA is
-  //    a tie (v9.4: don't burn spares to shave a few mA)
-  // 3. FEWEST spares used (v9.4 — v6.5 preferred the MOST)
-  // 4. fewest swaps, then lowest I_no
+  // ── merge: best candidate per budget (v9.7) ──
+  // 1. FEWEST failed units left installed (v6.5)
+  // 2. LEAST SEVERE failed units left (G1) — with too few spares, replace the worst
+  // 3. no unit above UNIT_OV_LIMIT × rated voltage (v9.5)
+  // 4. passes the I_no ref
+  // 5. if it passes: WITHIN-SIDE BALANCE FIRST (A=B=C per wye ≤ PHASE_SPREAD_UF;
+  //    if neither is balanced, the tighter spread beyond SPREAD_TIE_UF) → then least
+  //    work: fewest spares → fewest swaps → lowest I_no            (user decision)
+  //    if it doesn't: lowest I_no (closest to safe) → spares → swaps
   function better(c, best) {
+    const cp = c.ino < THR, bp = best.ino < THR;
+    if (BALF) {   // v10.0 balance first (field way): balance → pass → failed left → sev → ov → effort
+      const cb = c.spread <= TOL + 1e-9, bb = best.spread <= TOL + 1e-9;
+      if (cb !== bb) return cb;
+      if (!cb && Math.abs(c.spread - best.spread) > SPREAD_TIE_UF) return c.spread < best.spread;
+      if (cp !== bp) return cp;
+      if (NP && c.below !== best.below) return c.below < best.below;
+      if (Math.abs(c.sev - best.sev) > 1e-9) return c.sev < best.sev;
+      if (c.ov !== best.ov) return c.ov < best.ov;
+      if (!cp && Math.abs(c.ino - best.ino) > 1e-9) return c.ino < best.ino;
+      // the better-balanced side only as a tie-break: balancing one side while the other
+      // stays off can RAISE I_no (the two imbalances were partly cancelling)
+      if (cp && !cb && Math.abs(c.spreadMin - best.spreadMin) > SPREAD_TIE_UF) return c.spreadMin < best.spreadMin;
+      if (c.sp !== best.sp) return c.sp < best.sp;
+      if (c.swaps !== best.swaps) return c.swaps < best.swaps;
+      return c.ino < best.ino;
+    }
     if (NP && c.below !== best.below) return c.below < best.below;
-    const band = (c.ino < THR && best.ino < THR) ? INO_TIE_MA : 1e-9;
-    if (Math.abs(c.ino - best.ino) > band) return c.ino < best.ino;
+    if (Math.abs(c.sev - best.sev) > 1e-9) return c.sev < best.sev;
+    if (!MOVE_FAILED && c.ov !== best.ov) return c.ov < best.ov;
+    if (cp !== bp) return cp;
+    if (MOVE_FAILED) {     // v9.9 temp mode: balance → I_no → overvoltage → spares → swaps
+      const cb = c.spread <= TOL + 1e-9, bb = best.spread <= TOL + 1e-9;
+      if (cb !== bb) return cb;
+      if (Math.abs(c.spread - best.spread) > SPREAD_TIE_UF) return c.spread < best.spread;
+      if (!cp && Math.abs(c.ino - best.ino) > 1e-9) return c.ino < best.ino;
+      if (c.ov !== best.ov) return c.ov < best.ov;
+      if (c.sp !== best.sp) return c.sp < best.sp;
+      if (c.swaps !== best.swaps) return c.swaps < best.swaps;
+      return c.ino < best.ino;
+    }
+    if (cp) {
+      const cb = c.spread <= TOL + 1e-9, bb = best.spread <= TOL + 1e-9;
+      if (cb !== bb) return cb;
+      if (!cb && Math.abs(c.spread - best.spread) > SPREAD_TIE_UF) return c.spread < best.spread;
+      if (c.sp !== best.sp) return c.sp < best.sp;
+      if (c.swaps !== best.swaps) return c.swaps < best.swaps;
+      return c.ino < best.ino;
+    }
+    if (Math.abs(c.ino - best.ino) > 1e-9) return c.ino < best.ino;
     if (c.sp !== best.sp) return c.sp < best.sp;
-    if (c.swaps !== best.swaps) return c.swaps < best.swaps;
-    return c.ino < best.ino;
+    return c.swaps < best.swaps;
   }
   function pick(maxSwaps) {
     let best = candidates[0];
@@ -611,20 +894,41 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
     }
     return best;
   }
-  const results = targets.map(target => {
-    const b = pick(target);
-    return {
-      swapCount: target,
-      actualSwaps: b.swaps,
-      diff: b.ino,            // = Ino in mA
-      Ino_mA: b.ino,
-      sparesUsed: b.sp,
-      y1: b.y1, y2: b.y2, spare: b.spare,
-      acts: b.acts,           // raw actions — UI pairs each swap to its units
-      steps: b.steps
-    };
+  const fmt = (b, swapCount) => ({
+    swapCount,
+    actualSwaps: b.swaps,
+    diff: b.ino,            // = Ino in mA
+    Ino_mA: b.ino,
+    sparesUsed: b.sp,
+    y1: b.y1, y2: b.y2, spare: b.spare,
+    acts: b.acts,           // raw actions — UI pairs each swap to its units
+    steps: b.steps
   });
-  return { baseDiff: baseIno, baseIno, swaps: results };
+  const results = targets.map(target => fmt(pick(target), target));
+
+  // ── I_no reference comparison (v9.5) ──
+  // For each reference r: the LEAST-EFFORT plan that gets I_no below r — with the
+  // failed units out as far as the good spares allow (= the fewest failed left of any
+  // candidate) and no unit overvoltaged. Least effort = fewest swaps, then fewest
+  // spares, then lowest I_no. null = not reachable within MAXDEPTH swaps.
+  const minBelow = candidates.reduce((m, c) => Math.min(m, c.below), Infinity);
+  const minSev = candidates.filter(c => c.below === minBelow).reduce((m, c) => Math.min(m, c.sev), Infinity);
+  const refPlans = {};
+  INO_REF_LIST.forEach(r => {
+    const elig = candidates.filter(c => (BALF || (c.below === minBelow && c.sev <= minSev + 1e-9)) && (MOVE_FAILED || c.ov === 0) && c.ino < r);
+    if (!elig.length) { refPlans[r] = null; return; }
+    // balance first (v9.7): balanced plans if any; else the tightest spread (± tie band)
+    const bal = elig.filter(c => c.spread <= TOL + 1e-9);
+    const minSpr = elig.reduce((m, c) => Math.min(m, c.spread), Infinity);
+    const pool = bal.length ? bal : elig.filter(c => c.spread <= minSpr + SPREAD_TIE_UF);
+    let b = null;   // then (balance-first: fewest failed left → sev) → least work: swaps → spares → I_no
+    const lessWork = (c, b) => c.swaps < b.swaps || (c.swaps === b.swaps && (c.sp < b.sp || (c.sp === b.sp && c.ino < b.ino)));
+    for (const c of pool) if (!b || (BALF
+        ? (c.below < b.below || (c.below === b.below && (c.sev < b.sev - 1e-9 || (Math.abs(c.sev - b.sev) <= 1e-9 && lessWork(c, b)))))
+        : lessWork(c, b))) b = c;
+    refPlans[r] = fmt(b, b.swaps);
+  });
+  return { baseDiff: baseIno, baseIno, swaps: results, refPlans, minBelow, maxDepth: MAXDEPTH };
 }
 
 function findBest1to3Swaps(origY1, origY2, origS, baseline) {
@@ -819,8 +1123,20 @@ function unpackTier2Result(arr) {
 }
 
 async function clientCalculate(payload) {
-  const {topology, y1, y2, spare, legs, systemKV, alarmMA} = payload;
+  const {topology, y1, y2, spare, legs, systemKV, alarmMA, capRating, balSumUF, sparePriority} = payload;
+  // v10.0 — balance target (ΣC difference per rack, field-sheet style) → series tolerance;
+  // spare priority 'balance' (field way, default) or 'failed' (worst failed out first).
+  const BAL_SUM_UF = (parseFloat(balSumUF) > 0) ? parseFloat(balSumUF) : BAL_SUM_DEFAULT;
+  {
+    const cnt = {}; [...(y1 || []), ...(y2 || [])].forEach(u => { cnt[u.origin] = (cnt[u.origin] || 0) + 1; });
+    const ns = Object.values(cnt), n = ns.length ? ns.reduce((a, b) => a + b, 0) / ns.length : 10;
+    BAL_TOL_UF = BAL_SUM_UF / (n * n);
+    BAL_FIRST = sparePriority ? sparePriority === 'balance' : false;
+  }
   const kv = parseFloat(systemKV) || 69;
+  // Capacitor rating from Step 2 (v9.5): rated µF, tolerance band, unit rated kV.
+  // Falls back to NAMEPLATE_UF / IEC 60871-1 −5 %…+10 % / no voltage check.
+  const CAP = capSpecOf(capRating || NAMEPLATE_UF);
   // CT alarm threshold (mA). The field engineer sets this per-substation in Step 2;
   // ALARM_MA (top of file) is now only the DEFAULT fallback. It drives underThreshold
   // (pass/fail) + budget selection, and is stored on engBefore.thresholdMA so UI +
@@ -972,48 +1288,57 @@ async function clientCalculate(payload) {
     // For each budget we pick the LEAST-disruptive level that meets the (field-selected)
     // threshold; if none meets it, the lowest I_no. NEVER changes the I_no calc.
     const hasScissors = y1Flat.some(x => x.isSplit) || y2Flat.some(x => x.isSplit);
-    function isFailedUnit(x) {
-      if (x.measuredA != null && x.measuredB != null) return x.measuredA < NAMEPLATE_UF || x.measuredB < NAMEPLATE_UF;
-      return x.val < NAMEPLATE_UF;
-    }
+    // FAILED = outside the tolerance band of rated C (either side), v9.5.
+    function isFailedUnit(x) { return unitOutOfTolerance(x, CAP); }
     function sumByPhase(arr) {
       const m = { A: 0, B: 0, C: 0 };
       arr.forEach(x => { const p = (x.origin||'').replace("'",''); if (m[p] !== undefined) m[p] += x.val; });
       return m;
     }
-    function runPass(swapY1, swapY2, lockY1, lockY2, level) {
+    function runPass(swapY1, swapY2, lockY1, lockY2, level, depth, moveFailed) {
       const baseline = { y1ByPhase: sumByPhase(lockY1), y2ByPhase: sumByPhase(lockY2) };
-      const res = findPhaseAwareYYSwaps(swapY1, swapY2, spare || [], baseline, kv, lockY1, lockY2, NAMEPLATE_UF, null, THRESHOLD_MA);
-      res.swaps.forEach(sw => {
+      const res = findPhaseAwareYYSwaps(swapY1, swapY2, spare || [], baseline, kv, lockY1, lockY2, CAP,
+                                        { maxDepth: depth, moveFailed: !!moveFailed }, THRESHOLD_MA);
+      function decorate(sw) {
+        if (!sw) return sw;
         const fullY1 = [...sw.y1, ...lockY1];
         const fullY2 = [...sw.y2, ...lockY2];
         sw.engAfter = calcYYMetrics(fullY1, fullY2, kv);
         sw.Ino_mA = sw.engAfter.Ino_mA;
         sw.underThreshold = sw.Ino_mA < THRESHOLD_MA;
-        sw.spread = phaseSpreadOf(sw.engAfter);        // display only (not a goal in v9.4)
+        sw.spread = phaseSpreadOf(sw.engAfter);        // display only (not a goal since v9.4)
         sw.spreadOK = sw.spread.ok;
         sw.fullyPass = sw.underThreshold && sw.spreadOK;
+        sw.unitV = unitVoltageStats(fullY1, fullY2, kv, CAP.ratedKV);   // v9.5
+        sw.overV = sw.unitV.ovCount > 0;
         sw.y1Full = fullY1; sw.y2Full = fullY2;
         sw.level = level;
         sw.tier = level >= 2 ? 2 : 1;
-      });
+        return sw;
+      }
+      res.swaps.forEach(decorate);
+      Object.values(res.refPlans || {}).forEach(decorate);
       return res;
     }
 
     const y1Fail = y1Tier1.filter(isFailedUnit), y1Good = y1Tier1.filter(x => !isFailedUnit(x));
     const y2Fail = y2Tier1.filter(isFailedUnit), y2Good = y2Tier1.filter(x => !isFailedUnit(x));
 
-    const levels = [];
-    // L0 — failed Tier-1 only
-    levels.push(runPass(y1Fail, y2Fail, [...y1Good, ...y1Tier2], [...y2Good, ...y2Tier2], 0));
-    // L1 — all Tier-1 (only if there ARE good units to add; else identical to L0)
-    if (y1Good.length + y2Good.length > 0) {
-      levels.push(runPass(y1Tier1, y2Tier1, y1Tier2, y2Tier2, 1));
+    function buildLevels(depth) {
+      const lv = [];
+      // L0 — failed Tier-1 only
+      lv.push(runPass(y1Fail, y2Fail, [...y1Good, ...y1Tier2], [...y2Good, ...y2Tier2], 0, depth));
+      // L1 — all Tier-1 (only if there ARE good units to add; else identical to L0)
+      if (y1Good.length + y2Good.length > 0) {
+        lv.push(runPass(y1Tier1, y2Tier1, y1Tier2, y2Tier2, 1, depth));
+      }
+      // L2 — + grouped Tier-2 (skip when scissors used)
+      if (!hasScissors && (y1Tier2.length + y2Tier2.length) > 0) {
+        lv.push(runPass([...y1Tier1, ...y1Tier2], [...y2Tier1, ...y2Tier2], [], [], 2, depth));
+      }
+      return lv;
     }
-    // L2 — + grouped Tier-2 (skip when scissors used)
-    if (!hasScissors && (y1Tier2.length + y2Tier2.length) > 0) {
-      levels.push(runPass([...y1Tier1, ...y1Tier2], [...y2Tier1, ...y2Tier2], [], [], 2));
-    }
+    let levels = buildLevels(BASE_DEPTH);
 
     // Count failed (below-nameplate) units still installed in an arrangement.
     // Removed units sit in the spare pool (origin 'Spare') and don't count.
@@ -1022,25 +1347,181 @@ async function clientCalculate(payload) {
       [...(sw.y1Full || []), ...(sw.y2Full || [])].forEach(u => { if (u.origin !== 'Spare' && isFailedUnit(u)) n++; });
       return n;
     }
-    // Per budget, in priority order matching the field procedure (v6.5):
-    //   1. get the FAILED (<nameplate) units OUT — fewest left installed
-    //      (this stops the optimizer from "compensating" by reusing a bad unit)
-    //   2. meet the (field-selected) threshold — "ผ่านแล้วหยุด"
-    //   3. least disruptive (lower level = don't touch good/grouped if avoidable)
-    //   4. FEWEST spares (v9.4), then fewest swaps, then lowest I_no
+    // G1 (v9.7): how bad are the failed units still installed (worst relative deviation)
+    function failSev(sw) {
+      const dev = u => unitDevOf(u, CAP);
+      return [...(sw.y1Full || []), ...(sw.y2Full || [])]
+        .filter(u => u.origin !== 'Spare' && isFailedUnit(u)).reduce((m, u) => Math.max(m, dev(u)), 0);
+    }
+    const sprOf = sw => (sw.spread && isFinite(sw.spread.max)) ? sw.spread.max : Infinity;
+    const balOf = sw => sprOf(sw) <= BAL_TOL_UF + 1e-9;
+    // Per budget, in priority order matching the field procedure:
+    //   1. get the FAILED (out-of-tolerance) units OUT — fewest left installed
+    //   2. no unit above 110 % of rated voltage (v9.5)
+    //   3. meet the (field-selected) threshold — "ผ่านแล้วหยุด"
+    //   4a. if it passes: least disruptive (lower level) → fewest spares → swaps → I_no
+    //   4b. if NOTHING passes (v9.6, F1): LOWEST I_no first (closest to safe) → spares
+    //       → swaps → level. (v6.5 ranked the lower level first even then, so a failed-
+    //       only L0 plan at 307 mA beat an L1 plan at 188 mA.)
     function chooseBudget(i) {
       const cands = levels.map(p => p.swaps[i]).filter(Boolean);
-      cands.forEach(c => { c._fail = failRemain(c); });
-      cands.sort((a, b) =>
-        a._fail - b._fail
-        || ((b.underThreshold ? 1 : 0) - (a.underThreshold ? 1 : 0))
-        || a.level - b.level
-        || (a.sparesUsed || 0) - (b.sparesUsed || 0)
-        || a.actualSwaps - b.actualSwaps
-        || a.Ino_mA - b.Ino_mA);
+      cands.forEach(c => { c._fail = failRemain(c); c._sev = failSev(c); });
+      cands.sort((a, b) => {
+        if (BAL_FIRST) {    // v10.0: balance → spread → pass → failed → sev → ov → effort
+          const bl = (balOf(b) ? 1 : 0) - (balOf(a) ? 1 : 0); if (bl) return bl;
+          if (!balOf(a) && Math.abs(sprOf(a) - sprOf(b)) > SPREAD_TIE_UF) return sprOf(a) - sprOf(b);
+          const pp = (b.underThreshold ? 1 : 0) - (a.underThreshold ? 1 : 0); if (pp) return pp;
+          const df = a._fail - b._fail; if (df) return df;
+          if (Math.abs(a._sev - b._sev) > 1e-9) return a._sev - b._sev;
+          const oo = (a.overV ? 1 : 0) - (b.overV ? 1 : 0); if (oo) return oo;
+          return a.underThreshold
+            ? (a.level - b.level || (a.sparesUsed || 0) - (b.sparesUsed || 0) || a.actualSwaps - b.actualSwaps || a.Ino_mA - b.Ino_mA)
+            : (a.Ino_mA - b.Ino_mA || (a.sparesUsed || 0) - (b.sparesUsed || 0) || a.actualSwaps - b.actualSwaps || a.level - b.level);
+        }
+        const d = a._fail - b._fail; if (d) return d;
+        if (Math.abs(a._sev - b._sev) > 1e-9) return a._sev - b._sev;                 // G1
+        const o = (a.overV ? 1 : 0) - (b.overV ? 1 : 0); if (o) return o;
+        const p = (b.underThreshold ? 1 : 0) - (a.underThreshold ? 1 : 0); if (p) return p;
+        if (a.underThreshold) {
+          const bl = (balOf(b) ? 1 : 0) - (balOf(a) ? 1 : 0); if (bl) return bl;       // balance first
+          if (!balOf(a) && Math.abs(sprOf(a) - sprOf(b)) > SPREAD_TIE_UF) return sprOf(a) - sprOf(b);
+          return a.level - b.level || (a.sparesUsed || 0) - (b.sparesUsed || 0)
+              || a.actualSwaps - b.actualSwaps || a.Ino_mA - b.Ino_mA;
+        }
+        return (a.Ino_mA - b.Ino_mA) || (a.sparesUsed || 0) - (b.sparesUsed || 0)
+            || a.actualSwaps - b.actualSwaps || a.level - b.level;
+      });
       return cands[0];
     }
-    quickResult = { baseDiff: levels[0].baseIno, baseIno: levels[0].baseIno, swaps: levels[0].swaps.map((_, i) => chooseBudget(i)) };
+    const pickBudgets = () => levels[0].swaps.map((_, i) => chooseBudget(i));
+    let budgetPicks = pickBudgets();
+    // F2 (v9.6) — adaptive depth: if no budget passes, or failed units are still
+    // installed while GOOD spares remain, re-run the search deeper (up to EXT_DEPTH).
+    // Banks that already pass at 6 pay no extra time.
+    {
+      const best = budgetPicks[budgetPicks.length - 1];
+      const goodSp = (spare || []).filter(sp => !capValOutOfTol(sp.val, CAP)).length;
+      const needMore = !budgetPicks.some(sw => sw.underThreshold) ||
+                       (best._fail > 0 && goodSp > (best.sparesUsed || 0)) ||
+                       !balOf(best);                                  // v9.7: balance not reached yet
+      // v9.9: deep enough to replace every failed unit AND still balance (cap 16)
+      const nF = [...y1Flat, ...y2Flat].filter(isFailedUnit).length;
+      const extD = Math.min(TEMP_DEPTH, Math.max(EXT_DEPTH, Math.min(nF, goodSp) + 4));
+      if (needMore) { levels = buildLevels(extD); budgetPicks = pickBudgets(); }
+    }
+    quickResult = { baseDiff: levels[0].baseIno, baseIno: levels[0].baseIno, swaps: budgetPicks,
+                    maxDepth: levels[0].maxDepth, extended: levels[0].maxDepth > BASE_DEPTH };
+    // ── I_no reference comparison (v9.5) — least effort to get below each ref ──
+    // Merge the per-level plans: fewest failed left → no overvoltage → fewest swaps →
+    // fewest spares → lowest level → lowest I_no. "best value" = the TIGHTEST ref that
+    // costs no more work (swaps, then spares) than the cheapest reachable ref.
+    quickResult.refTable = INO_REF_LIST.map(r => {
+      const cands = levels.map(p => p.refPlans && p.refPlans[r]).filter(Boolean);
+      cands.forEach(c => { c._fail = failRemain(c); c._sev = failSev(c); });
+      cands.sort((a, b) => BAL_FIRST
+        ? (((balOf(b) ? 1 : 0) - (balOf(a) ? 1 : 0))
+          || (!balOf(a) && Math.abs(sprOf(a) - sprOf(b)) > SPREAD_TIE_UF ? sprOf(a) - sprOf(b) : 0)
+          || a._fail - b._fail || (a._sev - b._sev) || ((a.overV ? 1 : 0) - (b.overV ? 1 : 0))
+          || a.actualSwaps - b.actualSwaps || (a.sparesUsed || 0) - (b.sparesUsed || 0) || a.level - b.level || a.Ino_mA - b.Ino_mA)
+        : a._fail - b._fail || (a._sev - b._sev) || ((a.overV ? 1 : 0) - (b.overV ? 1 : 0))
+        || ((balOf(b) ? 1 : 0) - (balOf(a) ? 1 : 0))
+        || (!balOf(a) && Math.abs(sprOf(a) - sprOf(b)) > SPREAD_TIE_UF ? sprOf(a) - sprOf(b) : 0)
+        || a.actualSwaps - b.actualSwaps || (a.sparesUsed || 0) - (b.sparesUsed || 0)
+        || a.level - b.level || a.Ino_mA - b.Ino_mA);
+      return { ref: r, plan: cands[0] || null };
+    });
+    {
+      const ok = quickResult.refTable.filter(row => row.plan);
+      if (ok.length) {
+        // 🛠 least work = cheapest plan (fewest swaps, then spares) — its tightest ref row.
+        const cost = p => p.actualSwaps * 1000 + (p.sparesUsed || 0);
+        const minCost = Math.min(...ok.map(row => cost(row.plan)));
+        const least = ok.filter(row => cost(row.plan) === minCost).sort((a, b) => a.ref - b.ref)[0];
+        least.leastWork = true;
+        const minSw = least.plan.actualSwaps, ino0 = least.plan.Ino_mA;
+        // ⭐ best value = the extra-effort plan with the largest I_no reduction PER EXTRA
+        //    SWAP vs the least-work plan, if that rate is ≥ INO_WORTH_MA_PER_SWAP;
+        //    otherwise the least-work plan itself. Rows sharing a plan → tightest ref.
+        let best = least, bestRate = -Infinity;
+        ok.forEach(row => {
+          row.extraSwaps = row.plan.actualSwaps - minSw;
+          row.gainPerSwap = row.extraSwaps > 0 ? (ino0 - row.plan.Ino_mA) / row.extraSwaps : null;
+          if (row.gainPerSwap != null && row.gainPerSwap >= INO_WORTH_MA_PER_SWAP &&
+              (row.gainPerSwap > bestRate + 1e-9 || (Math.abs(row.gainPerSwap - bestRate) <= 1e-9 && row.ref < best.ref))) {
+            best = row; bestRate = row.gainPerSwap;
+          }
+        });
+        best.bestValue = true;
+      }
+    }
+    // ── v9.8 (#4): too few GOOD spares to ever pass → recommend only the useful work ──
+    // If nothing passes even after the deep search AND there are more failed units
+    // than good spares, extra in-rack shuffling now is wasted labour (the bank must
+    // wait for spares and be re-arranged anyway). The plan becomes: replace the WORST
+    // failed units with the good spares on hand, and report how many more are needed.
+    {
+      const anyPass = budgetPicks.some(sw => sw.underThreshold) || quickResult.refTable.some(r => r.plan);
+      const goodSp = (spare || []).filter(sp => !capValOutOfTol(sp.val, CAP))
+        .sort((a, b) => Math.abs(a.val - CAP.uf) - Math.abs(b.val - CAP.uf));
+      const nFailedTotal = [...y1Flat, ...y2Flat].filter(isFailedUnit).length;
+      if (!anyPass && nFailedTotal > goodSp.length) {
+        const isPair = u => u.measuredA != null && u.measuredB != null;
+        const pool = (hasScissors ? [...y1Tier1, ...y2Tier1] : [...y1Flat, ...y2Flat])
+          .filter(u => isFailedUnit(u) && !isPair(u));     // scissored pairs: piece-level, left to the full plan
+        const dev = u => unitDevOf(u, CAP);
+        const worst = pool.slice().sort((a, b) => dev(b) - dev(a)).slice(0, goodSp.length);
+        const y1F = y1Flat.slice(), y2F = y2Flat.slice(), acts = [];
+        worst.forEach((u, k) => {
+          const sp = goodSp[k], onY1 = y1F.includes(u), arr = onY1 ? y1F : y2F;
+          arr[arr.indexOf(u)] = Object.assign({}, sp, { origin: u.origin });
+          acts.push({ type: onY1 ? 'replace-y1' : 'replace-y2', from: u, to: sp });
+        });
+        const m = calcYYMetrics(y1F, y2F, kv);
+        const sw = { swapCount: acts.length, actualSwaps: acts.length, sparesUsed: acts.length,
+          y1: y1F, y2: y2F, y1Full: y1F, y2Full: y2F, acts,
+          steps: acts.length ? acts.map(describeSwap) : ['ไม่มี spare ที่ดีให้เปลี่ยน'],
+          engAfter: m, Ino_mA: m.Ino_mA, diff: m.Ino_mA, underThreshold: m.Ino_mA < THRESHOLD_MA,
+          spread: phaseSpreadOf(m), unitV: unitVoltageStats(y1F, y2F, kv, CAP.ratedKV), level: 0, tier: 1 };
+        sw.spreadOK = sw.spread.ok; sw.fullyPass = sw.underThreshold && sw.spreadOK; sw.overV = sw.unitV.ovCount > 0;
+        sw._fail = failRemain(sw); sw._sev = failSev(sw);
+        quickResult.sparesOnly = sw;
+        quickResult.sparesShort = nFailedTotal - goodSp.length;
+        quickResult.failedTotal = nFailedTotal;
+      }
+    }
+    // ── v9.9: TEMPORARY arrangement when good spares can't replace every failed unit ──
+    // Field decision: time on site is limited and the bank must go back in service now,
+    // so if failed units must stay, MOVE them (each at most once) to spread their deficit
+    // so A=B=C on each side and I_no is as low as possible. Spares replace the WORST
+    // failed units first (severity ranking). Only used when the normal plan (failed units
+    // never moved) is not already passing AND balanced.
+    {
+      const nGoodSp = (spare || []).filter(sp => !capValOutOfTol(sp.val, CAP)).length;
+      const nFailedTotal = [...y1Flat, ...y2Flat].filter(isFailedUnit).length;
+      const normBest = budgetPicks[budgetPicks.length - 1];
+      const normOK = budgetPicks.some(sw => sw.underThreshold && balOf(sw));
+      if (nFailedTotal > nGoodSp && !normOK) {
+        const lvT = (!hasScissors && (y1Tier2.length + y2Tier2.length) > 0)
+          ? runPass([...y1Tier1, ...y1Tier2], [...y2Tier1, ...y2Tier2], [], [], 2, TEMP_DEPTH, true)
+          : runPass(y1Tier1, y2Tier1, y1Tier2, y2Tier2, 1, TEMP_DEPTH, true);
+        const ts = lvT.swaps.filter(Boolean);
+        ts.forEach(c => { c._fail = failRemain(c); c._sev = failSev(c); });
+        // least work that is passing + balanced; else the deepest (best-ranked) plan
+        let tp = ts.find(c => c.underThreshold && balOf(c)) || ts[ts.length - 1];
+        const key = c => BAL_FIRST ? [balOf(c) ? 0 : 1, sprOf(c), c.underThreshold ? 0 : 1, c.Ino_mA]
+                                   : [c.underThreshold ? 0 : 1, balOf(c) ? 0 : 1, sprOf(c), c.Ino_mA];
+        const lessThan = (a, b) => { const ka = key(a), kb = key(b);
+          for (let i = 0; i < ka.length; i++) { if (Math.abs(ka[i] - kb[i]) > 1e-9) return ka[i] < kb[i]; } return false; };
+        if (tp && (!normBest || lessThan(tp, normBest))) {
+          tp.tempMove = true;
+          tp.movedFailed = (tp.acts || []).filter(a => (a.type === 'exchange' && (isFailedUnit(a.from) || isFailedUnit(a.to))) ||
+                                                      (a.type === 'piece-swap' && (capValOutOfTol(a.v1, CAP) || capValOutOfTol(a.v2, CAP)))).length;
+          quickResult.tempPlan = tp;
+          quickResult.sparesShort = nFailedTotal - nGoodSp;
+          quickResult.failedTotal = nFailedTotal;
+        }
+      }
+    }
     quickResult.usedGood     = quickResult.swaps.some(sw => sw.level >= 1);
     quickResult.usedSpare    = quickResult.swaps.some(sw => sw.sparesUsed > 0);
     quickResult.fallbackUsed = quickResult.swaps.some(sw => sw.level >= 2);
@@ -1053,13 +1534,21 @@ async function clientCalculate(payload) {
     const tier2Count = y1Tier2.length + y2Tier2.length;
     const sCount = (spare||[]).length;
     const nFail = y1Fail.length + y2Fail.length;
-    const goodSpare = (spare || []).filter(s => s.val >= NAMEPLATE_UF).length;
+    const goodSpare = (spare || []).filter(s => !capValOutOfTol(s.val, CAP)).length;
+    const failLeft  = failRemain(quickResult.swaps[quickResult.swaps.length - 1]);
+    const tolTxt = `${CAP.lo.toFixed(2)}–${CAP.hi.toFixed(2)} µF (${CAP.uf.toFixed(2)} µF −${CAP.minusPct}%/+${CAP.plusPct}%)`;
     quickResult.lockedNote = (tier1Count + tier2Count) > 0
       ? `Tier 1 (วัดแยก): ${tier1Count} ตัว · Tier 2 (กรุ๊ป): ${tier2Count} ตัว · Spare ${sCount} ตัว (ดี ${goodSpare})` +
-        ' · สลับเฉพาะในเฟสเดียวกัน (A↔A\', B↔B\', C↔C\')' +
-        (nFail > 0 ? ` · 🔧 พบ ${nFail} ตัว < ${NAMEPLATE_UF} µF (ต่ำกว่า nameplate = เสีย) สับก่อน` : '') +
-        (nFail > goodSpare ? ` · 🔁 spare ดี (≥${NAMEPLATE_UF}) ไม่พอ (${goodSpare}/${nFail}) → ใช้ตัวที่ "ดีกว่า" ทดแทนชั่วคราวเพื่อบาลานซ์` : '') +
-        (quickResult.usedGood && !quickResult.fallbackUsed ? ' · ⚠ ตัวเสียอย่างเดียวไม่พอ ต้องสับตัวดี (≥nameplate) ด้วย' : '') +
+        ' · สลับได้: เฟสเดียวกันข้ามฝั่ง (A↔A\') และข้ามเฟสในฝั่งเดียวกัน (A↔B↔C, A\'↔B\'↔C\')' +
+        (nFail > 0 ? ` · 🔧 พบ ${nFail} ตัวนอกพิกัด ${tolTxt} (เสีย) ถอดออกก่อน` : '') +
+        (quickResult.tempPlan
+          ? ` · ⛔ ตัวเสีย ${quickResult.failedTotal} ตัว แต่ spare ดีมี ${goodSpare} ตัว → แผนจัดชั่วคราว: เปลี่ยนตัวเสียหนักสุดก่อน แล้วกระจายตัวเสียที่เหลือให้แต่ละเฟสเท่ากัน · หา spare ดีเพิ่มอีก ${quickResult.sparesShort} ตัว แล้วจัดใหม่`
+          : quickResult.sparesOnly
+          ? ` · ⛔ ตัวเสีย ${quickResult.failedTotal} ตัว แต่ spare ดีมี ${goodSpare} ตัว — สับให้ผ่านไม่ได้ตอนนี้ แนะนำเปลี่ยนตัวเสียหนักสุดก่อน แล้วหา spare ดีเพิ่มอีก ${quickResult.sparesShort} ตัว`
+          : (failLeft > 0 ? ` · ⛔ spare ดีไม่พอ (มี ${goodSpare} ตัว) → ยังเหลือตัวเสีย ${failLeft} ตัว (เหลือไว้เฉพาะตัวที่เสียน้อยสุด) — ต้องหา spare ดีเพิ่มอีก ${failLeft} ตัว` : '')) +
+        (quickResult.usedGood && !quickResult.fallbackUsed ? ' · ⚠ ตัวเสียอย่างเดียวไม่พอ ต้องสับตัวดีด้วย' : '') +
+        (CAP.ratedKV ? ` · ⚡ ตรวจแรงดันรายตัว ≤ ${Math.round(UNIT_OV_LIMIT*100)}% ของ ${CAP.ratedKV} kV` : '') +
+        (quickResult.extended ? ` · 🔎 สับ ${BASE_DEPTH} ครั้งไม่พอ → ค้นหาเพิ่มถึง ${quickResult.maxDepth} ครั้ง` : '') +
         (quickResult.fallbackUsed ? ' · ⚠ ต้องใช้ fallback (สลับตัวกรุ๊ป Tier 2 ด้วย)' : '') +
         (hasScissors && tier2Count > 0 ? ' · 🔒 มีวัดแยก → ไม่แตะตัวกรุ๊ป' : '')
       : null;
@@ -1078,7 +1567,11 @@ async function clientCalculate(payload) {
 
   // Add threshold info
   engBefore.thresholdMA = THRESHOLD_MA;
-  engBefore.phaseSpreadTol = PHASE_SPREAD_UF;
+  engBefore.capSpec = CAP;                                   // v9.5 — UI reads tolerance/rating from here
+  if (topology !== 'h-bridge') engBefore.unitV = unitVoltageStats(expandPairs(y1), expandPairs(y2), kv, CAP.ratedKV);
+  engBefore.phaseSpreadTol = BAL_TOL_UF;
+  engBefore.balSumUF = BAL_SUM_UF;
+  engBefore.balanceFirst = BAL_FIRST;
   const beforeMA = topology==='h-bridge' ? engBefore.In_mA : engBefore.Ino_mA;
   engBefore.overThreshold = beforeMA >= THRESHOLD_MA;
   engBefore.Ino_mA_before = beforeMA;

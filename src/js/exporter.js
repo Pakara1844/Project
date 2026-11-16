@@ -113,7 +113,8 @@ async function exportToExcel(data) {
   const swaps = q.swaps || [];
   const idx = q.bestFullyPass != null ? q.bestFullyPass
             : (q.bestUnderThreshold != null ? q.bestUnderThreshold : swaps.length - 1);
-  const after = swaps[idx] || {};
+  // v9.6: export exactly the plan the UI recommends (set by renderResults)
+  const after = q.recommended || swaps[idx] || {};
   const afterUnits = [...(after.y1Full || after.y1 || []), ...(after.y2Full || after.y2 || [])];
   const ppAfter = (after.engAfter && after.engAfter.perPhase) || ppBefore;
 

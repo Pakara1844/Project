@@ -8,6 +8,10 @@ window.addEventListener('DOMContentLoaded',()=>{
   const saved = localStorage.getItem('cbank-theme')||'light';
   document.documentElement.setAttribute('data-theme', saved);
   goToStep(1);                       // pre-initialise the wizard (hidden under landing; no topology preselected)
+  ['capRatedUF','capTolMinus','capTolPlus','capRatedKV'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.addEventListener('input', updateCapBand);
+  });
+  updateCapBand();
   document.body.classList.add('show-landing');
   // Esc closes the info modal
   document.addEventListener('keydown', e => { if(e.key==='Escape') closeInfo(); });
@@ -92,6 +96,25 @@ function selectAlarm(btn){
   btn.classList.add('active');
   const hidden = document.getElementById('alarmMA');
   if (hidden) hidden.value = btn.dataset.val;
+}
+
+// v9.5 — capacitor unit rating (Step 2). Failed = outside [rated·(1−m%), rated·(1+p%)];
+// defaults follow IEC 60871-1 §7.2 (−5 % / +10 %). Rated kV is optional (110 % check).
+function readCapRating(){
+  const num = id => { const el = document.getElementById(id); const v = el ? parseFloat(el.value) : NaN; return isFinite(v) ? v : undefined; };
+  return { uf: num('capRatedUF'), minusPct: num('capTolMinus'), plusPct: num('capTolPlus'), ratedKV: num('capRatedKV') };
+}
+function updateCapBand(){
+  const el = document.getElementById('capBand'); if (!el || typeof capSpecOf !== 'function') return;
+  const c = capSpecOf(readCapRating());
+  el.innerHTML = `ตัวดี = <b>${c.lo.toFixed(2)} – ${c.hi.toFixed(2)} µF</b> · ต่ำหรือสูงกว่านี้นับเป็นตัวเสีย` +
+    (c.ratedKV ? ` · แรงดันต่อตัวต้องไม่เกิน <b>${(c.ratedKV * UNIT_OV_LIMIT).toFixed(2)} kV</b> (110% ของ ${c.ratedKV} kV)` : '');
+}
+// Results → "ใช้ค่านี้": switch the I_no ref bubble and re-run with the same inputs.
+function useInoRef(r){
+  const btn = document.querySelector('.bubble[data-val="' + r + '"]');
+  if (btn) selectAlarm(btn);
+  handleCalculate();
 }
 
 function goToStep(n){
@@ -445,6 +468,11 @@ function getInputValues(){
   const alarmEl=document.getElementById('alarmMA');
   const alarmMA=(alarmEl && parseFloat(alarmEl.value)>0) ? parseFloat(alarmEl.value)
                 : ((typeof window!=='undefined' && window.ALARM_MA) || 50);
+  const capRating = readCapRating();
+  // v10.0 — balance target (ΣC per rack, µF) + spare priority
+  const balEl = document.getElementById('balSumUF'), spEl = document.getElementById('sparePriority');
+  const balSumUF = (balEl && parseFloat(balEl.value) > 0) ? parseFloat(balEl.value) : 0.1;
+  const sparePriority = (spEl && spEl.value) || 'balance';
 
   // Returns whether the side-level "ต่อขนาน" checkbox is ticked.
   // ticked  = ช่องในฝั่งนี้เป็นคู่ขนาน → ล็อกเป็น Tier 2 (สลับเป็น fallback) + โชว์กรรไกร
@@ -511,7 +539,7 @@ function getInputValues(){
       legs[key] = readPanel(key, label, sep);
       if (legs[key] === null) return null;
     }
-    return { topology:'h-bridge', y1:[...legs.a,...legs.c], y2:[...legs.b,...legs.d], spare, legs, systemKV, alarmMA };
+    return { topology:'h-bridge', y1:[...legs.a,...legs.c], y2:[...legs.b,...legs.d], spare, legs, systemKV, alarmMA, capRating };
   } else {
     const sepY1 = isMeasuredSeparately('parY1');
     const sepY2 = isMeasuredSeparately('parY2');
@@ -525,7 +553,7 @@ function getInputValues(){
     }
     const y1 = [...phases.a, ...phases.b, ...phases.c];
     const y2 = [...phases.ap, ...phases.bp, ...phases.cp];
-    return { topology:'yy-unground', y1, y2, spare, systemKV, phases, alarmMA };
+    return { topology:'yy-unground', y1, y2, spare, systemKV, phases, alarmMA, capRating, balSumUF, sparePriority };
   }
 }
 
