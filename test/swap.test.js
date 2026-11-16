@@ -3,7 +3,7 @@
  * swap.test.js — guards the YY swap OPTIMIZER (findPhaseAwareYYSwaps) against
  * regressions in the selection layer. The core I_no math is covered by
  * calc.test.js; this file covers the picker: sparesUsed accounting and the
- * ranking order (relay gate → balance gate → lowest I_no → least effort).
+ * ranking order (failed units out → lowest I_no → fewest spares → fewest swaps).
  *
  * Run with:  npm run test:swap   (or:  node test/swap.test.js)
  *
@@ -73,25 +73,24 @@ console.log('Case 1 — scissored bank, piece-swap only (sparesUsed must be 0)')
   assertConsistent('scissors', res);
 }
 
-// Case 2 — ranking prefers LOWEST I_no even when it needs a spare (bug 2 / policy).
-// Lone deficit on B' (no matching partner) → only a spare can zero it; matched
-// A/A' + C/C' pairs are fixed by near exchanges. The chosen plan is MIXED (rack
-// exchange + spare) and the largest budget reaches ~0. NOTE: on this big bank the
-// beam narrows, so budget-4 only reaches ~9 mA (passes relay); driving budget-4
-// itself to ~0 is a Track 3 (assembly) goal — kept as concept, not yet built.
-console.log('\nCase 2 — lone deficit needs a spare → mixed plan chosen (rack + spare)');
+// Case 2 — v9.4 (restored v6.5) rules on a messy bank with 5 FAILED (<27 µF) units:
+// budgets are 2/4/6, every exchange stays WITHIN its phase (A↔A', B↔B', C↔C'), and
+// failed units are taken out first (a bigger budget never leaves MORE failed units).
+console.log('\nCase 2 — in-phase exchanges only + failed units out first (budgets 2/4/6)');
 {
   const b = bank(10, 27.2, [['A-1', 27.45], ['A-2', 27.45], ["A'-1", 26.95], ["A'-2", 26.95],
                             ["B'-1", 24.0],
                             ['C-1', 27.5], ['C-2', 27.5], ["C'-1", 26.9], ["C'-2", 26.9]]);
   const res = run(b, spares([27.2, 27.2]));
-  const b4 = res.swaps[1], b6 = res.swaps[2];
-  const hasRack  = b4.acts.some(a => a.type === 'exchange');
-  const hasSpare = b4.sparesUsed >= 1;
-  check('budget-4 passes relay', b4.Ino_mA < THR);
-  check('budget-4 is a MIXED plan (in-rack exchange + spare together)', hasRack && hasSpare);
-  check('budget-6 reaches I_no ≈ 0', b6.Ino_mA < 1.0);
-  assertConsistent('mixed', res);
+  const base = s => (s.origin || '').replace("'", '');
+  const failedLeft = sw => [...sw.y1, ...sw.y2].filter(u => u.val < 27.0).length;
+  check('budgets are 2 / 4 / 6', res.swaps.map(s => s.swapCount).join('/') === '2/4/6');
+  check('every exchange stays within its phase', res.swaps.every(sw =>
+    sw.acts.filter(a => a.type === 'exchange').every(a => base(a.from) === base(a.to))));
+  check('failed units left never grow with budget', res.swaps.every((sw, i) =>
+    i === 0 || failedLeft(sw) <= failedLeft(res.swaps[i - 1])));
+  check('budget-2 already removes failed units (fewer than the 5 at start)', failedLeft(res.swaps[0]) < 5);
+  assertConsistent('inphase', res);
 }
 
 // Case 3 — big bank must not do WORSE than a small one (beam sanity). A single
@@ -148,49 +147,32 @@ console.log('\nCase 6 — balance compares the per-phase SERIES C_phase (not sum
   check('tolerance 0.005 µF → this spread FAILS balance', s.ok === false);
 }
 
-// Case 7 — MAX-effort budget uses the full resources (more swaps + spares) on a
-// scattered-outlier bank the beam alone gets stuck on. 5 caps/phase, 11 outliers,
-// 5 good spares. The largest budget must beat the mid budget AND deploy ≥1 spare.
-console.log('\nCase 7 — MAX-effort budget uses spares + more swaps (scattered bank)');
+// Case 7 — SPARE CONSERVATION (v9.4): an imbalance that ONE in-phase exchange fixes
+// (no failed units) must be fixed WITHOUT touching the spare pool, even with
+// plenty of spares available. (v6.5 preferred the MOST spares at equal I_no — v9.4
+// prefers the fewest, and treats I_no within INO_TIE_MA as a tie once passing.)
+console.log('\nCase 7 — in-phase fix available → no spare used (spares available)');
 {
-  const mk = (o, arr) => arr.map((v, i) => ({ id: `${o}-${i + 1}`, val: v, origin: o }));
-  const y1 = [...mk('A', [27, 29, 26, 27, 27]), ...mk('B', [27, 29, 28, 27, 27]), ...mk('C', [27, 27, 27, 21, 27])];
-  const y2 = [...mk("A'", [27, 27, 27, 27, 27]), ...mk("B'", [27, 27, 26, 29, 21]), ...mk("C'", [27, 29, 25, 26, 27])];
-  const res = optimize(y1, y2, spares([27, 27, 27, 27, 27]), null, KV, [], [], 27.0, null, THR);
-  const mid = res.swaps[1], max = res.swaps[res.swaps.length - 1];
-  check('MAX budget reaches a much lower I_no than the mid budget', max.Ino_mA < mid.Ino_mA - 20);
-  check('MAX budget deploys at least one spare', max.sparesUsed >= 1);
-  check('MAX budget passes the relay (< THR)', max.Ino_mA < THR);
-  assertConsistent('scattered', res);
+  const res = run(bank(10, 27.5, [['A-1', 27.9], ["A'-1", 27.1]]), spares(Array(5).fill(27.5)));
+  res.swaps.forEach(sw => {
+    check(`budget ${sw.swapCount} passes relay`, sw.Ino_mA < THR);
+    check(`budget ${sw.swapCount} uses 0 spares`, sw.sparesUsed === 0);
+  });
+  assertConsistent('nospare', res);
 }
 
-// Case 8 — SPARE CONSERVATION (v9.3). Once a plan passes the relay AND the balance
-// gate, the thrifty budgets + the new minSpare option must use the FEWEST spares that
-// still passes — and must NOT grab more spares just because the pool is bigger. The
-// MAX-effort budget keeps chasing the lowest I_no (may use more spares).
-console.log('\nCase 8 — spare conservation: thrifty/minSpare use only what is needed');
+// Case 8 — the user-reported bug: adding MORE spares must not make the plan use
+// MORE spares. One failed cap → exactly one spare, whether the pool has 1 or 6.
+console.log('\nCase 8 — one failed cap: 1 spare used, pool size (1 vs 6) does not matter');
 {
-  const mk = (o, arr) => arr.map((v, i) => ({ id: `${o}-${i + 1}`, val: v, origin: o }));
-  // noisy within-wye values so EXTRA clean spares could keep shaving I_no (the trap)
-  const makeBank = () => ({
-    y1: [...mk('A', [27, 27, 27, 28]), ...mk('B', [27.2, 27, 27, 27]), ...mk('C', [26.8, 27, 27, 27])],
-    y2: [...mk("A'", [27, 27, 27, 27]), ...mk("B'", [27, 27, 27, 27]), ...mk("C'", [27, 27, 27, 27])],
+  const r1 = run(bank(8, 27.3, [['B-4', 25.0]]), spares([27.3]));
+  const r6 = run(bank(8, 27.3, [['B-4', 25.0]]), spares(Array(6).fill(27.3)));
+  r6.swaps.forEach((sw, i) => {
+    check(`budget ${sw.swapCount}: exactly 1 spare used`, sw.sparesUsed === 1);
+    check(`budget ${sw.swapCount}: same spare count with 6 spares as with 1`, sw.sparesUsed === r1.swaps[i].sparesUsed);
+    check(`budget ${sw.swapCount}: failed cap removed + passes`, sw.Ino_mA < THR && ![...sw.y1, ...sw.y2].some(u => u.val < 27.0));
   });
-  const run = n => { const b = makeBank(); return optimize(b.y1, b.y2, spares(Array(n).fill(27.0)), null, KV, [], [], 27.0, null, THR); };
-  const r3 = run(3), r8 = run(8);
-  const pass = s => s.Ino_mA < THR && s.spreadInner <= 0.005 + 1e-9;
-
-  check('minSpare passes relay + balance', pass(r3.minSpare));
-  check('minSpare consistent (sparesUsed == real spare actions)', r3.minSpare.sparesUsed === realSpareActions(r3.minSpare));
-  check('thrifty budget-0 passes', pass(r3.swaps[0]));
-  // growing the pool 3 → 8 must NOT increase spare usage of the thrifty/minSpare plans
-  check('minSpare spares do NOT grow with pool (3→8)', r8.minSpare.sparesUsed <= r3.minSpare.sparesUsed);
-  check('thrifty budget-0 spares do NOT grow with pool (3→8)', r8.swaps[0].sparesUsed <= r3.swaps[0].sparesUsed);
-  // minSpare should not use MORE spares than the MAX-effort budget
-  check('minSpare spares ≤ MAX-effort spares', r8.minSpare.sparesUsed <= r8.swaps[r8.swaps.length - 1].sparesUsed);
-  // MAX-effort still allowed to chase a lower I_no (uses resources fully)
-  check('MAX-effort I_no ≤ minSpare I_no (still chases lowest)', r8.swaps[r8.swaps.length - 1].Ino_mA <= r8.minSpare.Ino_mA + 1e-6);
-  assertConsistent('thrifty', r3);
+  assertConsistent('onefail', r6);
 }
 
 console.log('');

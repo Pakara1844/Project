@@ -112,35 +112,34 @@ being hoisted into the shared global scope, so:
   arrays of `{id, val(µF), origin}` where origin ∈ {A,B,C} for wye-1 and
   {A',B',C'} for wye-2. Returns `{Ino_mA, Vno, Qt, S:{S1..S6}, perPhase, ...}`.
 - `findPhaseAwareYYSwaps(y1, y2, spare, _, systemKV, lockedY1, lockedY2, nameplate, _mode, thresholdMA)`
-  — the optimizer. `expand()` emits EVERY in-rack exchange — any of the 6 phases ↔
-  any other, **same-side OR cross-side** (e.g. A'↔B' as well as A↔A') — plus spare
-  replacements. Each candidate carries a **`cost`** = the rack distance of its
-  exchanges (`RACK_ORDER` A A' B B' C C' = 0..5) plus `SWAP_SPARE_COST` (100) per
-  spare. So the optimizer prefers the NEAREST swap and leaves a SPARE for last (see
-  the swap-priority section). `_mode` is legacy/unused. Equal-valued swaps are
-  skipped in `expand()` (no-ops → big speed win). Every candidate is scored by the
-  *real* `calcYYMetrics` I_no + within-wye spread. It runs
-  **two complementary searches** and merges their visited states:
+  — the optimizer. **v9.4 = the v6.5 logic restored** (field decision 2026-11: v6.5
+  tested best in the field). `expand()` emits **in-phase exchanges only** (A↔A',
+  B↔B', C↔C' — a capacitor never leaves its phase) plus spare replacements and the
+  scissored piece moves. Equal-valued swaps are skipped (no-ops). Every candidate is
+  scored by the *real* `calcYYMetrics` I_no. Two complementary searches, merged:
   1. **Beam search** — keeps the best `BEAM` partial solutions at each depth so it
      can pass *through* a temporarily-worse state. Finds the exact 2-swap optimum
-     for small banks (it keeps *all* depth-1 states) plus good exchange/spare
-     improvements. (The old single-step greedy got stuck — in ~24% of random banks
-     NO single swap improved I_no but a *pair* did.)
+     for small banks (it keeps *all* depth-1 states). (The old single-step greedy
+     got stuck — in ~24% of random banks NO single swap improved I_no but a *pair* did.)
   2. **Outlier-fix track** — some banks need a COORDINATED set of spare swaps where
-     *every* intermediate step makes I_no worse before it collapses to ~0 (e.g. 3
-     phases each with one off unit: fixing one at a time raises I_no, only fixing
-     all three balances the bank). Beam prunes those rising paths, so this track
-     greedily replaces the worst per-phase outlier (mode deviation) with the
-     closest spare, **accepting temporary I_no rises**, recording each state.
-  For each budget (**2 / 6 / 12**) it applies `pick(target, mode)` with `betterBy()`
-  (relay gate → balance gate → MODE; thrifty budgets conserve spares, the last/MAX
-  budget chases lowest I_no — see the Swap-priority section). It also returns a
-  **`minSpare`** plan (fewest spares that passes). Reports `actualSwaps` and
-  `sparesUsed`. Do NOT revert to beam-only — you will reintroduce the "doesn't use
-  spares / collapses to 1 swap" bug.
-  NOTE (v8.0): `sparesUsed` counts ONLY spare-consuming actions
-  (`replace-y1`/`replace-y2`/`piece-replace` — the set `SPARE_ACTION_TYPES`);
-  `piece-swap` and `exchange` use no spare and must not inflate it.
+     *every* intermediate step makes I_no worse before it collapses to ~0. Beam
+     prunes those rising paths, so this track greedily replaces the worst per-phase
+     outlier (failed first, then mode deviation) with the closest spare,
+     **accepting temporary I_no rises**, recording each state.
+  Budgets **2 / 4 / 6**. Per budget, `better()` ranks: **failed (<nameplate) units
+  left installed (fewest) → lowest I_no (a tie within `INO_TIE_MA` = 2 mA when BOTH
+  plans pass the relay) → FEWEST spares → fewest swaps → lowest I_no**. Reports
+  `actualSwaps`, `sparesUsed`, `acts`. Do NOT revert to beam-only — you will
+  reintroduce the "doesn't use spares / collapses to 1 swap" bug.
+  `sparesUsed` counts ONLY spare-consuming actions (`replace-y1`/`replace-y2`/
+  `piece-replace` — the set `SPARE_ACTION_TYPES`); `piece-swap` and `exchange` use
+  no spare and must not inflate it. NOTE: a "replace" can re-use a unit that was
+  pulled out earlier (it sits in the spare pool), so `sparesUsed` may exceed the
+  number of spares entered — that is v6.5's "use the least-bad removed unit as a
+  temporary replacement when good spares run out".
+  (v7.x–v9.3 used a different optimizer — cross-phase rack exchanges, rack-distance
+  `cost`, phase-balance gate, Track 3, budgets 2/6/12, `minSpare`. Recoverable from
+  git: commit `bdb9cc8` = v9.3.)
 - `clientCalculate(payload)` in app.js — orchestrates: reads inputs, splits
   swappable vs locked units, runs the optimizer, computes before/after metrics.
 
@@ -168,75 +167,36 @@ being hoisted into the shared global scope, so:
   **disabled** — the optimizer swaps ONLY the measured-separately units + spares
   and never touches the grouped units, even if I_no stays above the threshold.
   (`hasScissors` in `clientCalculate`, both YY and H-bridge paths.)
-- **Swap priority — "ผ่านแล้วพอ แล้วค่อยประหยัด spare"** (field decision 2026-11,
-  v9.3 — SUPERSEDES the v8.0 "lowest-I_no-first even if it needs a spare"). The rack is
-  wired left→right **A A' B B' C C'** (`RACK_ORDER`). Effort grows with how far apart
-  two caps sit; expressed as a per-candidate **`cost`** (rack distance for an exchange,
-  `SWAP_SPARE_COST`=100 for a spare). Two gates then a per-budget **mode** decide:
-  1. **relay-pass gate** — I_no < threshold.
-  2. **phase-balance gate** — within-wye spread ≤ `PHASE_SPREAD_UF` (boolean).
-  3. **mode** (once BOTH gates pass):
-     - **thrifty** (budgets 2 & 6, and the recommended card): **fewest spares → lowest
-       `cost` (near→far) → fewest swaps → lowest I_no** — but I_no only breaks ties
-       beyond **`INO_TIE_MA` = 2.0 mA** (the ε band). Rationale: once the bank is safe
-       and balanced, stop burning spares to shave the last couple of mA.
-     - **maxeffort** (the LAST / MAX budget "เต็มที่"): **lowest I_no first** (strict),
-       then cost/swaps/spares — the old behaviour, kept on purpose so there is always
-       an option that uses the resources fully.
-  `findPhaseAwareYYSwaps` also returns a **`minSpare`** plan: the FEWEST spares that
-  still passes, allowed the full swap budget (so it may use more in-rack swaps to drop
-  a spare). Shown as the "♻️ ใช้ spare น้อยสุด" card. If NEITHER gate-set passes the
-  relay, **lowest I_no** (closest to safe) wins in every mode. `better()`/`pick(mode)`
-  (inside the search) and `rankSw()`/`chooseBudget(i,mode)`/`chooseMinSpare()` (across
-  L0/L1 in `clientCalculate`) apply the SAME order. Two levels:
-  - **L0** — Tier-1 units, all in-rack exchanges + spares (`cost` orders near→far→spare).
-  - **L1** — + grouped Tier-2 units, fallback (skipped when scissors used).
-  **Do NOT** re-promote I_no above spare-count in the thrifty modes, or remove the
-  `INO_TIE_MA` band — that reintroduces the "uses every spare / adds a spare and it
-  grabs it too" bug (see `test/swap.test.js` Case 8, which guards this). The ε band
-  only bites AFTER both gates pass; it never admits a failing/unbalanced plan. (The
-  older v8.0 note said "I_no quality beats spare-conservation" — that is the behaviour
-  we deliberately reversed; keep it only in the MAX/maxeffort budget.)
-  - **Nameplate** (`NAMEPLATE_UF = 27.00 µF`, `window.NAMEPLATE_UF`): a unit below
-    it is "failed" (เสีย). Failed units are NO LONGER removed-first — they're moved
-    in-rack like any other, and a spare is fetched only if the rack can't balance
-    (a single failed cap can't be fixed by rearrangement, so a spare IS used there).
-    Nameplate is now **display-only** (badge + note). `isFailedUnit` still drives the
-    "🔧 พบ N ตัวเสีย" note. For scissored slots it checks the measured pieces.
-  Still swap-priority + display only — it NEVER changes the I_no calculation.
-  (H-bridge path keeps the simpler optimizer.)
-- **Phase-balance goal — the PRIMARY swap objective** (`PHASE_SPREAD_UF = 0.005 µF`,
-  top of `calculator.js`, `window.PHASE_SPREAD_UF`, YY only). Balance is WITHIN each
-  wye: after swapping, **A=B=C on Y1 AND A'=B'=C' on Y2** — each wye's three per-phase
-  capacitances within the tolerance of each other. The two wyes do NOT need to match
-  each other (v8.1 — reverted from the v7.7 "star-point / all-six-equal" metric),
-  because **I_no = 0 requires only within-wye balance** (a bank with Y1 all-27.2 and
-  Y2 all-27.0 has I_no = 0 but the two wyes differ). **The balance comparison uses the
-  per-phase SERIES value C_phase = 1/Σ(1/cᵢ)** — the SAME value that drives I_no, shown
-  as "อนุกรม" (v8.3 — reverted the v8.2 parallel-sum experiment; the engineer wants the
-  series per-phase values A/B/C compared directly). `phaseSpreadOf(metrics)` reads
-  `perPhase.X.C1`/`.C2` (series) and returns `{y1,y2,all,max,ok}` where **`max` =
-  max(y1,y2)** (the worse-balanced wye) and `ok` = `max ≤ tol`; `y1`/`y2` are the
-  per-side series spreads; `all` (max−min across all six phases) is kept for DISPLAY
-  ONLY and gates nothing. **Sizing:** measured on a real bank (115 kV, 10 caps/phase →
-  C_phase ≈ 2.72 µF), ΔC within a wye maps to I_no at ≈ **0.001 µF per 10.5 mA**, so
-  0.005 µF ≈ 52 mA — keep the tol in the same order as the alarm. The optimizer's
-  PRIMARY objective is to minimize this within-wye series spread (`metricsOf` returns
-  `phaseSpreadOf(m).max`), **subject to the relay passing** (I_no < threshold) as a
-  hard gate — "บาลานซ์เฟส เป็นหลัก + I_no
-  ต้องผ่านรีเลย์ด้วย". This is threaded all the way into the search:
-  - `metricsOf()` returns `{ino, spread}` from ONE `calcYYMetrics` call (no extra cost).
-  - The beam frontier is MULTI-OBJECTIVE: it keeps the tightest-spread states AND a
-    half-beam of lowest-I_no states, so a relay-passing arrangement is never pruned
-    while chasing balance.
-  - `better()` (per-budget pick) and `chooseBudget()` (across P1–P4) both apply:
-    failed-out → **relay-pass gate** → lowest spread (balance) among passers →
-    lowest I_no → least disruptive. If nothing passes the relay, lowest I_no wins
-    (closest to safe). `findPhaseAwareYYSwaps` takes the threshold as its last arg.
-  Still NEVER changes the I_no calculation itself. Shown as a "ΔC เฟส" badge on each
-  solution card + a "บาลานซ์เฟส" line on the summary banner.
-- Quick Mode = auto-pick the fewest swaps that reach the best balance / lowest I_no.
-  The 2 / 4 / 6 cards are explicit fixed-budget options for the field worker.
+- **Swap priority (v9.4 = v6.5 restored, + 2 changes)** — field decision 2026-11.
+  - **Nameplate-failure first** (`NAMEPLATE_UF = 27.00 µF`): a unit reading below
+    nameplate is "failed" (เสีย) and is taken OUT FIRST; units ≥ nameplate are
+    "good" and kept in place unless needed. `clientCalculate` runs levels and, per
+    budget, picks the LEAST-disruptive level that meets the threshold ("ผ่านแล้วหยุด"):
+    - **L0** — swap failed Tier-1 units only (good + grouped locked).
+    - **L1** — swap all Tier-1 units (grouped locked) — only if L0 can't do it.
+    - **L2** — also swap grouped Tier-2 units — only if L1 can't AND no scissors.
+    `chooseBudget()` order: **fewest failed left → passes threshold → lowest level →
+    fewest spares → fewest swaps → lowest I_no**. For scissored slots "failed"
+    checks the measured pieces (`measuredA`/`measuredB`).
+  - **Change 1 vs v6.5 — threshold is selectable.** The relay threshold is the
+    Step-2 bubble value (`THRESHOLD_MA`, 5–50 mA), not a fixed 50 mA.
+  - **Change 2 vs v6.5 — spare conservation.** v6.5 picked the plan using the MOST
+    spares at equal I_no; v9.4 picks the FEWEST, and when both plans pass the
+    relay it treats I_no within `INO_TIE_MA` (2 mA) as a tie. Guarded by
+    `test/swap.test.js` Case 7 (in-phase fix → 0 spares) and Case 8 (adding spares
+    must not increase spare use). Do NOT flip it back to "most spares".
+  - **Known trade-off (faithful to v6.5):** "failed out first" outranks passing the
+    relay. On a bank with MORE failed units than the budget can both remove and
+    rebalance, a bigger spare pool can lead to a plan that removes more failed units
+    but ends ABOVE the threshold (it shows "ยังไม่ผ่าน"). Raise the budget or review.
+  It NEVER changes the I_no calculation. (H-bridge path keeps its simpler optimizer.)
+- **Phase balance (`PHASE_SPREAD_UF = 0.005 µF`) is DISPLAY ONLY in v9.4.** The
+  within-wye series spread (A=B=C on Y1, A'=B'=C' on Y2, via `phaseSpreadOf()` on
+  the per-phase SERIES C) is still computed and shown as the "ΔC เฟส" badge + the
+  summary-banner line, but the restored optimizer does not rank by it. (I_no = 0
+  needs only within-wye balance; the two wyes need not match.)
+- Quick Mode = auto-pick the fewest swaps that passes the threshold (else the knee /
+  lowest I_no). The 2 / 4 / 6 cards are explicit fixed-budget options.
 
 ## Excel export (template-based, `exporter.js`)
 

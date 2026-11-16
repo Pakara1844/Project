@@ -165,7 +165,7 @@ function renderResults(vals,result){
     : (sw.engAfter ? (topology==='h-bridge'?sw.engAfter.In_mA:sw.engAfter.Ino_mA) : Infinity);
   const beforeIno = (engBefore && engBefore.Ino_mA_before) || Infinity;
   const opts = quickResult.swaps.map((sw,i)=>({
-    i, ns: sw.actualSwaps != null ? sw.actualSwaps : (sw.swapCount != null ? sw.swapCount : [2,6,12][i]), ino: inoOfSw(sw),
+    i, ns: sw.actualSwaps != null ? sw.actualSwaps : (sw.swapCount != null ? sw.swapCount : [2,4,6][i]), ino: inoOfSw(sw),
     pass: !!sw.underThreshold, full: !!(sw.underThreshold && sw.spreadOK)
   }));
   const bestIno = Math.min.apply(null, opts.map(o=>o.ino));
@@ -226,39 +226,25 @@ function renderResults(vals,result){
       }</div>
     </div>`;
 
-  const nBudgets = quickResult.swaps.length;
   const fixedCards = quickResult.swaps.map((sw,i)=>{
-    const target=(sw.swapCount!=null)?sw.swapCount:[2,6,12][i];
-    const isMax = i === nBudgets-1;               // last card = MAX effort (use resources fully)
-    const cls = isMax ? 's3' : 's2';
-    const icon = isMax ? '🛠️' : '🔧';
-    const name = isMax ? `สูงสุด ${target} ครั้ง (เต็มที่)` : `${target} ครั้ง`;
+    const target=(sw.swapCount!=null)?sw.swapCount:[2,4,6][i];
+    const cls = ['s2','s2','s3'][i] || 's2';
+    const name = `${target} ครั้ง`;
     const actual=(sw.actualSwaps!=null)?sw.actualSwaps:target;
     let label;
-    if (actual===0) label = `${icon} ตัวเลือก ${name} — ไม่มีการสับที่ช่วยลด Ino`;
-    else if (actual<target) label = `${icon} ตัวเลือก ${name} (ใช้จริง ${actual} ครั้งก็พอ)`;
-    else label = `${icon} ตัวเลือก ${name}`;
+    if (actual===0) label = `🔧 ตัวเลือก ${name} — ไม่มีการสับที่ช่วยลด Ino`;
+    else if (actual<target) label = `🔧 ตัวเลือก ${name} (ใช้จริง ${actual} ครั้งก็พอ)`;
+    else label = `🔧 ตัวเลือก ${name}`;
     return buildSolCard(cls, label, sw, true, topology);
   }).join('');
 
-  // Extra option: the plan that uses the FEWEST spares (YY only; may use more in-rack
-  // swaps). Distinct from the swap-capped budget cards — for when spares are precious.
-  const ms = quickResult.minSpare;
-  const minSpareCard = ms
-    ? `<div style="margin:18px 0 8px;font-weight:700;color:var(--txt2,#555);font-size:0.95rem;">
-         <i class="fas fa-recycle"></i> ตัวเลือกประหยัด spare</div>` +
-      buildSolCard('full',
-        `♻️ ใช้ spare น้อยสุด — สับ ${ms.actualSwaps} ครั้ง · ใช้ spare ${ms.sparesUsed} ตัว`,
-        ms, true, topology)
-    : '';
-
   const budgetList = quickResult.swaps.map(s=>s.swapCount).filter(n=>n!=null).join(' / ');
   const quickIntro = `<div class="locked-note" style="background:var(--green-soft,#e8f5e9);border-color:var(--green,#4caf50);">
-    <i class="fas fa-bolt"></i> <b>Quick Mode</b> เลือกการสับที่ "ผ่านรีเลย์+บาลานซ์" โดย<b>ประหยัด spare</b>และจำนวนครั้งให้อัตโนมัติ ·
-    ด้านล่างมีตัวเลือก "ใช้ spare น้อยสุด" และแบบกำหนดจำนวน ${budgetList||'2 / 6 / 12'} ครั้ง (ตัวสุดท้าย = เต็มที่ Ino ต่ำสุด)</div>`;
+    <i class="fas fa-bolt"></i> <b>Quick Mode</b> เลือกการสับที่ทำให้ Ino ผ่านเกณฑ์โดยใช้จำนวนครั้งน้อยที่สุดให้อัตโนมัติ
+    (ถอดตัวเสียก่อน · สลับในเฟสเดียวกัน · ใช้ spare เท่าที่จำเป็น) ·
+    ด้านล่างเป็นตัวเลือกแบบกำหนดจำนวน ${budgetList||'2 / 4 / 6'} ครั้ง ให้หน้างานเลือกใช้ได้เลย</div>`;
 
   document.getElementById('tabQuick').innerHTML = summaryBanner + lockedBanner + quickIntro + autoCard +
-    minSpareCard +
     `<div style="margin:18px 0 8px;font-weight:700;color:var(--txt2,#555);font-size:0.95rem;">
       <i class="fas fa-hand-pointer"></i> ตัวเลือกแบบกำหนดจำนวนครั้ง (เลือกได้ตามสะดวกหน้างาน)</div>` +
     fixedCards;
