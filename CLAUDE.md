@@ -376,6 +376,18 @@ being hoisted into the shared global scope, so:
       ("ถอด [B-5] (25.20 µF) ออก ใส่ spare [S-2] (26.40 µF) แทน"); only `S-n` is called a
       spare, a re-used pulled unit is "ลูกที่ถอดจาก […]". Grouped parallel phases say
       "ช่องละ 2 ลูกขนาน" once in the plan-card phase header. `rackDist`/`RACK_ORDER` removed.
+  - **v10.6 — Step 3 answer first (mockups: `docs/mockups/step3-variants.html` 1+2+3).**
+    `#answerSection` (top of page 3) = `buildAnswer()`: verdict banner (incl. "ใช้แผนนี้"
+    upgrade button), chips (swaps, real spares, failed left, max unit V), numbered steps,
+    "เริ่มทำตามแผน" → checklist; then `buildRackMap()` (Y-Y only): slots × phases per side
+    in rack order (`slotOrder`), changed cells coloured (move/spare) with step-number
+    badges, tap → `rackTap()` shows those steps. `#checklistSection` = `renderChecklist()`:
+    tick steps, current step shows ถอด/ใส่ per position from `actChanges(a)`; progress kept
+    in localStorage per plan (`window.__plan.key`, try/catch). Everything that was there
+    before (before/system cards, metrics, formulas, ref table, 2/4/6 cards, unit lists)
+    sits under "รายละเอียดเพิ่มเติม"; the results view is the default tab. Mobile: compact
+    header and one-row wizard so the answer starts near the top. Display only — the plan
+    shown/exported is still `quickResult.recommended`.
 - **Within-side balance (`PHASE_SPREAD_UF = 0.005 µF`) — a RANKING OBJECTIVE again
   since v9.7** (user: "บาลานซ์ A B C ของแต่ละฝั่ง", "บาลานซ์ก่อน แรงงานทีหลัง"). The
   within-wye series spread (A=B=C on Y1, A'=B'=C' on Y2, via `phaseSpreadOf()` on the

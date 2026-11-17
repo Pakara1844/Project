@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Step 3 Mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--page:#eceef2;--ink:#14181f;--ink2:#4a5261;--blue:#1d4ed8;--green:#047857;--green-bg:#e3f4ec;--amber-ink:#8a4b00;--amber-bg:#fff1d6;--line:#e3e7ee}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--page);color:var(--ink);font-family:"Noto Sans Thai",system-ui,sans-serif;line-height:1.5;padding:32px 16px 64px}
+::selection{background:var(--blue);color:#fff}
+.mono{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+.intro{max-width:1100px;margin:0 auto 28px}
+.intro h1{font-size:1.6rem;font-weight:700;margin-bottom:6px}
+.intro p{color:var(--ink2);max-width:72ch}
+.row{display:flex;gap:28px;overflow-x:auto;padding:8px 4px 24px;justify-content:safe center}
+.variant{flex:0 0 360px}
+.variant h2{font-size:1.05rem;font-weight:700;margin-bottom:2px}
+.variant .why{font-size:.9rem;color:var(--ink2);margin-bottom:12px;min-height:4.5em}
+.notes{margin-top:14px;font-size:.88rem;color:var(--ink2)}
+.notes b{color:var(--ink)}
+.notes li{margin-left:1.1em;margin-bottom:3px}
+.phone{width:360px;height:780px;border-radius:34px;background:#0f1115;padding:10px;box-shadow:0 18px 40px -18px rgba(15,17,21,.55),0 2px 6px rgba(15,17,21,.25)}
+.screen{width:100%;height:100%;border-radius:26px;overflow:hidden;background:#f4f6fa;display:flex;flex-direction:column}
+.status{height:26px;flex:none;display:flex;justify-content:space-between;align-items:center;padding:0 18px;font:600 12px/1 "IBM Plex Mono",monospace;color:#14181f}
+.scroll{flex:1;overflow-y:auto;padding:0 14px 14px;scrollbar-width:thin}
+.bar{flex:none;display:flex;align-items:center;justify-content:space-between;padding:6px 16px 10px;background:#fff;border-bottom:1px solid var(--line)}
+.bar b{font-size:1rem}
+.bar span{font-size:.8rem;color:var(--ink2)}
+svg.i{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* shared verdict */
+.verdict{background:var(--green-bg);border-radius:16px;padding:14px 16px;margin-top:12px;color:#063b2b}
+.verdict .v{display:flex;align-items:center;gap:8px;font-weight:700;font-size:1.05rem}
+.verdict .nums{display:flex;align-items:baseline;gap:10px;margin-top:6px}
+.verdict .nums .b{font:500 1.05rem "IBM Plex Mono";color:#7a2d16;text-decoration:line-through;text-decoration-thickness:1px}
+.verdict .nums .a{font:600 2rem/1.1 "IBM Plex Mono";color:#065f46;letter-spacing:-0.02em}
+.verdict .nums .u{font-size:.9rem;color:#065f46}
+.verdict .sub{font-size:.84rem;margin-top:4px;color:#14532d}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip{background:#fff;border:1px solid var(--line);border-radius:99px;padding:3px 10px;font-size:.8rem;color:var(--ink)}
+.chip b{font-family:"IBM Plex Mono",monospace}
+
+/* V1 single answer */
+.v1 h3{font-size:.95rem;margin:16px 0 8px}
+.v1 ol{list-style:none;display:flex;flex-direction:column;gap:8px}
+.v1 li{display:flex;gap:10px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:.88rem;line-height:1.45}
+.v1 li .n{flex:none;width:24px;height:24px;border-radius:50%;background:var(--blue);color:#fff;font:600 .8rem/24px "IBM Plex Mono";text-align:center}
+.v1 li b{font-family:"IBM Plex Mono",monospace;font-weight:600}
+.v1 .up{margin-top:12px;background:#fff;border:1.5px solid #9db4ef;border-radius:12px;padding:10px 12px;font-size:.86rem;display:flex;align-items:center;gap:10px}
+.v1 .up b{font-family:"IBM Plex Mono",monospace}
+.v1 .up button{margin-left:auto;font:600 .82rem "Noto Sans Thai";color:var(--blue);background:#eef3ff;border:0;border-radius:8px;padding:6px 10px;white-space:nowrap}
+.v1 .more{margin-top:10px;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;background:#fff}
+.v1 .more div{display:flex;justify-content:space-between;align-items:center;padding:12px;font-size:.88rem;font-weight:600}
+.v1 .more div + div{border-top:1px solid var(--line)}
+.v1 .more small{font-weight:500;color:var(--ink2)}
+
+/* V2 checklist */
+.v2 .prog{margin-top:12px;display:flex;align-items:center;gap:10px;font-size:.86rem;color:var(--ink2)}
+.v2 .prog .track{flex:1;height:8px;border-radius:4px;background:#dfe4ec;overflow:hidden}
+.v2 .prog .fill{width:33%;height:100%;background:var(--green)}
+.v2 .task{margin-top:10px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px}
+.v2 .task.done{background:#f3f5f8;color:var(--ink2)}
+.v2 .task.now{border:2px solid var(--blue);box-shadow:0 6px 16px -10px rgba(29,78,216,.6)}
+.v2 .th{display:flex;align-items:center;gap:10px;font-size:.88rem;font-weight:600}
+.v2 .box{flex:none;width:26px;height:26px;border-radius:8px;border:2px solid #9aa4b5;display:flex;align-items:center;justify-content:center;background:#fff}
+.v2 .done .box{background:var(--green);border-color:var(--green);color:#fff}
+.v2 .done .th span{text-decoration:line-through}
+.v2 .swap{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;margin-top:10px}
+.v2 .slot{border-radius:10px;padding:8px 10px;background:#f1f3f7}
+.v2 .slot small{display:block;font-size:.8rem;color:var(--ink2)}
+.v2 .slot b{font:600 1.05rem "IBM Plex Mono"}
+.v2 .slot.out{background:var(--amber-bg)}
+.v2 .slot.out b{color:var(--amber-ink)}
+.v2 .slot.in{background:#e8efff}
+.v2 .slot.in b{color:#1e3a8a}
+.v2 .arrow{color:var(--ink2)}
+.v2 .go{margin-top:10px;width:100%;height:46px;border:0;border-radius:12px;background:var(--blue);color:#fff;font:600 .95rem "Noto Sans Thai"}
+.v2 .after{margin-top:10px;font-size:.84rem;color:var(--ink2);background:#fff;border:1px dashed #b7c0cf;border-radius:12px;padding:10px 12px}
+.v2 .after b{font-family:"IBM Plex Mono",monospace;color:var(--ink)}
+
+/* V3 rack map */
+.v3 .legend{display:flex;gap:12px;font-size:.76rem;color:var(--ink2);margin:12px 0 6px;flex-wrap:wrap}
+.v3 .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+.v3 .side{background:#fff;border:1px solid var(--line);border-radius:14px;padding:10px;margin-top:8px}
+.v3 .side h3{font-size:.85rem;display:flex;justify-content:space-between}
+.v3 .side h3 span{font:500 .78rem "IBM Plex Mono";color:var(--ink2)}
+.v3 .grid{display:grid;grid-template-columns:28px repeat(3,1fr);gap:3px;margin-top:6px;font:500 .74rem "IBM Plex Mono"}
+.v3 .grid .hd{text-align:center;color:var(--ink2);font-weight:600}
+.v3 .grid .rn{color:#6b7280;text-align:right;padding-right:4px;line-height:22px}
+.v3 .cell{height:22px;border-radius:5px;background:#eef1f5;color:#4b5563;display:flex;align-items:center;justify-content:center;position:relative}
+.v3 .cell.ch{background:#1d4ed8;color:#fff;font-weight:600}
+.v3 .cell.sp{background:#047857;color:#fff;font-weight:600}
+.v3 .cell.out{background:#fde2b2;color:#7a3f00;font-weight:600}
+.v3 .tap{margin-top:10px;background:#fff;border:2px solid var(--blue);border-radius:14px;padding:10px 12px;font-size:.86rem}
+.v3 .tap .t{display:flex;gap:8px;align-items:center;font-weight:600}
+.v3 .tap .n{width:22px;height:22px;border-radius:50%;background:var(--blue);color:#fff;font:600 .76rem/22px "IBM Plex Mono";text-align:center}
+.v3 .tap p{margin-top:4px;color:var(--ink2)}
+.v3 .tap b{font-family:"IBM Plex Mono",monospace;color:var(--ink)}
+.v3 .nav{display:flex;gap:8px;margin-top:8px}
+.v3 .nav button{flex:1;height:42px;border-radius:10px;border:1px solid var(--line);background:#fff;font:600 .88rem "Noto Sans Thai";color:var(--ink)}
+.v3 .nav button.p{background:var(--blue);border-color:var(--blue);color:#fff}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="ok" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="arr" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="back" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></symbol>
+</svg>
+
+<div class="intro">
+  <h1>หน้าผลลัพธ์ บนมือถือ — 3 แนวทาง</h1>
+  <p>ข้อมูลจริงจากแบงค์ SNO-CAY3 (115 kV): แผนแนะนำสับ 6 ครั้ง ใช้ spare 2 ลูก I<sub>no</sub> 115.7 → 11.4 mA ผลรวมต่อเฟสต่างกัน Y1 0.10 · Y2 0.10 µF ทุกแบบเริ่มที่คำตอบก่อน ส่วนตาราง ref การ์ด 2/4/6 ค่าทางไฟฟ้า และสูตร ยังอยู่ครบ แต่ย้ายไปไว้ข้างล่างหรือหลังปุ่ม</p>
+</div>
+
+<div class="row">
+
+<!-- V1 -->
+<section class="variant v1">
+  <h2>1 · คำตอบเดียว แล้วค่อยลงรายละเอียด</h2>
+  <p class="why">ผลสรุป แผนแนะนำ ขั้นตอน และทางเลือกที่คุ้มกว่า 1 ทาง อยู่ในหน้าจอแรก ที่เหลือพับไว้</p>
+  <div class="phone"><div class="screen">
+    <div class="status"><span>9:41</span><span>5G</span></div>
+    <div class="bar"><b>ผลการวิเคราะห์</b><span>SNO-CAY3 · 115 kV</span></div>
+    <div class="scroll">
+      <div class="verdict">
+        <div class="v"><svg class="i"><use href="#ok"/></svg>ผ่านทั้งรีเลย์และบาลานซ์</div>
+        <div class="nums"><span class="b">115.7</span><span class="a">11.4</span><span class="u">mA (เกณฑ์ 50)</span></div>
+        <div class="sub">ผลรวมต่อเฟสต่างกัน Y1 0.10 · Y2 0.10 µF (เกณฑ์ 0.1)</div>
+      </div>
+      <div class="chips"><span class="chip">สับ <b>6</b> ครั้ง</span><span class="chip">spare <b>2</b> ลูก</span><span class="chip">ลูกเสียออกครบ</span><span class="chip">แรงดันลูกสูงสุด <b>104%</b></span></div>
+      <h3>ทำตามลำดับ</h3>
+      <ol>
+        <li><span class="n">1</span><span>ถอด <b>B-5</b> (25.20) ออก ใส่ spare <b>S-2</b> (26.40)</span></li>
+        <li><span class="n">2</span><span>คู่ <b>B'-11</b> เปลี่ยนลูก b (26.10) เป็น spare <b>S-1</b> (27.10)</span></li>
+        <li><span class="n">3</span><span>ถอด <b>A-3</b> (26.50) ออก ใส่ลูกที่ถอดจาก <b>B'-11.b</b></span></li>
+        <li><span class="n">4</span><span>คู่ <b>C'-11</b> เปลี่ยนลูก b เป็นลูกที่ถอดจาก <b>A-3</b></span></li>
+      </ol>
+      <div class="up">สับเพิ่ม 1 ครั้ง ได้ <b>5.0 mA</b><button>ดูแผนนี้</button></div>
+      <div class="more">
+        <div>ทางเลือกอื่น <small>6 แผน</small></div>
+        <div>ผัง rack หลังสับ <small>ดูทั้งสองฝั่ง</small></div>
+        <div>ค่าทางไฟฟ้าและสูตร <small>สำหรับตรวจทาน</small></div>
+      </div>
+    </div>
+  </div></div>
+  <ul class="notes">
+    <li><b>เหมาะ:</b> เปลี่ยนจากของเดิมน้อย เห็นคำตอบภายในหน้าจอแรก ข้อมูลเดิมยังอยู่ครบ</li>
+    <li><b>ข้อแลก:</b> ขั้นตอนเป็นข้อความ ต้องอ่านเอง ไม่มีที่บันทึกว่าทำถึงไหนแล้ว</li>
+  </ul>
+</section>
+
+<!-- V2 -->
+<section class="variant v2">
+  <h2>2 · Checklist หน้างาน</h2>
+  <p class="why">ทำทีละขั้น ติ๊กเมื่อเสร็จ แต่ละขั้นแสดงว่าถอดลูกไหนออกและใส่ลูกไหนเข้า จบด้วยค่าที่ควรวัดได้</p>
+  <div class="phone"><div class="screen">
+    <div class="status"><span>9:41</span><span>5G</span></div>
+    <div class="bar"><b>ทำตามแผน</b><span>สับ 6 ครั้ง · 11.4 mA</span></div>
+    <div class="scroll">
+      <div class="prog"><div class="track"><div class="fill"></div></div>เสร็จ 2 / 6</div>
+      <div class="task done"><div class="th"><span class="box"><svg class="i"><use href="#ok"/></svg></span><span>1 · B-5 → spare S-2</span></div></div>
+      <div class="task done"><div class="th"><span class="box"><svg class="i"><use href="#ok"/></svg></span><span>2 · คู่ B'-11 ลูก b → spare S-1</span></div></div>
+      <div class="task now">
+        <div class="th"><span class="box"></span><span>3 · ถอด A-3 ใส่ลูกจาก B'-11.b</span></div>
+        <div class="swap">
+          <div class="slot out"><small>ถอดออก · A-3</small><b>26.50</b></div>
+          <svg class="i arrow"><use href="#arr"/></svg>
+          <div class="slot in"><small>ใส่เข้า · จาก B'-11.b</small><b>26.10</b></div>
+        </div>
+        <button class="go">ทำขั้นนี้เสร็จแล้ว</button>
+      </div>
+      <div class="task"><div class="th"><span class="box"></span><span>4 · คู่ C'-11 ลูก b → ลูกจาก A-3</span></div></div>
+      <div class="task"><div class="th"><span class="box"></span><span>5 · สลับลูก a: A'-11 ↔ B'-11</span></div></div>
+      <div class="after">ทำครบ 6 ขั้นแล้ว วัด I<sub>no</sub> ซ้ำ ควรได้ราว <b>11.4 mA</b> ถ้าต่างจากนี้มาก ให้ทวนค่าที่วัด</div>
+    </div>
+  </div></div>
+  <ul class="notes">
+    <li><b>เหมาะ:</b> ใช้ระหว่างสับจริง รู้ว่าทำถึงไหน ไม่ข้ามขั้น (ควรจำความคืบหน้าไว้ในเครื่อง)</li>
+    <li><b>ข้อแลก:</b> ต้องเพิ่มหน้าใหม่ และต้องมีปุ่มกลับไปดูภาพรวม/ทางเลือกอื่น</li>
+  </ul>
+</section>
+
+<!-- V3 -->
+<section class="variant v3">
+  <h2>3 · ผัง rack</h2>
+  <p class="why">เห็นตำแหน่งจริงใน rack ทั้งฝั่ง ช่องที่ต้องแก้มีเลขขั้นตอน แตะช่องเพื่อดูว่าทำอะไร</p>
+  <div class="phone"><div class="screen">
+    <div class="status"><span>9:41</span><span>5G</span></div>
+    <div class="bar"><b>ผัง rack หลังสับ</b><span>ผ่าน · 11.4 mA</span></div>
+    <div class="scroll">
+      <div class="legend"><span><i style="background:#1d4ed8"></i>ย้าย/สลับ</span><span><i style="background:#047857"></i>ใส่ spare</span><span><i style="background:#fde2b2"></i>ลูกเสียที่ถอดออก</span></div>
+      <div class="side">
+        <h3>ฝั่ง Y1 <span>ΣC 299.6 · 299.5 · 299.6</span></h3>
+        <div class="grid">
+          <span></span><span class="hd">A</span><span class="hd">B</span><span class="hd">C</span>
+          <span class="rn">1</span><span class="cell">26.2</span><span class="cell">27.6</span><span class="cell">27.6</span>
+          <span class="rn">2</span><span class="cell">27.5</span><span class="cell">27.4</span><span class="cell">27.1</span>
+          <span class="rn">3</span><span class="cell ch">③ 26.1</span><span class="cell">26.8</span><span class="cell">26.7</span>
+          <span class="rn">4</span><span class="cell">27.7</span><span class="cell">27.7</span><span class="cell">27.7</span>
+          <span class="rn">5</span><span class="cell">27.0</span><span class="cell sp">① 26.4</span><span class="cell">27.8</span>
+          <span class="rn">6</span><span class="cell">27.5</span><span class="cell">26.6</span><span class="cell">26.7</span>
+          <span class="rn">7</span><span class="cell">27.6</span><span class="cell">27.6</span><span class="cell">27.5</span>
+        </div>
+      </div>
+      <div class="side">
+        <h3>ฝั่ง Y2 <span>ΣC 599.2 · 599.1 · 599.2</span></h3>
+        <div class="grid">
+          <span></span><span class="hd">A'</span><span class="hd">B'</span><span class="hd">C'</span>
+          <span class="rn">6</span><span class="cell ch">⑥ 53.0</span><span class="cell">53.7</span><span class="cell">55.3</span>
+          <span class="rn">10</span><span class="cell">53.4</span><span class="cell">54.4</span><span class="cell">54.7</span>
+          <span class="rn">11</span><span class="cell ch">⑤ 54.6</span><span class="cell sp">②⑤ 54.8</span><span class="cell ch">④⑥ 52.7</span>
+        </div>
+      </div>
+      <div class="tap">
+        <div class="t"><span class="n">3</span>ช่อง A-3 (ฝั่ง Y1)</div>
+        <p>ถอด <b>26.50</b> ออก ใส่ลูกที่ถอดจาก B'-11.b (<b>26.10</b>) แทน</p>
+        <div class="nav"><button>ขั้นก่อน</button><button class="p">ขั้นถัดไป</button></div>
+      </div>
+    </div>
+  </div></div>
+  <ul class="notes">
+    <li><b>เหมาะ:</b> ช่างหาตำแหน่งใน rack ได้เร็ว เห็นภาพทั้งฝั่งเหมือนใบบันทึก</li>
+    <li><b>ข้อแลก:</b> แบงค์ใหญ่ (11 ช่อง × 3 เฟส × 2 ฝั่ง) ต้องเลื่อนดู ตัวเลขในช่องเล็ก</li>
+  </ul>
+</section>
+
+</div>
+</body>
+</html>

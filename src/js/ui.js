@@ -314,7 +314,7 @@ function renderResults(vals,result){
         // per extra swap) so the banner and the table never contradict each other.
         // (v9.8: no hint in spares-only mode — nothing passes, so "swap more" is moot.)
         (bestRow && bestRow.plan.actualSwaps > autoSw.actualSwaps)
-          ? `ถ้าสับเพิ่มอีก ${bestRow.plan.actualSwaps - autoSw.actualSwaps} ครั้ง (รวม ${bestRow.plan.actualSwaps}) I<sub>no</sub> จะลดเหลือ ${bestRow.plan.Ino_mA.toFixed(1)} mA ลดได้ครั้งละ ${bestRow.gainPerSwap.toFixed(1)} mA ดูได้ในตารางเปรียบเทียบ`
+          ? `ถ้าสับเพิ่มอีก ${bestRow.plan.actualSwaps - autoSw.actualSwaps} ครั้ง (รวม ${bestRow.plan.actualSwaps}) I<sub>no</sub> จะลดเหลือ ${bestRow.plan.Ino_mA.toFixed(1)} mA <button type="button" class="ans-up" onclick="useInoRef(${bestRow.ref})">ใช้แผนนี้</button>`
           : fullerOpt
           ? `สับ ${autoSw.actualSwaps} ครั้งก็พอให้รีเลย์ผ่าน ถ้าต้องการบาลานซ์ครบด้วย ใช้ ${fullerOpt.ns} ครั้ง (ดูตัวเลือกด้านล่าง)`
           : extraGain > 0.5
@@ -342,7 +342,11 @@ function renderResults(vals,result){
     <i class="fas fa-bolt"></i> แผนแนะนำด้านล่างคือแผนที่สับน้อยที่สุด (ถอดลูกเสียก่อน และใช้ spare เท่าที่จำเป็น)
     ต่อจากนั้นเป็นตัวเลือกแบบกำหนดจำนวนครั้ง ${budgetList||'2 / 4 / 6'} ครั้ง ให้เลือกตามเวลาที่มีหน้างาน</div>`;
 
-  document.getElementById('tabQuick').innerHTML = summaryBanner + lockedBanner + buildRefTable(quickResult, topology) + quickIntro + autoCard +
+  // v10.6 — the answer comes first: verdict + plan summary + steps + rack map (+ checklist)
+  document.getElementById('answerSection').innerHTML = buildAnswer(summaryBanner, autoSw, quickResult, topology);
+  const cl = document.getElementById('checklistSection'); cl.hidden = true; cl.innerHTML = '';
+  document.getElementById('answerSection').hidden = false;
+  document.getElementById('tabQuick').innerHTML = lockedBanner + buildRefTable(quickResult, topology) + quickIntro + autoCard +
     `<div style="margin:18px 0 8px;font-weight:700;color:var(--txt2,#555);font-size:0.95rem;">
       <i class="fas fa-hand-pointer"></i> ตัวเลือกแบบกำหนดจำนวนครั้ง</div>` +
     fixedCards;
@@ -355,7 +359,7 @@ function renderResults(vals,result){
   const fullTitle = `แผนจากการค้นหาลึกสุด: สับ ${fullResult.actualSwaps!=null?fullResult.actualSwaps:(fullResult.swapCount||0)} ครั้ง`;
   document.getElementById('tabFull').innerHTML = lockedBanner + buildSolCard('full',fullTitle,fullSw,true,topology);
 
-  switchCalcView('metrics');
+  switchCalcView('results');
   switchTab('quick');
 }
 
@@ -644,5 +648,142 @@ function buildRefTable(quickResult, topology) {
     <div class="ref-scroll"><table class="ref-table">
       <thead><tr><th>I<sub>no</sub> ต่ำกว่า</th><th>สับ (ครั้ง)</th><th>ใช้ spare</th><th>I<sub>no</sub> ที่ได้ (mA)</th><th>ลูกเสียที่เหลือ</th><th>ΔΣC ต่อเฟส<br>Y1 / Y2 (µF)</th><th>ลดได้ต่อการสับเพิ่ม<br>(mA/ครั้ง)</th><th>แรงดันลูกที่สูงสุด</th><th></th></tr></thead>
       <tbody>${body}</tbody></table></div>
+  </div>`;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v10.6 — Step 3 answer card, checklist mode and rack map
+// ═══════════════════════════════════════════════════════════════════════════
+const RACK_PH = { Y1: ['A', 'B', 'C'], Y2: ["A'", "B'", "C'"] };
+const escH = s => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+const isRealSpareU = u => !!u && !u.pulledPiece && /^S-/.test(u.id || '');
+const srcLabel = u => isRealSpareU(u) ? 'spare ' + u.id : 'ลูกที่ถอดจาก ' + u.id;
+
+// What one action changes, position by position (used by the checklist and the rack map).
+function actChanges(a) {
+  if (a.type === 'exchange') return [
+    { pos: a.from.id, before: a.from.val, after: a.to.val, src: 'ลูกจาก ' + a.to.id, key: a.from.origin + '|' + a.from.pos, kind: 'ch' },
+    { pos: a.to.id, before: a.to.val, after: a.from.val, src: 'ลูกจาก ' + a.from.id, key: a.to.origin + '|' + a.to.pos, kind: 'ch' }];
+  if (a.type === 'replace-y1' || a.type === 'replace-y2') return [
+    { pos: a.from.id, before: a.from.val, after: a.to.val, src: srcLabel(a.to), key: a.from.origin + '|' + a.from.pos, kind: isRealSpareU(a.to) ? 'sp' : 'ch' }];
+  if (a.type === 'piece-replace') return [
+    { pos: a.from.id + ' ลูก ' + a.piece, before: a.oldVal, after: a.to.val, src: srcLabel(a.to), key: a.from.origin + '|' + a.from.pos, kind: isRealSpareU(a.to) ? 'sp' : 'ch' }];
+  if (a.type === 'piece-swap') return [
+    { pos: a.u1.id + ' ลูก ' + a.p1, before: a.v1, after: a.v2, src: 'ลูกจาก ' + a.u2.id + '.' + a.p2, key: a.u1.origin + '|' + a.u1.pos, kind: 'ch' },
+    { pos: a.u2.id + ' ลูก ' + a.p2, before: a.v2, after: a.v1, src: 'ลูกจาก ' + a.u1.id + '.' + a.p1, key: a.u2.origin + '|' + a.u2.pos, kind: 'ch' }];
+  return [];
+}
+
+function buildAnswer(banner, sw, qr, topology) {
+  const acts = sw.acts || [], steps = sw.steps || [];
+  const chips = [];
+  chips.push(`สับ <b>${sw.actualSwaps || 0}</b> ครั้ง`);
+  chips.push(`spare <b>${sw.sparesUsed || 0}</b> ลูก`);
+  if (topology !== 'h-bridge') {
+    const nFail = sw._fail || 0;
+    chips.push(nFail ? `ลูกเสียค้าง <b>${nFail}</b> ลูก` : 'ลูกเสียออกครบ');
+    if (sw.unitV && isFinite(sw.unitV.maxPctShare))
+      chips.push(sw.unitV.maxPctRated != null ? `แรงดันลูกสูงสุด <b>${sw.unitV.maxPctRated.toFixed(0)}%</b> พิกัด` : `แรงดันลูกสูงสุด <b>${sw.unitV.maxPctShare.toFixed(0)}%</b> ของเฉลี่ย`);
+  }
+  const list = acts.length
+    ? `<ol class="ans-steps">${steps.map((t, i) => `<li><span class="n">${i + 1}</span><span>${t}</span></li>`).join('')}</ol>`
+    : `<p class="ans-none">${escH(steps[0] || 'ไม่ต้องสับ')}</p>`;
+  window.__plan = { acts, steps, ino: sw.Ino_mA, key: 'cbank-cl:' + steps.join('|').length + ':' + steps.join('|').slice(0, 120) };
+  return `<div class="answer-card">
+    ${banner}
+    <div class="ans-chips">${chips.map(c => `<span class="ans-chip">${c}</span>`).join('')}</div>
+    <div class="ans-head"><h2>ทำตามลำดับ</h2>${acts.length ? '<button type="button" class="btn btn-primary ans-start" onclick="openChecklist()"><i class="fas fa-list-check"></i>&nbsp;เริ่มทำตามแผน</button>' : ''}</div>
+    ${list}
+  </div>` + (topology !== 'h-bridge' && acts.length ? buildRackMap(sw) : '');
+}
+
+// Rack map: slots × phases per side, in rack order; changed slots carry their step numbers.
+function buildRackMap(sw) {
+  const marks = {};
+  (sw.acts || []).forEach((a, i) => actChanges(a).forEach(c => { (marks[c.key] = marks[c.key] || []).push({ n: i + 1, kind: c.kind }); }));
+  const slot = (typeof slotOrder === 'function') ? slotOrder(sw.acts) : {};
+  const info = {};
+  const side = (name, units) => {
+    const phs = RACK_PH[name];
+    const cols = phs.map(ph => {
+      const m = {};
+      units.filter(u => u.origin === ph).forEach(u => { const p = slot[u.id] != null ? slot[u.id] : u.pos; m[p] = u; });
+      return m;
+    });
+    const maxRow = Math.max(-1, ...cols.flatMap(c => Object.keys(c).map(Number)));
+    const sums = cols.map(c => Object.values(c).reduce((t, u) => t + (u.val > 0 ? u.val : 0), 0));
+    let cells = '';
+    for (let r = 0; r <= maxRow; r++) {
+      cells += `<span class="rk-rn">${r + 1}</span>`;
+      phs.forEach((ph, j) => {
+        const u = cols[j][r]; if (!u) { cells += '<span class="rk-cell rk-empty"></span>'; return; }
+        const k = ph + '|' + r, mk = marks[k] || [];
+        const cls = mk.some(x => x.kind === 'sp') ? 'rk-sp' : (mk.length ? 'rk-ch' : (unitBelowNameplate(u) ? 'rk-bad' : ''));
+        if (mk.length) info[k] = { slot: ph + '-' + (r + 1), steps: mk.map(x => x.n) };
+        const nums = mk.length ? [...new Set(mk.map(x => x.n))].map(n => `<span class="rk-n">${n}</span>`).join('') : '';
+        cells += mk.length
+          ? `<button type="button" class="rk-cell ${cls}" onclick="rackTap('${k}')" aria-label="ช่อง ${ph}-${r + 1} ขั้นที่ ${mk.map(x => x.n).join(' ')}">${u.val.toFixed(1)}${nums}</button>`
+          : `<span class="rk-cell ${cls}">${u.val.toFixed(1)}</span>`;
+      });
+    }
+    return `<div class="rk-side"><h3>ฝั่ง ${name} <span>ΣC ${sums.map(v => v.toFixed(1)).join(' · ')} µF</span></h3>
+      <div class="rk-grid"><span></span>${phs.map(p => `<span class="rk-hd">${p}</span>`).join('')}${cells}</div></div>`;
+  };
+  window.__rackInfo = info;
+  return `<div class="rack-map">
+    <div class="rk-top"><h2>ผัง rack หลังสับ</h2>
+      <div class="rk-legend"><span><i class="rk-ch"></i>ย้าย/สลับ</span><span><i class="rk-sp"></i>ใส่ spare</span><span><i class="rk-bad"></i>ลูกเสียที่ยังค้าง</span></div></div>
+    <div class="rk-sides">${side('Y1', sw.y1Full || sw.y1 || [])}${side('Y2', sw.y2Full || sw.y2 || [])}</div>
+    <div class="rk-detail" id="rackDetail">แตะช่องที่มีเลขกำกับ เพื่อดูว่าต้องทำอะไร</div>
+  </div>`;
+}
+function rackTap(k) {
+  const el = document.getElementById('rackDetail'), it = window.__rackInfo && window.__rackInfo[k], p = window.__plan;
+  if (!el || !it || !p) return;
+  el.innerHTML = `<b>ช่อง ${escH(it.slot)}</b>` + it.steps.map(n => `<div class="rk-step"><span class="n">${n}</span><span>${p.steps[n - 1]}</span></div>`).join('');
+}
+
+// ── checklist mode ──
+function clLoad() { try { return JSON.parse(localStorage.getItem(window.__plan.key) || '[]'); } catch (e) { return []; } }
+function clSave(done) { try { localStorage.setItem(window.__plan.key, JSON.stringify(done)); } catch (e) { /* private mode: progress not kept */ } }
+function openChecklist() {
+  document.getElementById('answerSection').hidden = true;
+  const box = document.getElementById('checklistSection'); box.hidden = false;
+  renderChecklist();
+  box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function closeChecklist() {
+  document.getElementById('checklistSection').hidden = true;
+  const a = document.getElementById('answerSection'); a.hidden = false;
+  a.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function toggleTask(i) {
+  const done = clLoad(); const at = done.indexOf(i);
+  if (at >= 0) done.splice(at, 1); else done.push(i);
+  clSave(done); renderChecklist();
+}
+function resetChecklist() { clSave([]); renderChecklist(); }
+function renderChecklist() {
+  const p = window.__plan; if (!p) return;
+  const done = clLoad(), n = p.acts.length, nDone = done.filter(i => i < n).length;
+  const cur = [...Array(n).keys()].find(i => !done.includes(i));
+  const tasks = p.acts.map((a, i) => {
+    const isDone = done.includes(i), isNow = i === cur;
+    const ch = isNow ? `<div class="cl-swaps">${actChanges(a).map(c => `
+        <div class="cl-swap"><div class="cl-pos">${escH(c.pos)}</div>
+          <div class="cl-vals"><span class="cl-out">ถอด ${c.before.toFixed(2)}</span><i class="fas fa-arrow-right" aria-hidden="true"></i><span class="cl-in">ใส่ ${c.after.toFixed(2)}</span></div>
+          <div class="cl-src">${escH(c.src)}</div></div>`).join('')}</div>
+        <button type="button" class="btn btn-primary cl-done" onclick="toggleTask(${i})">ทำขั้นนี้เสร็จแล้ว</button>` : '';
+    return `<div class="cl-task${isDone ? ' is-done' : ''}${isNow ? ' is-now' : ''}">
+      <label class="cl-head"><input type="checkbox" ${isDone ? 'checked' : ''} onchange="toggleTask(${i})"><span class="cl-n">${i + 1}</span><span class="cl-t">${p.steps[i]}</span></label>${ch}</div>`;
+  }).join('');
+  document.getElementById('checklistSection').innerHTML = `<div class="checklist">
+    <div class="cl-top"><button type="button" class="btn btn-back" onclick="closeChecklist()"><i class="fas fa-arrow-left"></i>&nbsp;กลับไปดูภาพรวม</button>
+      <button type="button" class="btn btn-outline" onclick="resetChecklist()">เริ่มนับใหม่</button></div>
+    <h2>ทำตามแผน: สับ ${n} ครั้ง</h2>
+    <div class="cl-prog"><div class="cl-track"><div class="cl-fill" style="width:${n ? Math.round(nDone / n * 100) : 0}%"></div></div><span>เสร็จ ${nDone} / ${n}</span></div>
+    ${tasks}
+    <div class="cl-after${nDone === n ? ' is-ready' : ''}">${nDone === n ? 'ทำครบทุกขั้นแล้ว ' : 'เมื่อทำครบทุกขั้นแล้ว '}วัด I<sub>no</sub> ซ้ำ ควรได้ราว <b>${(p.ino || 0).toFixed(1)} mA</b> ถ้าต่างจากนี้มาก ให้ทวนค่าที่วัดอีกครั้ง</div>
   </div>`;
 }
