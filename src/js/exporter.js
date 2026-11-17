@@ -42,10 +42,14 @@ function _setCell(xml, addr, val) {
   return xml.replace(re, repl);
 }
 
-// group unit values by phase origin (A,B,C / A',B',C')
-function _byPhase(arr) {
+// group unit values by phase origin (A,B,C / A',B',C'), in RACK order: a unit sits in
+// slot[id] if a swap moved it there (slotOrder of the plan's actions), else its own pos.
+// v10.4 (fix 6): before, the after-sheet listed swappable units first and locked ones
+// last, so a field form could show B'-11 in row 9.
+function _byPhase(arr, slot) {
   const g = { A: [], B: [], C: [], "A'": [], "B'": [], "C'": [] };
-  (arr || []).forEach(u => { if (g[u.origin]) g[u.origin].push(u.val); });
+  const posOf = u => (slot && slot[u.id] != null) ? slot[u.id] : (u.pos != null ? u.pos : 999);
+  (arr || []).slice().sort((a, b) => posOf(a) - posOf(b)).forEach(u => { if (g[u.origin]) g[u.origin].push(u.val); });
   return g;
 }
 
@@ -131,7 +135,7 @@ async function exportToExcel(data) {
   zip.file('xl/worksheets/sheet2.xml', _patchFarad(await zip.file('xl/worksheets/sheet2.xml').async('string'), vs, ppBefore));
   zip.file('xl/worksheets/sheet3.xml', _patchVoltAmp(await zip.file('xl/worksheets/sheet3.xml').async('string'), vs, ppBefore));
 
-  const a1 = _patchArrangement(await zip.file('xl/worksheets/sheet4.xml').async('string'), vs, _byPhase(afterUnits));
+  const a1 = _patchArrangement(await zip.file('xl/worksheets/sheet4.xml').async('string'), vs, _byPhase(afterUnits, slotOrder(after.acts)));
   zip.file('xl/worksheets/sheet4.xml', a1.xml);
   zip.file('xl/worksheets/sheet5.xml', _patchFarad(await zip.file('xl/worksheets/sheet5.xml').async('string'), vs, ppAfter));
   zip.file('xl/worksheets/sheet6.xml', _patchVoltAmp(await zip.file('xl/worksheets/sheet6.xml').async('string'), vs, ppAfter));

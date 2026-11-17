@@ -24,10 +24,8 @@ function buildEngPanelFull(title,m,topology){
     items=[
       {l:'Σ C Left (A+C)',v:F2.uF(m.CA_top_uF+m.CA_bot_uF),u:'µF',c:'hi-blue',vc:'hi'},
       {l:'Σ C Right (B+D)',v:F2.uF(m.CB_top_uF+m.CB_bot_uF),u:'µF',c:'hi-amber',vc:'warn'},
-      {l:'Xc Left (xa1)',v:F2.Ohm(m.xa1),u:'Ω',c:'hi-blue',vc:''},
-      {l:'Xc Right (xa2)',v:F2.Ohm(m.xa2),u:'Ω',c:'hi-amber',vc:''},
-      {l:'I_up',v:F2.mA(m.Iup),u:'A',c:'hi-blue',vc:''},
-      {l:'I_down',v:F2.mA(m.Idown),u:'A',c:'hi-amber',vc:''},
+      {l:'V จุดกลาง ซ้าย (A/C)',v:F2.V(m.VxL),u:'V',c:'hi-blue',vc:''},
+      {l:'V จุดกลาง ขวา (B/D)',v:F2.V(m.VxR),u:'V',c:'hi-amber',vc:''},
       {l:'I_bridge (60P)',v:F2.mA(m.In_mA),u:'mA',c:'hi-red',vc:c},
       {l:'Q รวม',v:F2.Mvar(m.Qt),u:'Mvar',c:'hi-green',vc:'good'},
     ];
@@ -60,8 +58,8 @@ function buildEngPanelFull(title,m,topology){
     items.push({l:'V_no (เฟสเซอร์)',v:F2.V(m.Vno),u:'V',c:'hi-amber',vc:'warn'});
     items.push({l:'I_no (CT, เฟสเซอร์)',v:F2.mA(m.Ino_mA),u:'mA',c:'hi-red',vc:c});
     if (m.spread && isFinite(m.spread.max)) {
-      items.push({l:'ΔC อนุกรมในฝั่ง (A=B=C / A\'=B\'=C\')',
-        v:m.spread.max.toFixed(4)+' (Y1 '+m.spread.y1.toFixed(4)+' / Y2 '+m.spread.y2.toFixed(4)+')',
+      items.push({l:'ΔΣC ต่อเฟสในฝั่ง (A=B=C / A\'=B\'=C\')',
+        v:m.spread.max.toFixed(2)+' (Y1 '+m.spread.y1.toFixed(2)+' / Y2 '+m.spread.y2.toFixed(2)+')',
         u:'µF',c:'hi-amber',vc:m.spread.ok?'good':'bad'});
     }
     items.push({l:'Q รวม',v:F2.Mvar(m.Qt),u:'Mvar',c:'hi-green',vc:'good'});
@@ -83,8 +81,7 @@ function buildSolEng(m,topology){
   if(topology==='h-bridge'){
     const c=m.In_mA>10?'bad':m.In_mA>1?'warn':'good';
     items=[
-      {l:'Xc Left',v:F2.Ohm(m.xa1),u:'Ω',c:'hi-blue',vc:''},
-      {l:'Xc Right',v:F2.Ohm(m.xa2),u:'Ω',c:'hi-amber',vc:''},
+      {l:'ΔV จุดกลาง ซ้าย−ขวา',v:F2.V(Math.abs((m.VxL||0)-(m.VxR||0))),u:'V',c:'hi-blue',vc:''},
       {l:'I_bridge (60P)',v:F2.mA(m.In_mA),u:'mA',c:'hi-amber',vc:c},
       {l:'Q รวม',v:F2.Mvar(m.Qt),u:'Mvar',c:'hi-green',vc:'good'},
     ];
@@ -100,10 +97,10 @@ function buildSolEng(m,topology){
     if (m.perPhase && m.perPhase.A && m.perPhase.A.C1 != null) {
       const pp = m.perPhase, ph = ['A','B','C'];
       const sp = a => Math.max.apply(null,a) - Math.min.apply(null,a);
-      const d1 = sp(ph.map(p=>pp[p].C1)), d2 = sp(ph.map(p=>pp[p].C2));
+      const d1 = sp(ph.map(p=>pp[p].sum1)), d2 = sp(ph.map(p=>pp[p].sum2));   // v10.3: ΣC per phase
       const tot = ph.map(p=>pp[p].C1+pp[p].C2), ratio = Math.max.apply(null,tot)/Math.min.apply(null,tot);
-      items.unshift({l:'ΔC ในฝั่ง Y1 · Y2',v:d1.toFixed(4)+' · '+d2.toFixed(4),u:'µF',c:'hi-teal',
-                     vc:(Math.max(d1,d2) <= SPREADTOL + 1e-9) ? 'good' : 'warn'});
+      items.unshift({l:'ΔΣC ต่อเฟสในฝั่ง Y1 · Y2',v:d1.toFixed(2)+' · '+d2.toFixed(2),u:'µF',c:'hi-teal',
+                     vc:(Math.max(d1,d2) <= BALSUM + 1e-9) ? 'good' : 'warn'});
       items.push({l:'C ต่อเฟส max/min',v:ratio.toFixed(4),u:'(≤1.08)',c:'hi-teal',vc: ratio <= 1.08 ? 'good' : 'bad'});
     }
     // Per-phase PARALLEL SUM after the swap, compared WITHIN each side (display only).
@@ -150,15 +147,15 @@ function renderResults(vals,result){
     // quantities that matter: ΔC WITHIN each wye, per-phase total ratio, and Vno.
     const pp = engBefore.perPhase, ph = ['A','B','C'];
     const sp = a => Math.max.apply(null,a) - Math.min.apply(null,a);
-    const d1 = sp(ph.map(p=>pp[p].C1)), d2 = sp(ph.map(p=>pp[p].C2));
+    const d1 = sp(ph.map(p=>pp[p].sum1)), d2 = sp(ph.map(p=>pp[p].sum2));   // v10.3: ΣC per phase
     const tot = ph.map(p=>pp[p].C1+pp[p].C2), ratio = Math.max.apply(null,tot)/Math.min.apply(null,tot);
     const flag = (el, bad) => { el.className = 'tc-val ' + (bad ? 'tc-danger' : 'tc-safe'); };
-    document.getElementById('lblSide1').textContent='ΔC ในฝั่ง Y1 (A/B/C)';
-    document.getElementById('lblSide2').textContent="ΔC ในฝั่ง Y2 (A'/B'/C')";
+    document.getElementById('lblSide1').textContent='ΔΣC ต่อเฟส Y1 (A/B/C)';
+    document.getElementById('lblSide2').textContent="ΔΣC ต่อเฟส Y2 (A'/B'/C')";
     if (lblBase) lblBase.textContent='C ต่อเฟส max/min (≤1.08)';
     const e1=document.getElementById('totalY1'), e2=document.getElementById('totalY2'), e3=document.getElementById('totalBase');
-    e1.textContent=d1.toFixed(4)+' µF'; flag(e1, d1 > SPREADTOL + 1e-9);
-    e2.textContent=d2.toFixed(4)+' µF'; flag(e2, d2 > SPREADTOL + 1e-9);
+    e1.textContent=d1.toFixed(2)+' µF'; flag(e1, d1 > BALSUM + 1e-9);
+    e2.textContent=d2.toFixed(2)+' µF'; flag(e2, d2 > BALSUM + 1e-9);
     e3.textContent=ratio.toFixed(4);    flag(e3, ratio > 1.08);
     const ev=document.getElementById('vnoBefore');
     if (ev) ev.textContent=(engBefore.Vno!=null?engBefore.Vno.toFixed(2):'—')+' V';
@@ -178,7 +175,7 @@ function renderResults(vals,result){
 
   // Engineering metrics
   document.getElementById('engMetricsSection').innerHTML=
-    buildEngPanelFull('📊 ค่าวิศวกรรม — ก่อนสับเปลี่ยน',engBefore,topology);
+    buildEngPanelFull('ค่าทางไฟฟ้าก่อนสับ',engBefore,topology);
 
   // Formulas with real values
   const fSec=document.getElementById('formulaSection');
@@ -258,16 +255,16 @@ function renderResults(vals,result){
   const bestRow = (topology!=='h-bridge' && quickResult.refTable)
     ? quickResult.refTable.find(r => r.bestValue && r.plan && r.gainPerSwap != null) : null;
   const maxD = quickResult.maxDepth || 6;
-  const autoWhy = recFromRef ? (picked ? `ตามที่เลือกจากตาราง: แรงงานน้อยสุดที่ I${'<sub>no</sub>'} < ${ALARM} mA`
-                                      : `บาลานซ์ก่อน แล้วแรงงานน้อยสุดที่ต่ำกว่า I${'<sub>no</sub>'} ref ${ALARM} mA`)
-                : rec.full ? 'น้อยสุดที่ผ่านครบ (รีเลย์+บาลานซ์)'
-                : rec.pass ? 'น้อยสุดที่ผ่านรีเลย์ (พอสำหรับหน้างาน)'
-                : `ยังไม่ผ่าน — ดีที่สุดเท่าที่ทำได้ภายใน ${maxD} ครั้ง`;
+  const autoWhy = recFromRef ? (picked ? `เลือกจากตาราง: สับน้อยที่สุดที่ทำให้ I<sub>no</sub> ต่ำกว่า ${ALARM} mA`
+                                      : `สับน้อยที่สุดที่ I<sub>no</sub> ต่ำกว่า ${ALARM} mA และผลรวมต่อเฟสต่างกันไม่เกิน ${BALSUM} µF`)
+                : rec.full ? 'สับน้อยที่สุดที่ผ่านทั้งรีเลย์และบาลานซ์'
+                : rec.pass ? 'สับน้อยที่สุดที่รีเลย์ผ่าน'
+                : `ยังไม่ผ่าน นี่คือผลที่ดีที่สุดภายใน ${maxD} ครั้ง`;
   const autoTitle = tempPlan
-    ? `⭐ แนะนำ (จัดชั่วคราว — spare ไม่พอ) — สับ ${tempPlan.actualSwaps} ครั้ง: เปลี่ยนตัวเสียหนักสุด ${tempPlan.sparesUsed} ตัว + กระจายตัวเสียที่เหลือให้ A=B=C`
+    ? `แผนแนะนำ (ชั่วคราว เพราะ spare ไม่พอ): สับ ${tempPlan.actualSwaps} ครั้ง เปลี่ยนลูกที่เสียหนักสุด ${tempPlan.sparesUsed} ลูก แล้วกระจายลูกเสียที่เหลือให้แต่ละเฟสเท่ากัน`
     : sparesOnly
-    ? `⭐ แนะนำ — เปลี่ยนตัวเสียหนักสุด ${sparesOnly.actualSwaps} ตัวด้วย spare ที่มี (ยังผ่านไม่ได้ — ต้องหา spare ดีเพิ่มอีก ${quickResult.sparesShort} ตัว)`
-    : `⭐ แนะนำ — สับ ${autoSw.actualSwaps} ครั้ง (${autoWhy})`;
+    ? `แผนแนะนำ: เปลี่ยนลูกที่เสียหนักสุด ${sparesOnly.actualSwaps} ลูกด้วย spare ที่มี (ยังไม่ผ่าน ต้องหา spare ดีเพิ่มอีก ${quickResult.sparesShort} ลูก)`
+    : `แผนแนะนำ: สับ ${autoSw.actualSwaps} ครั้ง (${autoWhy})`;
   const autoCard = buildSolCard('s1', autoTitle, Object.assign({}, autoSw, {isRecommended:true}), true, topology);
 
   // ── Big before → after summary banner (field-worker friendly) ──
@@ -293,22 +290,23 @@ function renderResults(vals,result){
       </div>
       <div class="rs-note">เกณฑ์รีเลย์: I<sub>no</sub> ต้องต่ำกว่า ${ALARM} mA</div>
       ${tempPlan
-        ? `<div class="rs-note rs-warn">⛔ ตัวเสีย ${quickResult.failedTotal} ตัว แต่ spare ดีมี ${tempPlan.sparesUsed} ตัว → <b>แผนจัดชั่วคราว</b>: เปลี่ยนตัวที่เสียหนักที่สุดก่อน แล้วย้ายตัวเสียที่เหลือ${tempPlan.movedFailed ? ` (${tempPlan.movedFailed} ครั้ง)` : ''} ไปกระจายให้แต่ละเฟสเท่ากัน เพื่อให้ bank ใช้งานได้ทันที</div>` +
-          `<div class="rs-note rs-warn">⚡ ตัวเสียที่ยังค้างรับแรงดันสูงกว่าปกติ (ตัวสูงสุด ${tempPlan.unitV && isFinite(tempPlan.unitV.maxPctShare) ? tempPlan.unitV.maxPctShare.toFixed(1) + '% ของค่าเฉลี่ย' : '-'}) — เสื่อมเร็วขึ้น · 🧰 <b>หา spare ดีเพิ่มอีก ${quickResult.sparesShort} ตัว</b> แล้วกรอกคำนวณใหม่เพื่อถอดตัวเสียออกให้หมด</div>`
+        ? `<div class="rs-note rs-warn">ลูกเสียมี ${quickResult.failedTotal} ลูก แต่มี spare ดีแค่ ${tempPlan.sparesUsed} ลูก แผนนี้จึงเป็นการจัดชั่วคราว: เปลี่ยนลูกที่เสียหนักสุดก่อน แล้วย้ายลูกเสียที่เหลือ${tempPlan.movedFailed ? ` (${tempPlan.movedFailed} ครั้ง)` : ''} ไปกระจายให้แต่ละเฟสเท่ากัน เพื่อให้ใช้งานแบงค์ต่อได้ทันที</div>` +
+          `<div class="rs-note rs-warn">ลูกเสียที่ยังค้างอยู่จะรับแรงดันสูงกว่าปกติ (สูงสุด ${tempPlan.unitV && isFinite(tempPlan.unitV.maxPctShare) ? tempPlan.unitV.maxPctShare.toFixed(1) + '% ของค่าเฉลี่ย' : '-'}) และเสื่อมเร็วขึ้น ควรหา spare ดีเพิ่มอีก <b>${quickResult.sparesShort} ลูก</b> แล้วคำนวณใหม่เพื่อถอดออกให้หมด</div>`
         : sparesOnly
-        ? `<div class="rs-note rs-warn">⛔ ตัวเสีย ${quickResult.failedTotal} ตัว แต่ spare ดีมีแค่ ${sparesOnly.sparesUsed} ตัว — สับให้ผ่านไม่ได้ตอนนี้ ไม่ว่าจะจัดยังไง</div>` +
-          `<div class="rs-note">✅ ทำได้ตอนนี้: เปลี่ยนตัวที่เสียหนักที่สุด ${sparesOnly.sparesUsed} ตัวก่อน · 🧰 หา spare ดีเพิ่มอีก <b>${quickResult.sparesShort} ตัว</b> แล้วกรอกคำนวณใหม่เพื่อจัดสมดุล (ไม่ต้องสลับในแร็คตอนนี้ — ต้องจัดใหม่อยู่ดีเมื่อได้ spare)</div>`
+        ? `<div class="rs-note rs-warn">ลูกเสียมี ${quickResult.failedTotal} ลูก แต่มี spare ดีแค่ ${sparesOnly.sparesUsed} ลูก ตอนนี้จัดแบบไหนก็ยังไม่ผ่าน</div>` +
+          `<div class="rs-note">ทำได้ตอนนี้: เปลี่ยนลูกที่เสียหนักสุด ${sparesOnly.sparesUsed} ลูกก่อน แล้วหา spare ดีเพิ่มอีก <b>${quickResult.sparesShort} ลูก</b> ค่อยคำนวณใหม่เพื่อจัดบาลานซ์ (ยังไม่ต้องสลับใน rack ตอนนี้ เพราะต้องจัดใหม่อีกรอบเมื่อได้ spare)</div>`
         : (!autoSw.underThreshold && topology!=='h-bridge')
-        ? `<div class="rs-note">⛔ สับได้สูงสุด ${maxD} ครั้งแล้วยังไม่ผ่าน — ต้องเพิ่ม spare ที่ดี หรือทวนค่าที่วัด${(autoSw._fail||0)>0 ? ` (ยังเหลือตัวเสีย ${autoSw._fail} ตัว)` : ''}</div>`
+        ? `<div class="rs-note">สับครบ ${maxD} ครั้งแล้วยังไม่ผ่าน ต้องเพิ่ม spare ดี หรือทวนค่าที่วัดอีกครั้ง${(autoSw._fail||0)>0 ? ` (ยังเหลือลูกเสีย ${autoSw._fail} ลูก)` : ''}</div>`
         : ''}
       ${(topology!=='h-bridge' && autoSw.spread && isFinite(autoSw.spread.max))
-        ? `<div class="rs-note">บาลานซ์เฟสในฝั่ง (A=B=C บน Y1, A'=B'=C' บน Y2) — ΔC อนุกรมสูงสุดในฝั่ง: <b>${autoSw.spread.max.toFixed(4)} µF</b> — ${autoSw.spread.ok?'✓ ผ่าน':'⚠ ยังไม่ผ่าน'} (เกณฑ์ ΣC ต่อ rack ต่างกัน ≤ ${BALSUM} µF ≈ ΔC อนุกรม ≤ ${SPREADTOL.toFixed(4)} µF)</div>` +
+        ? `<div class="rs-note">ผลรวม C ต่อเฟสต่างกัน: Y1 <b>${autoSw.spread.y1.toFixed(2)}</b> · Y2 <b>${autoSw.spread.y2.toFixed(2)}</b> µF ${autoSw.spread.ok?'ผ่าน':'ยังไม่ผ่าน'} (เกณฑ์ไม่เกิน ${BALSUM} µF)</div>` +
+          `<div class="rs-note">เทียบกับเกณฑ์: I<sub>no</sub> ใช้ไป ${Math.round(autoSw.Ino_mA/ALARM*100)}% · ผลรวมต่อเฟสใช้ไป ${Math.round(autoSw.spread.max/BALSUM*100)}% (ต้องไม่เกิน 100% ทั้งคู่)</div>` +
           // G2 (v9.7): I_no passes only because the two wyes are off in the SAME way
           ((autoSw.underThreshold && !autoSw.spread.ok)
-            ? `<div class="rs-note rs-warn">⚠ I<sub>no</sub> ผ่านเพราะสองฝั่งเพี้ยนคล้ายกันจน<b>หักล้างกัน</b> — แต่ละฝั่งยังไม่บาลานซ์ (Y1 ${autoSw.spread.y1.toFixed(4)} · Y2 ${autoSw.spread.y2.toFixed(4)} µF) ถ้าตัวใดตัวหนึ่งเปลี่ยนไป I<sub>no</sub> จะเด้งขึ้น</div>`
+            ? `<div class="rs-note rs-warn">I<sub>no</sub> ผ่านเพราะความเพี้ยนของสองฝั่ง<b>หักล้างกัน</b> แต่ละฝั่งยังไม่บาลานซ์ (Y1 ${autoSw.spread.y1.toFixed(2)} · Y2 ${autoSw.spread.y2.toFixed(2)} µF) ถ้าลูกใดลูกหนึ่งค่าเปลี่ยน I<sub>no</sub> จะขึ้นได้ง่าย</div>`
             : '') +
           (((autoSw._fail || 0) > 0 && !shortMode)          // spares-only mode already says this
-            ? `<div class="rs-note rs-warn">🧰 ยังมีตัวเสียค้าง ${autoSw._fail} ตัว (ระบบเหลือไว้เฉพาะตัวที่เสียน้อยที่สุด) — <b>ต้องหา spare ดีเพิ่มอีก ${autoSw._fail} ตัว</b> จึงจะถอดออกครบและบาลานซ์แต่ละฝั่งได้</div>`
+            ? `<div class="rs-note rs-warn">ยังเหลือลูกเสีย ${autoSw._fail} ลูก (เหลือไว้เฉพาะลูกที่เสียน้อยสุด) ต้องหา spare ดีเพิ่มอีก <b>${autoSw._fail} ลูก</b> จึงจะถอดออกได้ครบ</div>`
             : '')
         : ''}
       ${shortMode ? '' : `<div class="rs-note">${
@@ -316,12 +314,12 @@ function renderResults(vals,result){
         // per extra swap) so the banner and the table never contradict each other.
         // (v9.8: no hint in spares-only mode — nothing passes, so "swap more" is moot.)
         (bestRow && bestRow.plan.actualSwaps > autoSw.actualSwaps)
-          ? `💡 สับเพิ่มอีก ${bestRow.plan.actualSwaps - autoSw.actualSwaps} ครั้ง (รวม ${bestRow.plan.actualSwaps}) จะลด I<sub>no</sub> เหลือ ${bestRow.plan.Ino_mA.toFixed(1)} mA — ⭐ คุ้มสุด (ลด ${bestRow.gainPerSwap.toFixed(1)} mA ต่อครั้ง) ดูตารางเปรียบเทียบด้านล่าง`
+          ? `ถ้าสับเพิ่มอีก ${bestRow.plan.actualSwaps - autoSw.actualSwaps} ครั้ง (รวม ${bestRow.plan.actualSwaps}) I<sub>no</sub> จะลดเหลือ ${bestRow.plan.Ino_mA.toFixed(1)} mA ลดได้ครั้งละ ${bestRow.gainPerSwap.toFixed(1)} mA ดูได้ในตารางเปรียบเทียบ`
           : fullerOpt
-          ? `💡 สับ ${autoSw.actualSwaps} ครั้งพอให้รีเลย์ผ่าน (ประหยัดเวลา) — อยากได้บาลานซ์เต็มด้วยให้สับ ${fullerOpt.ns} ครั้ง (ดูตัวเลือกด้านล่าง)`
+          ? `สับ ${autoSw.actualSwaps} ครั้งก็พอให้รีเลย์ผ่าน ถ้าต้องการบาลานซ์ครบด้วย ใช้ ${fullerOpt.ns} ครั้ง (ดูตัวเลือกด้านล่าง)`
           : extraGain > 0.5
-          ? `💡 สับ ${autoSw.actualSwaps} ครั้งนี้พอแล้ว — สับเพิ่มลด I<sub>no</sub> ได้อีกแค่ ~${extraGain.toFixed(1)} mA (ไม่ถึงเกณฑ์คุ้ม ${(typeof INO_WORTH_MA_PER_SWAP!=='undefined'?INO_WORTH_MA_PER_SWAP:5)} mA ต่อครั้ง)`
-          : `💡 สับ ${autoSw.actualSwaps} ครั้งนี้ให้ผลดีสุดแล้ว — สับเพิ่มไม่ช่วยลด I<sub>no</sub> อีก`
+          ? `สับ ${autoSw.actualSwaps} ครั้งนี้พอแล้ว สับเพิ่มจะลด I<sub>no</sub> ได้อีกราว ${extraGain.toFixed(1)} mA เท่านั้น`
+          : `สับ ${autoSw.actualSwaps} ครั้งนี้ดีที่สุดแล้ว สับเพิ่มไม่ทำให้ I<sub>no</sub> ลดลง`
       }</div>`}
     </div>`;
 
@@ -333,29 +331,28 @@ function renderResults(vals,result){
     const name = isExt ? `สูงสุด ${target} ครั้ง (ค้นหาเพิ่ม)` : `${target} ครั้ง`;
     const actual=(sw.actualSwaps!=null)?sw.actualSwaps:target;
     let label;
-    if (actual===0) label = `🔧 ตัวเลือก ${name} — ไม่มีการสับที่ช่วยลด Ino`;
-    else if (actual<target) label = `🔧 ตัวเลือก ${name} (ใช้จริง ${actual} ครั้งก็พอ)`;
-    else label = `🔧 ตัวเลือก ${name}`;
+    if (actual===0) label = `ตัวเลือก ${name}: ไม่มีการสับที่ช่วยลด I<sub>no</sub>`;
+    else if (actual<target) label = `ตัวเลือก ${name} (ใช้จริง ${actual} ครั้ง)`;
+    else label = `ตัวเลือก ${name}`;
     return buildSolCard(cls, label, sw, true, topology);
   }).join('');
 
   const budgetList = quickResult.swaps.map(s=>s.swapCount).filter(n=>n!=null).join(' / ');
   const quickIntro = `<div class="locked-note" style="background:var(--green-soft,#e8f5e9);border-color:var(--green,#4caf50);">
-    <i class="fas fa-bolt"></i> <b>Quick Mode</b> เลือกการสับที่ทำให้ Ino ผ่านเกณฑ์โดยใช้จำนวนครั้งน้อยที่สุดให้อัตโนมัติ
-    (ถอดตัวเสียก่อน · สลับในเฟสเดียวกัน · ใช้ spare เท่าที่จำเป็น) ·
-    ด้านล่างเป็นตัวเลือกแบบกำหนดจำนวน ${budgetList||'2 / 4 / 6'} ครั้ง ให้หน้างานเลือกใช้ได้เลย</div>`;
+    <i class="fas fa-bolt"></i> แผนแนะนำด้านล่างคือแผนที่สับน้อยที่สุด (ถอดลูกเสียก่อน และใช้ spare เท่าที่จำเป็น)
+    ต่อจากนั้นเป็นตัวเลือกแบบกำหนดจำนวนครั้ง ${budgetList||'2 / 4 / 6'} ครั้ง ให้เลือกตามเวลาที่มีหน้างาน</div>`;
 
   document.getElementById('tabQuick').innerHTML = summaryBanner + lockedBanner + buildRefTable(quickResult, topology) + quickIntro + autoCard +
     `<div style="margin:18px 0 8px;font-weight:700;color:var(--txt2,#555);font-size:0.95rem;">
-      <i class="fas fa-hand-pointer"></i> ตัวเลือกแบบกำหนดจำนวนครั้ง (เลือกได้ตามสะดวกหน้างาน)</div>` +
+      <i class="fas fa-hand-pointer"></i> ตัวเลือกแบบกำหนดจำนวนครั้ง</div>` +
     fixedCards;
 
   // Full tab = same auto-best (kept for compatibility / Excel export)
   const fullSteps = (fullResult.steps && fullResult.steps.length)
     ? fullResult.steps
-    : [`จัดเรียงใหม่ ${fullResult.swapCount||fullResult.actualSwaps||0} ครั้ง — ได้ Ino ต่ำสุด`];
+    : [`จัดใหม่ ${fullResult.swapCount||fullResult.actualSwaps||0} ครั้ง`];
   const fullSw={diff:fullResult.diff,y1:fullResult.y1,y2:fullResult.y2,y1Full:fullResult.y1Full,y2Full:fullResult.y2Full,engAfter:fullResult.engAfter,underThreshold:fullResult.underThreshold,spread:fullResult.spread,acts:fullResult.acts,actualSwaps:fullResult.actualSwaps,steps:fullSteps};
-  const fullTitle = `🏆 ดีที่สุด — สับ ${fullResult.actualSwaps!=null?fullResult.actualSwaps:(fullResult.swapCount||0)} ครั้ง (Ino ต่ำสุด)`;
+  const fullTitle = `แผนจากการค้นหาลึกสุด: สับ ${fullResult.actualSwaps!=null?fullResult.actualSwaps:(fullResult.swapCount||0)} ครั้ง`;
   document.getElementById('tabFull').innerHTML = lockedBanner + buildSolCard('full',fullTitle,fullSw,true,topology);
 
   switchCalcView('metrics');
@@ -387,11 +384,11 @@ function buildSolCard(cls,title,sw,showSteps,topology){
   // Phase-balance badge — ΔC across ALL SIX series-C values (YY only)
   let spreadBadge = '';
   if (topology!=='h-bridge' && sw.spread && isFinite(sw.spread.max)) {
-    const sok = (sw.spread.ok != null) ? sw.spread.ok : (sw.spread.max <= SPREADTOL + 1e-9);
+    const sok = (sw.spread.ok != null) ? sw.spread.ok : (sw.spread.max <= BALSUM + 1e-9);
     spreadBadge = `<span class="ino-badge ${sok?'pass':'fail'}"
-         title="บาลานซ์ในฝั่ง อนุกรม (A=B=C บน Y1, A'=B'=C' บน Y2) — Y1 ${sw.spread.y1.toFixed(4)} / Y2 ${sw.spread.y2.toFixed(4)} µF">
+         title="ผลรวม C ต่อเฟสในฝั่ง (A=B=C บน Y1, A'=B'=C' บน Y2) — ΔΣC Y1 ${sw.spread.y1.toFixed(2)} / Y2 ${sw.spread.y2.toFixed(2)} µF">
          <i class="fas fa-${sok?'check-circle':'exclamation-triangle'}"></i>
-         ΔC เฟส = ${sw.spread.max.toFixed(4)} µF <small>(${sok?'≤':'>'} ${SPREADTOL} µF)</small>
+         ΔΣC เฟส = ${sw.spread.max.toFixed(2)} µF <small>(${sok?'≤':'>'} ${BALSUM} µF)</small>
        </span>`;
   }
   // Unit-voltage badge (v9.5): worst unit vs 110 % of rated (if rated kV entered),
@@ -406,11 +403,11 @@ function buildSolCard(cls,title,sw,showSteps,topology){
       : `<span class="ino-badge ${u.maxPctShare > 105 ? 'fail' : 'pass'}" title="ตัวที่รับแรงดันสูงสุด: ${u.worstId} = ${u.maxKV.toFixed(3)} kV (ไม่ได้กรอกแรงดันพิกัด — เทียบกับค่าเฉลี่ยในสตริง)">
            <i class="fas fa-bolt"></i> V ตัวสูงสุด = ${u.maxPctShare.toFixed(1)}% <small>ของค่าเฉลี่ย</small></span>`;
   }
-  const fullyPass = sw.underThreshold && sw.spread && (sw.spread.ok != null ? sw.spread.ok : (sw.spread.max <= SPREADTOL + 1e-9));
+  const fullyPass = sw.underThreshold && sw.spread && (sw.spread.ok != null ? sw.spread.ok : (sw.spread.max <= BALSUM + 1e-9));
   const recommended = sw.underThreshold && sw.isRecommended
     ? `<div class="recommended-badge"><i class="fas fa-star"></i> แนะนำ — ${
          (topology!=='h-bridge' && sw.spread)
-           ? (fullyPass ? `ผ่านทั้ง I<sub>no</sub> < ${ALARM} mA และ ΔC เฟส ≤ ${SPREADTOL} µF` : `สับน้อยที่สุดที่ I<sub>no</sub> < ${ALARM} mA (ΔC เฟสยังเกิน ${SPREADTOL} µF)`)
+           ? (fullyPass ? `ผ่านทั้ง I<sub>no</sub> < ${ALARM} mA และ ΔΣC เฟส ≤ ${BALSUM} µF` : `สับน้อยที่สุดที่ I<sub>no</sub> < ${ALARM} mA (ΔΣC เฟสยังเกิน ${BALSUM} µF)`)
            : `สับน้อยที่สุดที่ I<sub>no</sub> < ${ALARM} mA`
        }</div>`
     : '';
@@ -435,11 +432,11 @@ function buildSolCard(cls,title,sw,showSteps,topology){
       </div>` : ''}
       <div class="cap-cols">
         <div class="cap-box">
-          <h4>${topology==='h-bridge'?'Left (A+C)':'กิ่ง Y1'} หลังแก้ไข — ${s1.toFixed(4)} µF</h4>
+          <h4>${topology==='h-bridge'?'กิ่งซ้าย (A+C)':'ฝั่ง Y1'} หลังสับ <small>รวม ${s1.toFixed(1)} µF</small></h4>
           ${capList(y1Disp,topology==='h-bridge'?'left':'Y1',sw.acts)}
         </div>
         <div class="cap-box">
-          <h4>${topology==='h-bridge'?'Right (B+D)':'กิ่ง Y2'} หลังแก้ไข — ${s2.toFixed(4)} µF</h4>
+          <h4>${topology==='h-bridge'?'กิ่งขวา (B+D)':'ฝั่ง Y2'} หลังสับ <small>รวม ${s2.toFixed(1)} µF</small></h4>
           ${capList(y2Disp,topology==='h-bridge'?'right':'Y2',sw.acts)}
         </div>
       </div>
@@ -480,7 +477,7 @@ function capRow(c, swapNo){
   if (inPool) {
     tag = '<span class="pill p-spare">อะไหล่ (คงเหลือ)</span>';
   } else if (c.pulledPiece) {
-    tag = `<span class="pill p-spare"><i class="fas fa-box-open"></i> ชิ้นที่ถอดจาก ${c.id}</span>`;
+    tag = `<span class="pill p-spare"><i class="fas fa-box-open"></i> ลูกที่ถอดจาก ${c.id}</span>`;
     cls = 'is-spare';
   } else if (fromSpare) {
     tag = `<span class="pill p-spare"><i class="fas fa-box-open"></i> ใส่จากอะไหล่</span>`;
@@ -499,14 +496,14 @@ function capRow(c, swapNo){
         ? `<span style="font-size:0.65rem;color:var(--txt3);margin-left:4px;">[วัดแยก ${c.measuredA.toFixed(2)}+${c.measuredB.toFixed(2)}]</span>`
         : '');
   const outlierTag = c.isOutlier
-    ? `<span class="pill p-outlier" title="ห่างจาก mode ${(c.deviation*100).toFixed(1)}%${c.modeRef?` (mode≈${c.modeRef.toFixed(2)}µF)`:''}"><i class="fas fa-bullseye"></i> outlier</span>`
+    ? `<span class="pill p-outlier" title="ห่างจาก mode ${(c.deviation*100).toFixed(1)}%${c.modeRef?` (mode≈${c.modeRef.toFixed(2)}µF)`:''}"><i class="fas fa-bullseye"></i> ห่างจากกลุ่ม</span>`
     : '';
   const failed = !inPool && unitBelowNameplate(c);
   const failTag = failed
     ? `<span class="pill p-fail" title="นอกพิกัด ${CAPSPEC ? CAPSPEC.lo.toFixed(2)+'–'+CAPSPEC.hi.toFixed(2) : ''} µF"><i class="fas fa-triangle-exclamation"></i> นอกพิกัด</span>`
     : '';
   return `<div class="ci ${cls} ${c.isOutlier?'is-outlier':''} ${failed?'is-failed':''}">
-    <span class="ci-left">${badge}<span class="cv">${c.val.toFixed(3)}</span><span class="cid"> (${c.id})</span>${splitNote}</span>
+    <span class="ci-left">${badge}<span class="cv">${c.val.toFixed(2)}</span><span class="cid"> (${c.id})</span>${splitNote}</span>
     <span class="ci-tags">${failTag}${outlierTag}${tag}</span></div>`;
 }
 
@@ -520,27 +517,13 @@ function pieceHistory(acts){
   (acts || []).forEach((a, i) => {
     const n = i + 1;
     if (a.type === 'piece-replace') {
-      h[a.from.id + '.' + a.piece] = { n, src: (a.to.pulledPiece ? 'ชิ้นที่ถอดจาก ' : 'อะไหล่ ') + a.to.id, old: a.oldVal };
+      h[a.from.id + '.' + a.piece] = { n, src: ((a.to.pulledPiece || !/^S-/.test(a.to.id || '')) ? 'ลูกที่ถอดจาก ' : 'spare ') + a.to.id, old: a.oldVal };
     } else if (a.type === 'piece-swap') {
-      h[a.u1.id + '.' + a.p1] = { n, src: 'ชิ้นจาก ' + a.u2.id + '.' + a.p2, old: a.v1 };
-      h[a.u2.id + '.' + a.p2] = { n, src: 'ชิ้นจาก ' + a.u1.id + '.' + a.p1, old: a.v2 };
+      h[a.u1.id + '.' + a.p1] = { n, src: 'ลูกจาก ' + a.u2.id + '.' + a.p2, old: a.v1 };
+      h[a.u2.id + '.' + a.p2] = { n, src: 'ลูกจาก ' + a.u1.id + '.' + a.p1, old: a.v2 };
     }
   });
   return h;
-}
-// Physical slot (rack position) each unit ends up in — exchanged/replacing units take
-// the slot of the unit they displaced, so the list follows the rack, not the value.
-function slotOrder(acts){
-  const slot = {};
-  (acts || []).forEach(a => {
-    if (a.type === 'exchange') {
-      const s1 = slot[a.from.id] != null ? slot[a.from.id] : a.from.pos, s2 = slot[a.to.id] != null ? slot[a.to.id] : a.to.pos;
-      slot[a.to.id] = s1; slot[a.from.id] = s2;
-    } else if ((a.type === 'replace-y1' || a.type === 'replace-y2') && a.to) {
-      slot[a.to.id] = slot[a.from.id] != null ? slot[a.from.id] : a.from.pos;
-    }
-  });
-  return slot;
 }
 function pairRow(c, ph){
   const pcs = [['a', c.measuredA], ['b', c.measuredB]];
@@ -553,12 +536,18 @@ function pairRow(c, ph){
     const src = hh ? `<span class="pc-src">← ${hh.src} <small>(เดิม ${hh.old.toFixed(2)})</small></span>` : '<span class="pill p-stay">อยู่เดิม</span>';
     const failTag = bad ? '<span class="pill p-fail"><i class="fas fa-triangle-exclamation"></i> นอกพิกัด</span>' : '';
     return `<div class="ci-piece ${hh ? 'pc-changed' : ''} ${bad ? 'pc-failed' : ''}">
-      <span>${badge}<span class="pc-name">ชิ้น ${p}</span><span class="pc-val">${v.toFixed(2)}</span> µF</span>
+      <span>${badge}<span class="pc-name">ลูก ${p}</span><span class="pc-val">${v.toFixed(2)}</span> µF</span>
       <span class="ci-tags">${failTag}${src}</span></div>`;
   }).join('');
   const head = `<div class="ci-head"><span class="ci-left"><span class="cv">${c.val.toFixed(2)}</span><span class="cid"> (${c.id})</span><span class="cp-tag">คู่ขนาน วัดแยก</span></span>
-    <span class="ci-tags">${changed ? `<span class="pill p-move"><i class="fas fa-screwdriver-wrench"></i> เปลี่ยน ${changed} ชิ้น</span>` : '<span class="pill p-stay">อยู่เดิม</span>'}</span></div>`;
+    <span class="ci-tags">${changed ? `<span class="pill p-move"><i class="fas fa-screwdriver-wrench"></i> เปลี่ยน ${changed} ลูก</span>` : '<span class="pill p-stay">อยู่เดิม</span>'}</span></div>`;
   return `<div class="ci ci-pair ${changed ? 'is-spare' : ''}">${head}${lines}</div>`;
+}
+// grouped parallel slots (side "ต่อขนาน 2 ลูก", not measured separately): say it once per phase
+function parNote(items){
+  if (!CAPSPEC || typeof parallelCountOf !== 'function') return '';
+  const n = Math.max(1, ...items.filter(c => c.isLocked).map(c => parallelCountOf(c, CAPSPEC)));
+  return n > 1 ? `ช่องละ ${n} ลูกขนาน · ` : '';
 }
 function capList(arr, tgt, acts){
   const swapNo = swapIndexMap(acts);
@@ -579,7 +568,7 @@ function capList(arr, tgt, acts){
     const rows = g.items.slice().sort((a,b)=>posOf(a)-posOf(b)).map(rowOf).join('');   // v10.0: rack order
     const head = g.ph
       ? `<div class="cap-phase-hd"><span class="cph-name">เฟส ${g.ph}</span>` +
-        (isYY ? `<span class="cph-c">C อนุกรม ${seriesCof(g.items).toFixed(3)} µF</span>` : '') +
+        (isYY ? `<span class="cph-c">${parNote(g.items)}ΣC ${g.items.reduce((t, c) => t + (c.val > 0 ? c.val : 0), 0).toFixed(1)} µF · อนุกรม ${seriesCof(g.items).toFixed(3)} µF</span>` : '') +
         `</div>`
       : `<div class="cap-phase-hd"><span class="cph-name">อะไหล่คงเหลือ</span></div>`;
     return `<div class="cap-phase ph-${(g.ph||'spare').replace("'",'p')}">${head}${rows}</div>`;
@@ -610,12 +599,14 @@ function buildRefTable(quickResult, topology) {
   const bRow = (quickResult.refBest || []).find(r => r.ref === cur && r.plan);
   const balRow = (() => {
     if (!bRow) return '';
+    const curRow = rows.find(r => r.ref === cur);
+    if (curRow && curRow.plan && curRow.plan.actualSwaps === bRow.plan.actualSwaps && Math.abs(curRow.plan.Ino_mA - bRow.plan.Ino_mA) < 1e-6) return '';   // same plan as the selected row
     const p = bRow.plan, isRec = p === quickResult.recommended;
     return `<tr class="rt-balrow ${isRec ? 'rt-cur' : ''}">
-      <td><b>⚖ บาลานซ์ครบ</b> <small>(&lt; ${cur} mA)</small> ${isRec ? '<span class="rt-tag rt-tag-cur">✔ แผนที่แนะนำ</span>' : ''}</td>
+      <td><b>บาลานซ์ครบ</b> <small>(&lt; ${cur} mA)</small> ${isRec ? '<span class="rt-tag rt-tag-cur">แผนที่แนะนำ</span>' : ''}</td>
       <td><b>${p.actualSwaps}</b></td><td>${p.sparesUsed || 0}</td><td>${p.Ino_mA.toFixed(2)}</td>
       <td class="${(p._fail || 0) ? 'rt-bad' : ''}">${p._fail || 0}</td>
-      <td class="${p.spread && p.spread.ok ? '' : 'rt-bad'}">${p.spread ? (p.spread.ok ? '✓ ' : '⚠ ') + p.spread.max.toFixed(4) : '—'}</td>
+      <td class="${p.spread && p.spread.ok ? '' : 'rt-bad'}">${p.spread ? (p.spread.ok ? '✓ ' : '') + p.spread.y1.toFixed(2) + ' / ' + p.spread.y2.toFixed(2) : '—'}</td>
       <td>—</td><td>${fmtV(p)}</td>
       <td>${isRec ? '' : '<button class="rt-use" onclick="handleCalculate()">ใช้แผนนี้</button>'}</td></tr>`;
   })();
@@ -625,11 +616,13 @@ function buildRefTable(quickResult, topology) {
       <td colspan="7" class="rt-na">ทำไม่ได้ภายใน ${quickResult.maxDepth || 6} ครั้ง (ด้วย spare ที่มี)</td><td></td></tr>`;
     const extra = row.extraSwaps > 0 ? ` <span class="rt-extra">+${row.extraSwaps}</span>` : '';
     const rate = row.gainPerSwap != null ? row.gainPerSwap.toFixed(1) : '—';
-    const isRec = p === quickResult.recommended;
-    const tags = (row.bestValue ? '<span class="rt-tag">⭐ คุ้มสุด</span>' : '') +
-                 (row.leastWork ? '<span class="rt-tag rt-tag-work">🛠 แรงงานน้อยสุด</span>' : '') +
-                 (isCur ? '<span class="rt-tag rt-tag-cur">ref ที่เลือก</span>' : '') +
-                 (isRec ? '<span class="rt-tag rt-tag-cur">✔ แผนที่แนะนำ</span>' : '');
+    const R0 = quickResult.recommended;
+    const isRec = p === R0 || !!(R0 && isCur && R0.actualSwaps === p.actualSwaps && Math.abs(R0.Ino_mA - p.Ino_mA) < 1e-6);
+    const tags = (row.bestValue ? '<span class="rt-tag">คุ้มสุด</span>' : '') +
+                 (row.leastWork ? '<span class="rt-tag rt-tag-work">สับน้อยสุด</span>' : '') +
+                 (isCur ? '<span class="rt-tag rt-tag-cur">ค่าที่เลือก</span>' : '') +
+                 (row.fallback ? '<span class="rt-tag rt-tag-warn">ยังไม่ผ่าน (ใกล้สุด)</span>' : '') +
+                 (isRec ? '<span class="rt-tag rt-tag-cur">แผนที่แนะนำ</span>' : '');
     const failLeft = p._fail || 0;
     return `<tr class="${row.bestValue ? 'rt-best' : ''} ${isCur ? 'rt-cur' : ''}">
       <td><b>&lt; ${row.ref}</b> mA ${tags}</td>
@@ -637,19 +630,19 @@ function buildRefTable(quickResult, topology) {
       <td>${p.sparesUsed || 0}</td>
       <td>${p.Ino_mA.toFixed(2)}</td>
       <td class="${failLeft ? 'rt-bad' : ''}">${failLeft}</td>
-      <td class="${p.spread && p.spread.ok ? '' : 'rt-bad'}">${p.spread ? (p.spread.ok ? '✓ ' : '⚠ ') + p.spread.max.toFixed(4) : '—'}</td>
+      <td class="${p.spread && p.spread.ok ? '' : 'rt-bad'}">${p.spread ? (p.spread.ok ? '✓ ' : '') + p.spread.y1.toFixed(2) + ' / ' + p.spread.y2.toFixed(2) : '—'}</td>
       <td>${rate}</td>
       <td>${fmtV(p)}</td>
       <td>${isRec ? '' : `<button class="rt-use" onclick="useInoRef(${row.ref})">ใช้ค่านี้</button>`}</td></tr>`;
   }).join('') + balRow;
   return `<div class="ref-compare">
-    <div class="ref-title"><i class="fas fa-scale-balanced"></i> เปรียบเทียบ I<sub>no</sub> ref — ต้องสับกี่ครั้งถึงจะต่ำกว่าแต่ละค่า</div>
-    <div class="ref-sub">แต่ละแถว = <b>แผนที่สับน้อยที่สุดที่ทำให้ I<sub>no</sub> ต่ำกว่าค่านั้น</b> (ถ้าแรงงานเท่ากัน เลือกตัวที่ใกล้ค่า ref ที่สุด) · ถอดตัวเสียออกเท่าที่ spare ดีมี · ไม่ให้ตัวไหนรับแรงดันเกิน ·
-      ช่อง "บาลานซ์ในฝั่ง" ⚠ = I<sub>no</sub> ผ่านเพราะสองฝั่งหักล้างกัน ยังไม่ A=B=C · แถว <b>⚖ บาลานซ์ครบ</b> = แผนบาลานซ์ก่อนแล้วแรงงานน้อยสุด (ค่าแนะนำเริ่มต้น) · กด <b>ใช้ค่านี้</b> เพื่อใช้แผนของแถวนั้นเป็นแผนแนะนำ (และ Excel).
-      <b>🛠 แรงงานน้อยสุด</b> = สับน้อยที่สุดที่ทำได้ · <b>+n</b> = ต้องสับเพิ่มจากนั้น ·
-      <b>⭐ คุ้มสุด</b> = แผนที่ลด I<sub>no</sub> ได้มากที่สุดต่อการสับเพิ่ม 1 ครั้ง (ต้องลดได้ ≥ ${(typeof INO_WORTH_MA_PER_SWAP!=='undefined'?INO_WORTH_MA_PER_SWAP:5)} mA/ครั้ง ไม่งั้นแผนแรงงานน้อยสุดคือคุ้มสุด)</div>
+    <div class="ref-title"><i class="fas fa-scale-balanced"></i> ต้องสับกี่ครั้ง I<sub>no</sub> จึงจะต่ำกว่าแต่ละค่า</div>
+    <div class="ref-sub">แต่ละแถวคือแผนที่สับน้อยที่สุดที่ทำให้ I<sub>no</sub> ต่ำกว่าค่านั้น และผลรวม C ต่อเฟสในแต่ละฝั่งต่างกันไม่เกิน ${BALSUM} µF
+      ถ้าสับเท่ากันจะเลือกแผนที่ I<sub>no</sub> ใกล้ค่านั้นที่สุด ทุกแผนถอดลูกเสียออกเท่าที่ spare ดีมี และไม่มีลูกไหนรับแรงดันเกิน
+      กด <b>ใช้ค่านี้</b> เพื่อใช้แผนของแถวนั้น (ไฟล์ Excel จะใช้แผนเดียวกัน) · <b>สับน้อยสุด</b> คือแผนที่ทำงานน้อยที่สุด ตัวเลข +n คือจำนวนครั้งที่ต้องสับเพิ่ม ·
+      <b>คุ้มสุด</b> คือแผนที่ลด I<sub>no</sub> ได้มากที่สุดต่อการสับเพิ่ม 1 ครั้ง (ต้องลดได้อย่างน้อย ${(typeof INO_WORTH_MA_PER_SWAP!=='undefined'?INO_WORTH_MA_PER_SWAP:5)} mA ต่อครั้ง)</div>
     <div class="ref-scroll"><table class="ref-table">
-      <thead><tr><th>I<sub>no</sub> ref</th><th>สับ (ครั้ง)</th><th>ใช้ spare</th><th>I<sub>no</sub> ที่ได้ (mA)</th><th>ตัวเสียเหลือ</th><th>บาลานซ์ในฝั่ง<br>(ΔC สูงสุด µF)</th><th>ลดได้ต่อการสับเพิ่ม<br>(mA/ครั้ง)</th><th>V ตัวสูงสุด</th><th></th></tr></thead>
+      <thead><tr><th>I<sub>no</sub> ต่ำกว่า</th><th>สับ (ครั้ง)</th><th>ใช้ spare</th><th>I<sub>no</sub> ที่ได้ (mA)</th><th>ลูกเสียที่เหลือ</th><th>ΔΣC ต่อเฟส<br>Y1 / Y2 (µF)</th><th>ลดได้ต่อการสับเพิ่ม<br>(mA/ครั้ง)</th><th>แรงดันลูกที่สูงสุด</th><th></th></tr></thead>
       <tbody>${body}</tbody></table></div>
   </div>`;
 }

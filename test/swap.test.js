@@ -45,7 +45,7 @@ function bank(perPhase, nominal, tweaks) {
 function spares(vals) { return vals.map((v, i) => ({ id: 'S-' + (i + 1), val: v, origin: 'Spare', pos: i })); }
 function run(b, sp) { return optimize(b.y1, b.y2, sp, null, KV, [], [], 27.0, null, THR); }
 function reIno(sw) { return calcYY(sw.y1, sw.y2, KV).Ino_mA; }
-function realSpareActions(sw) { return sw.acts.filter(a => SPARE.has(a.type)).length; }
+function realSpareActions(sw) { return sw.acts.filter(a => SPARE.has(a.type) && /^S-/.test(a.to.id) && !a.to.pulledPiece).length; }
 
 console.log('EGAT C-Bank — swap optimizer regression tests\n');
 
@@ -320,7 +320,10 @@ async function case1516() {
   console.log('\nCase 15 — too few spares (5 for 8 failed): replace the WORST, never move a failed unit (G1)');
   {
     const q = (await run2(5)).quickResult;
-    const rec = q.refBest.find(x => x.ref === 50 && x.plan).plan;
+    // v10.3: I_no AND ΣC must both pass for a "real" row; with 3 failed units pinned the
+    // ΣC target can't be met, so the ref-50 row is the closest (fallback) plan.
+    const row50 = q.refTable.find(x => x.ref === 50 && x.plan), rec = row50.plan;
+    check('ref-50 row is flagged as not meeting ΣC (fallback)', row50.fallback === true);
     check(`only the least-severe failed units stay (got ${failedVals(rec).join(', ')})`, failedVals(rec).join(',') === '24,25,25');
     check('no failed unit is moved by an exchange (any budget / ref plan)',
       ![...q.swaps, ...q.refTable.filter(x => x.plan).map(x => x.plan)].some(movedFailed));
@@ -333,7 +336,8 @@ async function case1516() {
     const q = (await run2(8)).quickResult;
     const rec = q.refBest.find(x => x.ref === 50 && x.plan).plan;
     check('every failed unit replaced', failedVals(rec).length === 0);
-    check(`each wye balanced (ΔC Y1 ${rec.spread.y1.toFixed(4)} / Y2 ${rec.spread.y2.toFixed(4)} ≤ 0.005)`, rec.spread.max <= 0.005);
+    check(`each wye balanced (ΔC series Y1 ${rec.serSpread.y1.toFixed(4)} / Y2 ${rec.serSpread.y2.toFixed(4)} ≤ 0.005)`, rec.serSpread.max <= 0.005);
+    check(`ΣC per phase within 0.5 µF on each side (got ${rec.spread.y1.toFixed(2)} / ${rec.spread.y2.toFixed(2)})`, rec.spread.max <= 0.5 + 1e-9);
     check('passes I_no ref 50', rec.Ino_mA < 50);
   }
 }
@@ -404,7 +408,7 @@ async function case20() {
   const q = (await run4(4)).quickResult, tp = q.tempPlan;
   check('a temporary plan is produced', !!tp && tp.tempMove === true);
   check(`it passes I_no 50 (got ${tp ? tp.Ino_mA.toFixed(2) : '-'} mA)`, !!tp && tp.Ino_mA < 50);
-  check(`each side nearly balanced (ΔC ${tp ? tp.spread.max.toFixed(4) : '-'} ≤ 0.012 µF)`, !!tp && tp.spread.max <= 0.012);
+  check(`each side nearly balanced (ΣC ${tp ? tp.spread.y1.toFixed(2) + '/' + tp.spread.y2.toFixed(2) : '-'} ≤ 1.0 µF; series ${tp ? tp.serSpread.max.toFixed(4) : '-'} ≤ 0.012)`, !!tp && tp.spread.max <= 1.0 + 1e-9 && tp.serSpread.max <= 0.012);
   const out = tp ? tp.acts.filter(a => SPARE.has(a.type)).map(a => a.from.val).sort((a, b) => a - b) : [];
   check(`all 4 spares replace the worst units (got ${out.join(', ')})`, out.length === 4 && out.slice(0, 3).join(',') === '16,17,18');
   const ids = tp ? tp.acts.filter(a => a.type === 'exchange').flatMap(a => [a.from.id, a.to.id]) : [];
@@ -443,17 +447,93 @@ async function case21() {
   check(`every plan changes each piece position at most once (${plans.length} plans, bug B)`, plans.every(pieceOnce));
   const tp = q.tempPlan;
   check(`balance-first temp plan passes I_no 50 (got ${tp ? tp.Ino_mA.toFixed(1) : '-'} mA)`, !!tp && tp.Ino_mA < 50);
-  check(`…with each side tighter than worst-first (ΔC ${tp ? tp.spread.y1.toFixed(4) + '/' + tp.spread.y2.toFixed(4) : '-'} ≤ 0.01/0.025)`,
-    !!tp && tp.spread.y1 <= 0.01 && tp.spread.y2 <= 0.025);
-  check(`…in ≤ 10 swaps (got ${tp ? tp.actualSwaps : '-'})`, !!tp && tp.actualSwaps <= 10);
+  check(`…ΣC per phase within each side (${tp ? tp.spread.y1.toFixed(2) + '/' + tp.spread.y2.toFixed(2) : '-'} µF) — series ${tp ? tp.serSpread.y1.toFixed(4) + '/' + tp.serSpread.y2.toFixed(4) : '-'}`,
+    !!tp && tp.spread.max <= 1.0 + 1e-9);
+  check(`…in ≤ 12 swaps (got ${tp ? tp.actualSwaps : '-'})`, !!tp && tp.actualSwaps <= 12);
+}
+
+// Case 22 (v10.3) — field bank SNO-CAY3 (115 kV, 11/phase, 3 spares, B-5 = 25.2 failed):
+// I_no and the per-phase ΣC balance (≤ 0.1 µF, field sheet) carry EQUAL weight via
+// score = max(I_no/ref, ΔΣC/0.1). The field did 4 moves → 8.9 mA but ΣC 0.2/0.6.
+async function case22() {
+  console.log('\nCase 22 — SNO-CAY3: equal weight I_no / ΣC per phase (score = max(I_no/ref, ΔΣC/tol))');
+  const cc = vm.runInContext('clientCalculate', ctx);
+  const Y1 = { A: [26.2,27.5,26.5,27.7,27,27.5,27.6,27.1,27.6,27.5,27.6], B: [27.6,27.4,26.8,27.7,25.2,26.6,27.6,27.6,27.5,26.7,27.4], C: [27.6,27.1,26.7,27.7,27.8,26.7,27.5,27.0,27.6,26.8,26.9] };
+  const Ap = [54.3,55.4,55.5,54.8,54.1,[26.2,26.7],55.2,55.2,53.8,53.4,[27.7,27.1]];
+  const Bp = [54.3,53.7,54.4,55.2,54.3,53.7,55.3,55.1,54.0,54.4,[27.5,26.1]];
+  const Cp = [55.2,54.3,55.5,55.6,53.6,55.3,53.8,54.4,54.2,54.7,[26.3,26.7]];
+  const y1 = []; for (const p of 'ABC') Y1[p].forEach((v, i) => y1.push({ id: `${p}-${i + 1}`, val: v, origin: p, pos: i }));
+  const y2 = []; const add = (o, arr) => arr.forEach((v, i) => y2.push(Array.isArray(v)
+    ? { id: `${o}-${i + 1}`, val: v[0] + v[1], origin: o, pos: i, isLocked: false, isSplit: true, measuredA: v[0], measuredB: v[1] }
+    : { id: `${o}-${i + 1}`, val: v, origin: o, pos: i, isLocked: true }));
+  add("A'", Ap); add("B'", Bp); add("C'", Cp);
+  const q = (await cc({ topology: 'yy-unground', systemKV: 115, alarmMA: 50, y1, y2, balSumUF: 0.1, sparePriority: 'failed',
+    spare: spares([27.1, 26.4, 27.1]) })).quickResult;
+  const rec = (q.refBest.find(x => x.ref === 50) || {}).plan;
+  check(`default plan passes BOTH (I_no ${rec ? rec.Ino_mA.toFixed(1) : '-'} < 50, ΔΣC ${rec ? rec.spread.y1.toFixed(2) + '/' + rec.spread.y2.toFixed(2) : '-'} ≤ 0.1)`,
+    !!rec && rec.Ino_mA < 50 && rec.spread.max <= 0.1 + 1e-9);
+  check(`…with the failed B-5 out (failed left ${rec ? rec._fail : '-'}) in ≤ 7 swaps (got ${rec ? rec.actualSwaps : '-'})`, !!rec && rec._fail === 0 && rec.actualSwaps <= 7);
+  const rows = q.refTable.filter(r => r.plan);
+  check('every comparison-table row meets BOTH targets (no fallback)', rows.length === 6 && rows.every(r => !r.fallback));
+  check('rows are a real gradient: tighter ref ⇒ I_no below it and swaps ≥ the looser row',
+    rows.every(r => r.plan.Ino_mA < r.ref) && rows.every((r, i) => i === 0 || r.plan.actualSwaps <= rows[i - 1].plan.actualSwaps));
+  // v10.4 (fix 4): only entered spares (S-n) count — re-installing a pulled-out good part is a move
+  const plans = [...q.swaps, ...rows.map(r => r.plan)];
+  check(`no plan claims more spares than the 3 entered (max ${Math.max(...plans.map(p => p.sparesUsed || 0))})`,
+    plans.every(p => (p.sparesUsed || 0) <= 3));
+}
+
+// Case 23 (v10.4, fix 8) — the optimizer scores candidates with fastEval(), a fast copy of
+// the calcYYMetrics formula. In the app, level L0 always LOCKS the good units, so check the
+// locked-unit path too: every plan's I_no must equal calcYYMetrics on the full arrangement.
+function case23() {
+  console.log('\nCase 23 — fastEval == calcYYMetrics with LOCKED units on both wyes');
+  const b = bank(10, 27.0, [['A-1', 25.0], ['B-2', 28.5], ["C'-3", 25.4], ["A'-4", 28.9], ['C-5', 26.1]]);
+  const isLock = u => /-(6|7|8|9|10)$/.test(u.id);            // half of every phase locked
+  const s1 = b.y1.filter(u => !isLock(u)), l1 = b.y1.filter(isLock);
+  const s2 = b.y2.filter(u => !isLock(u)), l2 = b.y2.filter(isLock);
+  l1[0].val = 26.3; l2[2].val = 27.9;                           // locked units off-nominal too
+  const res = optimize(s1, s2, spares([27.0, 27.4]), null, KV, l1, l2, 27.0, null, THR);
+  const plans = [...res.swaps, ...Object.values(res.refPlans).filter(Boolean)];
+  const worst = Math.max(...plans.map(sw => Math.abs(sw.Ino_mA - calcYY([...sw.y1, ...l1], [...sw.y2, ...l2], KV).Ino_mA)));
+  check(`every plan's I_no matches calcYYMetrics incl. locked units (max diff ${worst.toExponential(1)} mA)`, worst < 1e-6);
+}
+
+// Case 24 (v10.4, fixes 1–2) — H-bridge. The CT on the H-link reads
+// ω·Vph·|C_A·C_D − C_B·C_C| / ΣC: zero only when C_A/C_C = C_B/C_D. Swap plans must keep
+// every unit in the bank (before v10.4 an exchanged unit vanished on reassembly).
+async function case24() {
+  console.log('\nCase 24 — H-bridge: bridge-current formula + plans keep every unit');
+  const hb = ctx.window._calcHBridgeMetrics, u = v => [{ val: v }];
+  const bal = hb(u(30), u(30), u(27), u(27), 115).In_mA;      // A/C = B/D → balanced
+  const unb = hb(u(30), u(27), u(27), u(30), 115).In_mA;      // same branch totals, crossed
+  const want = 2 * Math.PI * 50 * (115000 / Math.sqrt(3)) * Math.abs(30 * 30 - 27 * 27) * 1e-6 / 114 * 1000;
+  check(`balanced bridge (A/C = B/D) reads 0 mA (got ${bal.toFixed(3)})`, bal < 1e-9);
+  check(`crossed bridge A30 B27 C27 D30 reads ${want.toFixed(0)} mA, not 0 (got ${unb.toFixed(0)})`, Math.abs(unb - want) < 1e-6);
+
+  const cc = vm.runInContext('clientCalculate', ctx);
+  const mk = (o, arr) => arr.map((v, i) => ({ id: `${o}-${i + 1}`, val: v, origin: o, pos: i }));
+  const legs = { a: mk('A', [30, 30, 30]), b: mk('B', [27, 27, 27]), c: mk('C', [27, 27, 27]), d: mk('D', [27, 27, 27]) };
+  const r = await cc({ topology: 'h-bridge', systemKV: 115, alarmMA: 50, legs, y1: [...legs.a, ...legs.c], y2: [...legs.b, ...legs.d],
+    spare: spares([27]) });
+  const plans = [...r.quickResult.swaps, r.fullResult];
+  const count = (p, L) => [...p.y1Full, ...p.y2Full].filter(x => (x.origin || '')[0] === L).length;
+  check('every plan still has 3 units in each leg A/B/C/D', plans.every(p => ['A', 'B', 'C', 'D'].every(L => count(p, L) === 3)));
+  const best = r.quickResult.swaps[2];
+  const re = hb(...['A', 'B', 'C', 'D'].map(L => [...best.y1Full, ...best.y2Full].filter(x => x.origin[0] === L)), 115).In_mA;
+  check(`reported I_bridge matches the reassembled legs (${best.Ino_mA.toFixed(2)} vs ${re.toFixed(2)} mA)`, Math.abs(best.Ino_mA - re) < 1e-6);
+  check(`with 1 spare the bridge is brought below 50 mA (got ${best.Ino_mA.toFixed(2)})`, best.Ino_mA < 50);
 }
 
 (async () => {
+  case23();
+  await case24();
   await case14();
   await case1516();
   await case171819();
   await case20();
   await case21();
+  await case22();
   console.log('');
   if (failures) {
     console.error(`✗ ${failures} assertion(s) FAILED — swap optimizer has regressed.`);

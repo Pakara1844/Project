@@ -105,6 +105,7 @@ function readCapRating(){
   return { uf: num('capRatedUF'), minusPct: num('capTolMinus'), plusPct: num('capTolPlus'), ratedKV: num('capRatedKV') };
 }
 function updateCapBand(){
+  if (typeof updatePhaseSums === 'function' && document.getElementById('inputArea')) updatePhaseSums();   // re-flag inputs
   const el = document.getElementById('capBand'); if (!el || typeof capSpecOf !== 'function') return;
   const c = capSpecOf(readCapRating());
   el.innerHTML = `ตัวดี = <b>${c.lo.toFixed(2)} – ${c.hi.toFixed(2)} µF</b> · ต่ำหรือสูงกว่านี้นับเป็นตัวเสีย` +
@@ -223,32 +224,33 @@ function buildInputArea() {
 
   if (currentConn === 'h-bridge') {
     // Build H-Bridge layout: 4 legs + spare, each with own count
-    if (!document.getElementById('panelA')) {
+    if (area.dataset.built !== currentConn) {   // rebuild when the topology changes
+      area.dataset.built = currentConn;
       area.innerHTML = `
         <div class="input-cols" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;">
           <div class="inp-panel la">
-            <div class="panel-hd">Leg A — Top-Left</div>
-            <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntA" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('A')"><label class="par-toggle"><input type="checkbox" id="parA"><span>☑ ต่อขนาน (ล็อกเป็น Tier 2)</span></label></div>
+            <div class="panel-hd">ขา A <small>บนซ้าย</small><span class="ph-sum" id="sumA"></span></div>
+            <div class="panel-ctrl"><label for="cntA">จำนวนช่อง</label><input type="number" id="cntA" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('A')"><label class="par-toggle"><input type="checkbox" id="parA"><span>ต่อขนาน 2 ลูก</span></label></div>
             <div id="panelA"></div>
           </div>
           <div class="inp-panel lb">
-            <div class="panel-hd">Leg B — Top-Right</div>
-            <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntB" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('B')"><label class="par-toggle"><input type="checkbox" id="parB"><span>☑ ต่อขนาน (ล็อกเป็น Tier 2)</span></label></div>
+            <div class="panel-hd">ขา B <small>บนขวา</small><span class="ph-sum" id="sumB"></span></div>
+            <div class="panel-ctrl"><label for="cntB">จำนวนช่อง</label><input type="number" id="cntB" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('B')"><label class="par-toggle"><input type="checkbox" id="parB"><span>ต่อขนาน 2 ลูก</span></label></div>
             <div id="panelB"></div>
           </div>
           <div class="inp-panel lc">
-            <div class="panel-hd">Leg C — Bot-Left</div>
-            <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntC" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('C')"><label class="par-toggle"><input type="checkbox" id="parC"><span>☑ ต่อขนาน (ล็อกเป็น Tier 2)</span></label></div>
+            <div class="panel-hd">ขา C <small>ล่างซ้าย</small><span class="ph-sum" id="sumC"></span></div>
+            <div class="panel-ctrl"><label for="cntC">จำนวนช่อง</label><input type="number" id="cntC" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('C')"><label class="par-toggle"><input type="checkbox" id="parC"><span>ต่อขนาน 2 ลูก</span></label></div>
             <div id="panelC"></div>
           </div>
           <div class="inp-panel ld">
-            <div class="panel-hd">Leg D — Bot-Right</div>
-            <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntD" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('D')"><label class="par-toggle"><input type="checkbox" id="parD"><span>☑ ต่อขนาน (ล็อกเป็น Tier 2)</span></label></div>
+            <div class="panel-hd">ขา D <small>ล่างขวา</small><span class="ph-sum" id="sumD"></span></div>
+            <div class="panel-ctrl"><label for="cntD">จำนวนช่อง</label><input type="number" id="cntD" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('D')"><label class="par-toggle"><input type="checkbox" id="parD"><span>ต่อขนาน 2 ลูก</span></label></div>
             <div id="panelD"></div>
           </div>
           <div class="inp-panel spare" style="grid-column:1/-1;">
-            <div class="panel-hd"><i class="fas fa-box-open"></i> อะไหล่ (Spare) — ตัวเดี่ยว</div>
-            <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntS" value="5" min="0" max="40" class="cnt-input" onchange="rebuildPanel('S')"></div>
+            <div class="panel-hd"><i class="fas fa-box-open"></i> อะไหล่ (spare) <small>ลูกเดี่ยว</small></div>
+            <div class="panel-ctrl"><label for="cntS">จำนวนลูก</label><input type="number" id="cntS" value="5" min="0" max="40" class="cnt-input" onchange="rebuildPanel('S')"></div>
             <div id="panelS"></div>
           </div>
         </div>`;
@@ -258,50 +260,59 @@ function buildInputArea() {
     [['parA','a'],['parB','b'],['parC','c'],['parD','d']].forEach(([cbId, cls]) => {
       const cb = document.getElementById(cbId);
       if (cb) {
-        cb.onchange = () => updateScissorsVisibility(cbId, cls);
+        cb.onchange = () => { updateScissorsVisibility(cbId, cls); updatePhaseSums(); };
         updateScissorsVisibility(cbId, cls); // init
       }
     });
     rebuildPanel('S');
   } else {
     // Y-Y: 6 phases (A,B,C,A',B',C') + spare
-    if (!document.getElementById('panelA')) {
+    if (area.dataset.built !== currentConn) {   // rebuild when the topology changes
+      area.dataset.built = currentConn;
       area.innerHTML = `
         <div class="yy-section">
           <div class="yy-section-title yy-side1"><i class="fas fa-arrow-circle-right"></i> ฝั่งที่ 1 (Y1)
-            <label class="par-toggle" style="margin-left:auto;"><input type="checkbox" id="parY1"><span>☑ ต่อขนาน (ล็อกเป็น Tier 2)</span></label>
+            <label class="par-toggle" style="margin-left:auto;"><input type="checkbox" id="parY1"><span>ต่อขนาน 2 ลูก</span></label>
           </div>
-          <div class="yy-phase-row">
-            <div class="inp-panel y1"><div class="panel-hd">Phase A</div>
-              <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntA" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('A')"></div>
-              <div id="panelA"></div></div>
-            <div class="inp-panel y1"><div class="panel-hd">Phase B</div>
-              <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntB" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('B')"></div>
-              <div id="panelB"></div></div>
-            <div class="inp-panel y1"><div class="panel-hd">Phase C</div>
-              <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntC" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('C')"></div>
-              <div id="panelC"></div></div>
+          <div class="phase-tabs" data-side="y1" role="tablist"><button type="button" role="tab" class="phase-tab on" data-key="A" onclick="setActivePhase('y1','A')">A<small id="tabA">—</small></button><button type="button" role="tab" class="phase-tab" data-key="B" onclick="setActivePhase('y1','B')">B<small id="tabB">—</small></button><button type="button" role="tab" class="phase-tab" data-key="C" onclick="setActivePhase('y1','C')">C<small id="tabC">—</small></button></div>
+          <div class="yy-phase-row" data-side="y1">
+            <div class="inp-panel y1 is-active" data-key="A" id="wrapA"><div class="panel-hd">เฟส A<span class="ph-sum" id="sumA"></span></div>
+              <div class="panel-ctrl"><label for="cntA">จำนวนช่อง</label><input type="number" id="cntA" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('A')"></div>
+              <div id="panelA"></div>
+              <button type="button" class="phase-next" onclick="nextPhase('A')">ถัดไป: เฟส B</button></div>
+            <div class="inp-panel y1" data-key="B" id="wrapB"><div class="panel-hd">เฟส B<span class="ph-sum" id="sumB"></span></div>
+              <div class="panel-ctrl"><label for="cntB">จำนวนช่อง</label><input type="number" id="cntB" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('B')"></div>
+              <div id="panelB"></div>
+              <button type="button" class="phase-next" onclick="nextPhase('B')">ถัดไป: เฟส C</button></div>
+            <div class="inp-panel y1" data-key="C" id="wrapC"><div class="panel-hd">เฟส C<span class="ph-sum" id="sumC"></span></div>
+              <div class="panel-ctrl"><label for="cntC">จำนวนช่อง</label><input type="number" id="cntC" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('C')"></div>
+              <div id="panelC"></div>
+              <button type="button" class="phase-next" onclick="nextPhase('C')">ถัดไป: เฟส A'</button></div>
           </div>
         </div>
         <div class="yy-section">
           <div class="yy-section-title yy-side2"><i class="fas fa-arrow-circle-right"></i> ฝั่งที่ 2 (Y2)
-            <label class="par-toggle" style="margin-left:auto;"><input type="checkbox" id="parY2"><span>☑ ต่อขนาน (ล็อกเป็น Tier 2)</span></label>
+            <label class="par-toggle" style="margin-left:auto;"><input type="checkbox" id="parY2"><span>ต่อขนาน 2 ลูก</span></label>
           </div>
-          <div class="yy-phase-row">
-            <div class="inp-panel y2"><div class="panel-hd">Phase A'</div>
-              <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntAp" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('Ap')"></div>
-              <div id="panelAp"></div></div>
-            <div class="inp-panel y2"><div class="panel-hd">Phase B'</div>
-              <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntBp" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('Bp')"></div>
-              <div id="panelBp"></div></div>
-            <div class="inp-panel y2"><div class="panel-hd">Phase C'</div>
-              <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntCp" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('Cp')"></div>
-              <div id="panelCp"></div></div>
+          <div class="phase-tabs" data-side="y2" role="tablist"><button type="button" role="tab" class="phase-tab on" data-key="Ap" onclick="setActivePhase('y2','Ap')">A'<small id="tabAp">—</small></button><button type="button" role="tab" class="phase-tab" data-key="Bp" onclick="setActivePhase('y2','Bp')">B'<small id="tabBp">—</small></button><button type="button" role="tab" class="phase-tab" data-key="Cp" onclick="setActivePhase('y2','Cp')">C'<small id="tabCp">—</small></button></div>
+          <div class="yy-phase-row" data-side="y2">
+            <div class="inp-panel y2 is-active" data-key="Ap" id="wrapAp"><div class="panel-hd">เฟส A'<span class="ph-sum" id="sumAp"></span></div>
+              <div class="panel-ctrl"><label for="cntAp">จำนวนช่อง</label><input type="number" id="cntAp" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('Ap')"></div>
+              <div id="panelAp"></div>
+              <button type="button" class="phase-next" onclick="nextPhase('Ap')">ถัดไป: เฟส B'</button></div>
+            <div class="inp-panel y2" data-key="Bp" id="wrapBp"><div class="panel-hd">เฟส B'<span class="ph-sum" id="sumBp"></span></div>
+              <div class="panel-ctrl"><label for="cntBp">จำนวนช่อง</label><input type="number" id="cntBp" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('Bp')"></div>
+              <div id="panelBp"></div>
+              <button type="button" class="phase-next" onclick="nextPhase('Bp')">ถัดไป: เฟส C'</button></div>
+            <div class="inp-panel y2" data-key="Cp" id="wrapCp"><div class="panel-hd">เฟส C'<span class="ph-sum" id="sumCp"></span></div>
+              <div class="panel-ctrl"><label for="cntCp">จำนวนช่อง</label><input type="number" id="cntCp" value="10" min="1" max="60" class="cnt-input" onchange="rebuildPanel('Cp')"></div>
+              <div id="panelCp"></div>
+              <button type="button" class="phase-next" onclick="nextPhase('Cp')">ถัดไป: เฟส อะไหล่</button></div>
           </div>
         </div>
         <div class="yy-section">
-          <div class="yy-section-title yy-spare"><i class="fas fa-box-open"></i> อะไหล่ (Spare) — ตัวเดี่ยว</div>
-          <div class="panel-ctrl"><label>จำนวน:</label><input type="number" id="cntS" value="5" min="0" max="40" class="cnt-input" onchange="rebuildPanel('S')"></div>
+          <div class="yy-section-title yy-spare" id="spareTitle"><i class="fas fa-box-open"></i> อะไหล่ (spare) <small>ลูกเดี่ยว</small></div>
+          <div class="panel-ctrl"><label for="cntS">จำนวนลูก</label><input type="number" id="cntS" value="5" min="0" max="40" class="cnt-input" onchange="rebuildPanel('S')"></div>
           <div id="panelS"></div>
         </div>`;
     }
@@ -313,6 +324,7 @@ function buildInputArea() {
         cb.onchange = () => {
           const cls = cbId === 'parY1' ? ['a','b','c'] : ['ap','bp','cp'];
           cls.forEach(c => updateScissorsVisibility(cbId, c));
+          updatePhaseSums();
         };
         // Initialize visibility on load
         const cls = cbId === 'parY1' ? ['a','b','c'] : ['ap','bp','cp'];
@@ -321,6 +333,11 @@ function buildInputArea() {
     });
     rebuildPanel('S');
   }
+  if (!area.dataset.live) {          // one delegated listener for live ΣC / flags
+    area.addEventListener('input', () => updatePhaseSums());
+    area.dataset.live = '1';
+  }
+  updatePhaseSums();
 }
 
 function rebuildPanel(key) {
@@ -346,9 +363,7 @@ function rebuildPanel(key) {
   container.querySelectorAll('input.split-b').forEach(inp => {
     if (inp.value) savedB[inp.dataset.idx] = inp.value;
   });
-  container.querySelectorAll('input.split-toggle-cb').forEach(cb => {
-    if (cb.checked) savedSplit[cb.dataset.idx] = true;
-  });
+  container.querySelectorAll('.split-btn.on').forEach(btn => { savedSplit[btn.dataset.idx] = true; });
   // Plain spare/legacy
   container.querySelectorAll('input.val-s, input.val-' + pfx.toLowerCase().replace("'",'p')).forEach(inp => {
     if (inp.value && !inp.classList.contains('val-main')) saved[inp.dataset.idx] = inp.value;
@@ -369,45 +384,117 @@ function rebuildPanel(key) {
     for (let i = 1; i <= cnt; i++) {
       const isSplit = savedSplit[String(i)] || false;
       const slotId = `slot-${cls}-${i}`;
-      h += `<div class="cr-slot split-slot-${cls}" data-slot="${slotId}">
+      const inId = `in-${cls}-${i}`;
+      h += `<div class="cr-slot split-slot-${cls}${isSplit ? ' is-split' : ''}" data-slot="${slotId}">
         <div class="cr cr-main-row">
-          <label>${pfx}-${i}</label>
-          <input type="number" step="0.001" min="0"
+          <label for="${inId}">${pfx}-${i}</label>
+          <input type="number" step="0.001" min="0" id="${inId}"
                  class="val-${cls} val-main"
                  data-pfx="${pfx}" data-idx="${i}"
                  value="${saved[String(i)]||''}" placeholder="0.000" inputmode="decimal"
-                 ${isSplit ? 'disabled style="opacity:0.4"' : ''}>
+                 ${isSplit ? 'disabled' : ''}>
+          <span class="pair-sum" aria-live="polite"></span>
           <span class="unit">µF</span>
+          <span class="flag" hidden>นอกพิกัด</span>
           <button type="button" class="split-btn split-btn-${cls} ${isSplit?'on':''}"
                   data-slot="${slotId}" data-idx="${i}" data-cls="${cls}" data-pfx="${pfx}"
-                  title="วัดแยก 2 ตัว"
+                  aria-pressed="${isSplit}" title="วัดแยกทีละลูก (a และ b)"
                   onclick="toggleSplit('${cls}', ${i})"
                   style="display:none;">
-            <i class="fas fa-cut"></i>
+            <i class="fas fa-cut" aria-hidden="true"></i><span class="split-lbl">วัดแยก</span>
           </button>
         </div>
         <div class="cr-split-pair" id="splitpair-${cls}-${i}" style="display:${isSplit?'flex':'none'};">
           <div class="cr cr-sub">
-            <label>${pfx}-${i}.a</label>
-            <input type="number" step="0.001" min="0"
+            <label for="${inId}a">ลูก a</label>
+            <input type="number" step="0.001" min="0" id="${inId}a"
                    class="val-${cls}-a val-sub split-a"
                    data-pfx="${pfx}" data-idx="${i}" data-sub="a"
                    value="${savedA[String(i)]||''}" placeholder="0.000" inputmode="decimal">
             <span class="unit">µF</span>
+            <span class="flag" hidden>นอกพิกัด</span>
           </div>
           <div class="cr cr-sub">
-            <label>${pfx}-${i}.b</label>
-            <input type="number" step="0.001" min="0"
+            <label for="${inId}b">ลูก b</label>
+            <input type="number" step="0.001" min="0" id="${inId}b"
                    class="val-${cls}-b val-sub split-b"
                    data-pfx="${pfx}" data-idx="${i}" data-sub="b"
                    value="${savedB[String(i)]||''}" placeholder="0.000" inputmode="decimal">
             <span class="unit">µF</span>
+            <span class="flag" hidden>นอกพิกัด</span>
           </div>
         </div>
       </div>`;
     }
   }
   container.innerHTML = h;
+  // bug fix: after a rebuild the scissors buttons came back hidden even when the side is
+  // marked parallel — re-apply the side's parallel state to this panel.
+  if (key !== 'S') {
+    const cb = currentConn === 'h-bridge' ? 'par' + key : (['A', 'B', 'C'].includes(key) ? 'parY1' : 'parY2');
+    const box = document.getElementById(cb);
+    container.querySelectorAll('.split-btn').forEach(btn => { btn.style.display = (box && box.checked) ? 'inline-flex' : 'none'; });
+  }
+  updatePhaseSums();
+}
+
+// ── Step 2 live feedback: ΣC per phase (field-sheet number), parallel-pair totals and
+// out-of-tolerance flags while typing. Grouped parallel slots ("ต่อขนาน" without
+// วัดแยก) hold n units, so they are judged per unit (value / n), same as the calculator.
+function updatePhaseSums() {
+  const spec = (typeof capSpecOf === 'function') ? capSpecOf(readCapRating()) : null;
+  const bad = v => spec && v > 0 && (v < spec.lo - 1e-9 || v > spec.hi + 1e-9);
+  const fmt = v => v.toFixed(1);
+  const keys = currentConn === 'h-bridge' ? ['A', 'B', 'C', 'D'] : ['A', 'B', 'C', 'Ap', 'Bp', 'Cp'];
+  keys.forEach(key => {
+    const panel = document.getElementById('panel' + key); if (!panel) return;
+    const parId = currentConn === 'h-bridge' ? 'par' + key : (['A', 'B', 'C'].includes(key) ? 'parY1' : 'parY2');
+    const grouped = !!(document.getElementById(parId) || {}).checked;
+    let sum = 0, filled = 0, total = 0, nBad = 0;
+    panel.querySelectorAll('.cr-slot').forEach(slot => {
+      total++;
+      const main = slot.querySelector('.val-main');
+      const isSplit = slot.classList.contains('is-split');
+      const flagRow = (row, on) => { const f = row && row.querySelector('.flag'); if (f) f.hidden = !on;
+        const inp = row && row.querySelector('input'); if (inp) inp.classList.toggle('is-bad', !!on); };
+      if (isSplit) {
+        const a = parseFloat((slot.querySelector('.split-a') || {}).value), b = parseFloat((slot.querySelector('.split-b') || {}).value);
+        const subs = slot.querySelectorAll('.cr-sub');
+        flagRow(subs[0], bad(a)); flagRow(subs[1], bad(b)); flagRow(slot.querySelector('.cr-main-row'), false);
+        const ps = slot.querySelector('.pair-sum');
+        if (a > 0 && b > 0) { sum += a + b; filled++; if (bad(a) || bad(b)) nBad++; if (ps) ps.textContent = (a + b).toFixed(2); }
+        else if (ps) ps.textContent = '—';
+      } else {
+        const v = parseFloat(main && main.value);
+        const n = grouped && spec ? Math.max(1, Math.round(v / spec.uf)) : 1;
+        const isBad = v > 0 && bad(v / n);
+        flagRow(slot.querySelector('.cr-main-row'), isBad);
+        if (v > 0) { sum += v; filled++; if (isBad) nBad++; }
+      }
+    });
+    const txt = filled ? 'ΣC ' + fmt(sum) + ' µF' + (filled < total ? ' (' + filled + '/' + total + ')' : '') : '';
+    const hd = document.getElementById('sum' + key); if (hd) hd.textContent = txt;
+    const tab = document.getElementById('tab' + key);
+    if (tab) { tab.textContent = filled ? fmt(sum) : 'ยังไม่กรอก'; tab.parentElement.classList.toggle('has-bad', nBad > 0); }
+  });
+}
+// Mobile: one phase visible per side; the tabs show each phase's ΣC.
+function setActivePhase(side, key) {
+  const row = document.querySelector('.yy-phase-row[data-side="' + side + '"]');
+  const tabs = document.querySelector('.phase-tabs[data-side="' + side + '"]');
+  if (!row || !tabs) return;
+  row.querySelectorAll('.inp-panel').forEach(p => p.classList.toggle('is-active', p.dataset.key === key));
+  tabs.querySelectorAll('.phase-tab').forEach(t => { const on = t.dataset.key === key; t.classList.toggle('on', on); t.setAttribute('aria-selected', on); });
+}
+function nextPhase(key) {
+  const order = ['A', 'B', 'C', 'Ap', 'Bp', 'Cp'];
+  const i = order.indexOf(key), nk = order[i + 1];
+  let target;
+  if (nk) { setActivePhase(['A', 'B', 'C'].includes(nk) ? 'y1' : 'y2', nk); target = document.querySelector('.phase-tabs[data-side="' + (['A', 'B', 'C'].includes(nk) ? 'y1' : 'y2') + '"]'); }
+  else target = document.getElementById('spareTitle');
+  if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const first = nk && document.querySelector('#panel' + nk + ' input:not([disabled])');
+  if (first) setTimeout(() => first.focus({ preventScroll: true }), 350);
 }
 
 // Toggle split mode for a single slot
@@ -433,21 +520,23 @@ function toggleSplit(cls, idx) {
   const btn = document.querySelector(`.split-btn[data-cls="${cls}"][data-idx="${idx}"]`);
   if (!mainInput || !splitPair || !btn) return;
 
+  const slot = mainInput.closest('.cr-slot');
   const isNowOpen = splitPair.style.display === 'flex';
   if (isNowOpen) {
     // Close split
     splitPair.style.display = 'none';
     mainInput.disabled = false;
-    mainInput.style.opacity = '';
     btn.classList.remove('on');
   } else {
     // Open split — NO auto-fill, NO ÷2. The technician types the two real
     // measured values; the slot then uses va+vb (parallel sum) directly.
     splitPair.style.display = 'flex';
     mainInput.disabled = true;
-    mainInput.style.opacity = '0.4';
     btn.classList.add('on');
   }
+  if (slot) slot.classList.toggle('is-split', !isNowOpen);
+  btn.setAttribute('aria-pressed', String(!isNowOpen));
+  updatePhaseSums();
 }
 
 // Legacy alias
@@ -462,7 +551,10 @@ function getInputValues(){
     const vs=parseFloat(el.value);
     if(!isNaN(vs)&&vs>0) spare.push({id:'S-'+(k+1),val:vs,origin:'Spare',pos:k});
   });
-  const systemKV=parseFloat(document.getElementById('systemKV').value)||69;
+  // v10.4 (fix 3): never fall back to 69 kV silently — a blank field on a 115 kV bank
+  // would scale I_no down ~40 % and flip fail → pass.
+  const systemKV=parseFloat(document.getElementById('systemKV').value);
+  if(!(systemKV>0)){ alert('กรุณากรอกแรงดันระบบ V_S (kV) ให้ถูกต้อง'); return null; }
   // ค่า unbalance สูงสุด (เกณฑ์ I_no, mA) ที่หน้างานกรอกใน Step 2 — ใช้แทนค่า default
   // ALARM_MA ในการตัดสินผ่าน/ไม่ผ่าน และเป็นเป้าของการคำนวณการสับเปลี่ยน
   const alarmEl=document.getElementById('alarmMA');

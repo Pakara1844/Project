@@ -1169,6 +1169,7 @@ body.show-landing .page { display:none !important; }
 .ref-table td:first-child { font-family:var(--th); white-space:nowrap; }
 .ref-table tr.rt-best td { background:var(--green-soft); }
 .ref-table tr.rt-cur td:first-child { box-shadow:inset 3px 0 0 var(--blue); }
+.rt-tag-warn { background:var(--amber-soft, #fef3c7); color:var(--amber, #b45309); }
 .ref-table tr.rt-balrow td { border-top:2px solid var(--border); background:var(--bg2); }
 .rt-tag { display:inline-block; margin-left:6px; padding:2px 8px; border-radius:99px; font-size:0.68rem; font-weight:700; background:var(--green); color:#fff; }
 .rt-tag-cur { background:var(--blue); }
@@ -1187,3 +1188,93 @@ body.show-landing .page { display:none !important; }
 .rt-tag-work { background:var(--amber); }
 
 .rs-note.rs-warn { color:var(--amber); font-weight:600; }
+
+/* ═══════════════════════════════════════════════════════════════
+   v10.5 — Step 2 input: live ΣC, tolerance flags, parallel pairs, mobile layout
+   ═══════════════════════════════════════════════════════════════ */
+:root { --amber-ink:#92400e; }
+[data-theme="dark"] { --amber-ink:#fbbf24; }
+/* no horizontal overflow: grid tracks and inputs may shrink below their intrinsic width */
+.yy-phase-row { grid-template-columns:repeat(3, minmax(0,1fr)); }
+.cr input { min-width:0; }
+.panel-hd small, .yy-section-title small { font-weight:500; font-size:0.78rem; color:var(--txt2); }
+.ph-sum { margin-left:auto; font-family:var(--mono); font-size:0.78rem; font-weight:600; color:var(--txt2); white-space:nowrap; }
+/* out-of-tolerance while typing */
+.cr input.is-bad { border-color:var(--amber); background:var(--amber-soft); }
+.cr .flag { font-size:0.72rem; font-weight:700; color:var(--amber-ink); background:var(--amber-soft);
+  border-radius:6px; padding:2px 6px; white-space:nowrap; }
+.cr .flag[hidden] { display:none; }
+/* measured-separately pair: the slot shows the pair total instead of a greyed-out box */
+.pair-sum { display:none; }
+.cr-slot.is-split .val-main { display:none; }
+.cr-slot.is-split .pair-sum { display:block; flex:1; min-width:0; padding:7px 10px; border:1.5px dashed var(--amber);
+  border-radius:7px; font-family:var(--mono); font-size:0.83rem; font-weight:700; color:var(--txt); }
+.cr-sub label { min-width:46px; }
+.split-btn { width:auto; padding:0 8px; gap:5px; height:30px; font-size:0.74rem; font-weight:600; }
+.split-btn .split-lbl { white-space:nowrap; }
+/* mobile-only controls */
+.phase-tabs, .phase-next { display:none; }
+
+@media (max-width:600px) {
+  .wrap { padding:14px 12px 64px; }
+  .app-header { position:static; backdrop-filter:none; -webkit-backdrop-filter:none; padding:12px 14px; }
+  .brand-sub { display:none; }
+  .card { padding:16px 14px; }
+  .cap-rating { grid-template-columns:1fr; }
+  #sparePriority { white-space:normal; }
+  .bubble-group { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+
+  .phase-tabs { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin:0 0 10px; }
+  .phase-tab { min-height:54px; padding:6px 0; border:1.5px solid var(--border); border-radius:12px;
+    background:var(--bg2); color:var(--txt); font-family:var(--head); font-size:1rem; font-weight:700; cursor:pointer; }
+  .phase-tab small { display:block; font-family:var(--mono); font-size:0.76rem; font-weight:500; color:var(--txt2); }
+  .phase-tab.on { background:var(--blue); border-color:var(--blue); color:#fff; }
+  .phase-tab.on small { color:#fff; }
+  .phase-tabs[data-side="y2"] .phase-tab.on { background:var(--amber-soft); border-color:var(--amber); color:var(--amber-ink); }
+  .phase-tabs[data-side="y2"] .phase-tab.on small { color:var(--amber-ink); }
+  .phase-tab.has-bad small { color:var(--amber-ink); font-weight:700; }
+  .phase-tab.on.has-bad small { color:#fff; }
+
+  .yy-phase-row { grid-template-columns:minmax(0,1fr); }
+  .yy-phase-row .inp-panel, .input-cols > .inp-panel { min-width:0; }
+  .cr input { width:auto; flex:1 1 96px; }
+  .yy-phase-row .inp-panel { display:none; padding:12px; }
+  .yy-phase-row .inp-panel.is-active { display:block; }
+
+  .cr { gap:8px; margin-bottom:8px; }
+  .cr label { min-width:52px; font-size:0.85rem; color:var(--txt2); }
+  .cr input, .cr-slot.is-split .pair-sum { font-size:16px; padding:10px 12px; min-height:44px; }
+  .cr .unit { font-size:0.8rem; color:var(--txt2); }
+  .cnt-input { font-size:16px; min-height:40px; width:72px; }
+  .split-btn { height:44px; padding:0 10px; font-size:0.85rem; }
+  .cr-split-pair { margin-left:4px; padding-left:10px; }
+  .phase-next { display:block; width:100%; min-height:48px; margin-top:12px; border:0; border-radius:12px;
+    background:var(--blue); color:#fff; font-family:var(--th, inherit); font-size:1rem; font-weight:600; cursor:pointer; }
+  .y2 .phase-next { background:var(--txt); color:var(--bg2); }
+  .split-hint { font-size:0.88rem; }
+}
+.hint-list { margin:4px 0 0 1.1em; display:flex; flex-direction:column; gap:3px; }
+.hint-list li { max-width:80ch; }
+/* desktop: the scissors button is icon-only unless the slot is split (label shown on mobile) */
+.cr-slot.is-split .pair-sum { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-left:8px; padding-right:8px; }
+@media (min-width:601px) {
+  .split-btn { width:30px; padding:0; }
+  .split-btn .split-lbl { display:none; }
+  .split-btn.on { width:30px; padding:0; }
+  .split-btn.on .split-lbl { display:none; }
+}
+.cr-slot.is-split .pair-sum { position:relative; }
+.cr-slot.is-split .pair-sum::before { content:"รวม "; font-family:var(--th, inherit); font-weight:500; color:var(--txt2); }
+@media (max-width:600px) { .cr-slot.is-split .pair-sum::before { content:none; } }
+@media (max-width:600px) {
+  /* keep the value readable: the out-of-tolerance tag drops to its own line under the input */
+  .cr { flex-wrap:wrap; }
+  .cr input, .cr-slot.is-split .pair-sum { min-width:96px; }
+  .cr .flag { order:9; margin-left:60px; }
+}
+@media (max-width:600px) {
+  .cr label { min-width:44px; }
+  .cr input, .cr-slot.is-split .pair-sum { min-width:88px; flex-basis:88px; }
+  .split-btn { padding:0 8px; }
+  .cr .flag { margin-left:52px; }
+}

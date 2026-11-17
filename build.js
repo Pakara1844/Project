@@ -58,6 +58,16 @@ const BODY_JS = ['calculator', 'diagrams', 'formulas', 'ui', 'template-xlsx', 'e
 
 function read(p) { return fs.readFileSync(p, 'utf8'); }
 
+// JSZip is INLINED (not loaded from a CDN) so the Excel export works offline in the
+// field — the template is already embedded. Pinned devDependency jszip@3.10.1.
+function vendorJSZip() {
+  const p = path.join(ROOT, 'node_modules', 'jszip', 'dist', 'jszip.min.js');
+  if (!fs.existsSync(p)) { console.error('✗ jszip not installed — run `npm install`.'); process.exit(1); }
+  const code = read(p);
+  if (/<\/script/i.test(code)) { console.error('✗ jszip.min.js contains </script> — cannot inline.'); process.exit(1); }
+  return `  <!-- ==== vendor: jszip 3.10.1 (MIT) ==== -->\n  <script>\n${code}\n  </script>`;
+}
+
 function wrapScript(name) {
   const code = read(path.join(SRC, 'js', `${name}.js`));
   return `  <!-- ==== ${name}.js ==== -->\n  <script>\n${code}\n  </script>`;
@@ -73,7 +83,7 @@ function build() {
   const headScripts = HEAD_JS.map(wrapScript).join('\n');
 
   // Body application scripts
-  const bodyScripts = BODY_JS.map(wrapScript).join('\n\n');
+  const bodyScripts = [vendorJSZip(), ...BODY_JS.map(wrapScript)].join('\n\n');
 
   // bodyMarkup already ends with </body></html>; inject scripts before </body>
   const bodyWithScripts = bodyMarkup.replace(

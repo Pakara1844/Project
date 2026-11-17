@@ -17,7 +17,7 @@
         <i class="fas fa-moon icon-dark"></i>
         <i class="fas fa-sun icon-light"></i>
       </button>
-      <div class="ver-badge">v10.1</div>
+      <div class="ver-badge">v10.5</div>
     </div>
   </header>
 
@@ -161,9 +161,9 @@
 
       <!-- System params -->
       <div class="sys-params" style="grid-template-columns:1fr;">
-        <div class="fg"><label>แรงดันระบบ V<sub>S</sub> (kV)</label><input type="number" id="systemKV" value="69" min="1" max="1000" step="0.1"></div>
+        <div class="fg"><label for="systemKV">แรงดันระบบ V<sub>S</sub> (kV)</label><input type="number" id="systemKV" placeholder="เช่น 69, 115 หรือ 230" min="1" max="1000" step="0.1" inputmode="decimal"></div>
         <div class="fg">
-          <label>I<sub>no</sub> เป้าหมาย (ref) สำหรับการสับ — เลือกค่า (mA) <span class="lbl-hint">รีเลย์ CT ตั้งไม่เกิน 50 mA · ผลลัพธ์จะเทียบทุกค่าให้ดูว่าค่าไหนคุ้มสุด</span></label>
+          <label>I<sub>no</sub> ที่ต้องการหลังสับ (mA) <span class="lbl-hint">รีเลย์ CT ตั้งไว้ไม่เกิน 50 mA หน้าผลลัพธ์จะเทียบให้ดูทุกค่า</span></label>
           <div class="bubble-group" id="alarmBubbles">
             <button type="button" class="bubble" data-val="5"  onclick="selectAlarm(this)">5<span class="bu">mA</span></button>
             <button type="button" class="bubble" data-val="10" onclick="selectAlarm(this)">10<span class="bu">mA</span></button>
@@ -176,7 +176,7 @@
         </div>
         <!-- v9.5 — capacitor unit rating: failed = outside the tolerance band (either side) -->
         <div class="fg">
-          <label>พิกัดตัวเก็บประจุ (ต่อตัว) <span class="lbl-hint">ค่าเผื่อ default ตาม IEC 60871-1 §7.2 (−5% / +10%) · นอกช่วง = ตัวเสีย</span></label>
+          <label>พิกัดตัวเก็บประจุ (ต่อลูก) <span class="lbl-hint">ค่าเผื่อตั้งต้นตาม IEC 60871-1 ข้อ 7.2 (−5% / +10%) ลูกที่วัดได้นอกช่วงนี้ถือว่าเสีย</span></label>
           <div class="cap-rating">
             <div class="cr-field"><span>C พิกัด (µF)</span><input type="number" id="capRatedUF" value="27.00" min="0.1" step="0.01" inputmode="decimal"></div>
             <div class="cr-field"><span>ค่าเผื่อ − (%)</span><input type="number" id="capTolMinus" value="5" min="0" max="50" step="0.5" inputmode="decimal"></div>
@@ -187,13 +187,13 @@
         </div>
         <!-- v10.0 — within-side balance target (field-sheet style) + spare priority -->
         <div class="fg">
-          <label>เกณฑ์บาลานซ์ในฝั่ง <span class="lbl-hint">ผลรวม C ของแต่ละ rack (A/B/C บน Y1, A'/B'/C' บน Y2) ต่างกันได้ไม่เกินค่านี้ — แบบเดียวกับใบหน้างาน</span></label>
+          <label>เกณฑ์บาลานซ์ในฝั่ง <span class="lbl-hint">ผลรวม C ของแต่ละเฟสในฝั่งเดียวกันต่างกันได้ไม่เกินค่านี้ (แบบเดียวกับใบบันทึกหน้างาน) ระบบให้น้ำหนักเท่ากับ I<sub>no</sub></span></label>
           <div class="cap-rating">
-            <div class="cr-field"><span>ΣC ต่อ rack ต่างกันไม่เกิน (µF)</span><input type="number" id="balSumUF" value="0.1" min="0.01" step="0.05" inputmode="decimal"></div>
+            <div class="cr-field"><span>ΣC ต่อเฟสต่างกันไม่เกิน (µF)</span><input type="number" id="balSumUF" value="0.1" min="0.01" step="0.05" inputmode="decimal"></div>
             <div class="cr-field"><span>ใช้ spare เพื่อ</span>
               <select id="sparePriority">
-                <option value="balance" selected>บาลานซ์ในฝั่งก่อน (แบบหน้างาน)</option>
-                <option value="failed">แทนตัวเสียหนักสุดก่อน</option>
+                <option value="balance" selected>ทำให้บาลานซ์ก่อน (แบบหน้างาน)</option>
+                <option value="failed">เปลี่ยนลูกที่เสียหนักสุดก่อน</option>
               </select></div>
           </div>
         </div>
@@ -203,11 +203,13 @@
       <div class="split-hint">
         <i class="fas fa-info-circle"></i>
         <div>
-          <strong>วิธีกรอก:</strong> กรอกจำนวนช่องของแต่ละกิ่ง/leg แยกกัน → กดสร้าง → กรอกค่า C<br>
-          • <strong>☑ ต่อขนาน (ระดับฝั่ง)</strong> = ช่องในฝั่งนี้เป็นคู่ขนาน → กรอก<strong>ค่ารวมของช่าง</strong>ได้เลย (ไม่ ÷2) ระบบจะล็อกเป็น Tier 2 + โชว์ปุ่มกรรไกร<br>
-          • <strong>✂ กรรไกร (รายตัว)</strong> = วัดแยก 2 ตัวในช่องนี้ → กรอก va, vb ระบบใช้<strong>ผลรวม va+vb</strong> เป็นค่าช่อง (Tier 1 สลับได้)<br>
-          • Algorithm จะสลับ <strong>เฉพาะตัวที่กดกรรไกร + Spare</strong> ก่อน — ถ้า Ino ยังเกินค่า unbalance ที่ตั้งไว้ จึงขยายไปสลับตัวอื่น
-          • <strong>Spare = ตัวเดี่ยวเสมอ</strong> — การสับเปลี่ยนทำเป็นรายตัว ถ้า Ino เกินเกณฑ์ที่กรอกไว้ ระบบจะหาทางลดให้ต่ำกว่าเกณฑ์
+          <strong>วิธีกรอก</strong>
+          <ul class="hint-list">
+            <li>ใส่จำนวนช่องของแต่ละเฟส แล้วกรอกค่า C ที่วัดได้ (µF) ผลรวมของเฟสจะขึ้นที่หัวกล่องให้เทียบกับใบบันทึก</li>
+            <li>ฝั่งที่แต่ละช่องมี 2 ลูกต่อขนาน ให้ติ๊ก <strong>ต่อขนาน 2 ลูก</strong> แล้วกรอกค่ารวมของคู่ตามที่วัดได้ (ไม่ต้องหาร 2) ช่องแบบนี้ระบบจะไม่สลับ ถ้าไม่จำเป็น</li>
+            <li>ถ้าวัดแยกทีละลูก กดปุ่ม <strong>วัดแยก</strong> ในช่องนั้น แล้วกรอกลูก a และลูก b ระบบรวมให้เอง และสลับได้ทีละลูก</li>
+            <li>อะไหล่ (spare) เป็นลูกเดี่ยวเสมอ ช่องที่ขึ้นสีส้มคือค่าที่อยู่นอกพิกัด</li>
+          </ul>
         </div>
       </div>
 

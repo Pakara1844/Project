@@ -66,6 +66,6 @@ offline-capable app icon.
 
 ## Notes
 
-- No backend, no network calls except CDN fonts/icons and the XLSX library
+- No backend, no network calls except CDN fonts/icons and the XLSX library (H-bridge export only); JSZip for the Y-Y Excel export is inlined
   (used for the Excel export). It still loads and calculates offline.
 - Tested on iOS Safari and Android Chrome.

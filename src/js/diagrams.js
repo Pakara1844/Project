@@ -164,7 +164,7 @@ function buildYYUngroundReal() {
   s += `<text x="${W/2}" y="44" fill="${PAL.txt3}" font-size="10" text-anchor="middle" font-family="'Noto Sans Thai',sans-serif">Star-Star ไม่ต่อลงดิน · ป้องกันด้วย Neutral Voltage Relay (ΔV / 59N)</text>`;
 
   // HV busbar
-  s += busbar(60, busY, 760, 'H.V. BUS  ·  69 kV', PAL.metal);
+  s += busbar(60, busY, 760, 'H.V. BUS', PAL.metal);
 
   phases.forEach(p => {
     // Phase identifier

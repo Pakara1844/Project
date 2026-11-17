@@ -6,6 +6,12 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["--yes", "http-server", "dist", "-p", "8090", "-c-1"],
       "port": 8090
+    },
+    {
+      "name": "mockups",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "http-server", "docs/mockups", "-p", "8091", "-c-1"],
+      "port": 8091
     }
   ]
 }

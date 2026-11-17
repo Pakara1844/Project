@@ -34,15 +34,18 @@ if (typeof window !== 'undefined') window.NAMEPLATE_UF = NAMEPLATE_UF;
 // expect; a looser value makes the balance badge pass while the relay still trips.
 const PHASE_SPREAD_UF = 0.005;
 if (typeof window !== 'undefined') window.PHASE_SPREAD_UF = PHASE_SPREAD_UF;
-// v10.0 — the field engineer sets the balance target in Step 2 the way the field sheet
-// does it: the per-phase (rack) SUM ΣC within a wye may differ by at most X µF (field
-// practice 0.1 µF = the Step-2 default). For n units in series per phase,
-// ΔC_series ≈ ΔΣC / n² (first order), so clientCalculate converts it to the series
-// tolerance BAL_TOL_UF used everywhere. If no value is passed (tests / legacy callers)
-// BAL_SUM_DEFAULT 0.5 µF ≈ the pre-v10 0.005 µF series at 10 units/phase.
+// v10.3 — the balance metric IS the field-sheet number: per-phase SUM ΣC (A/B/C on Y1,
+// A'/B'/C' on Y2), max − min within each side ≤ the Step-2 tolerance (#balSumUF, UI
+// default 0.1 µF). I_no and ΣC balance have EQUAL weight via the score
+// max(I_no / ref, ΔΣC / tol)  (≤ 1 = both pass). The tolerance and the spare priority
+// travel as OPTIONS (findPhaseAwareYYSwaps opts.balSum / opts.balFirst) — no globals
+// (v10.4), so a direct optimizer call never picks up a previous calculation's settings.
+// Callers that pass nothing get BAL_SUM_DEFAULT 0.5 µF and 'failed' priority.
 const BAL_SUM_DEFAULT = 0.5;
-let BAL_TOL_UF = PHASE_SPREAD_UF;            // set per calculation by clientCalculate
-let BAL_FIRST = false;                        // v10.0 spare priority "balance first" (per calc)
+const SCORE_TIE = 0.02;                       // scores within 2 % of target count as equal
+// When the worse side dominates the score, the OTHER side still matters (else a search
+// never bothers to balance Y1 while Y2 is off): ties on score → the other side's ΔΣC.
+const OTHER_TIE_UF = 0.05;
 if (typeof window !== 'undefined') window.BAL_SUM_DEFAULT = BAL_SUM_DEFAULT;
 
 // I_no "tie" band (mA). When two candidate plans BOTH pass the relay threshold,
@@ -56,17 +59,17 @@ if (typeof window !== 'undefined') window.INO_TIE_MA = INO_TIE_MA;
 // instead of chasing a sliver of balance with many extra swaps.
 const SPREAD_TIE_UF = 0.001;
 
-// PHYSICAL RACK LAYOUT (left → right): A A' B B' C C'. Used only to describe a swap
-// to the technician (how far apart the two caps sit) — the v9.4 optimizer swaps
-// WITHIN a phase only (A↔A', B↔B', C↔C'), which are always neighbours (distance 1).
-const RACK_ORDER = { A: 0, "A'": 1, B: 2, "B'": 3, C: 4, "C'": 5 };
-function rackDist(originP, originQ) {
-  const a = RACK_ORDER[originP], b = RACK_ORDER[originQ];
-  return (a == null || b == null) ? 0 : Math.abs(a - b);
-}
 // Action types that actually CONSUME a spare (used for sparesUsed accounting).
 // `exchange` (in-phase) and `piece-swap` (scissored piece↔piece) use no spare.
 const SPARE_ACTION_TYPES = new Set(['replace-y1', 'replace-y2', 'piece-replace']);
+// v10.4: a replacement only USES A SPARE when the part put in is one of the entered spares
+// (id "S-n"). A good unit or piece pulled out earlier and re-installed elsewhere is a move,
+// not a spare (SNO-CAY3 used to show "5 spares" with only 3 entered).
+const isRealSpare = u => !!u && !u.pulledPiece && /^S-/.test(u.id || '');
+function countSparesUsed(actions) {
+  return (actions || []).reduce((n, a) => n + (SPARE_ACTION_TYPES.has(a.type) && isRealSpare(a.to) ? 1 : 0), 0);
+}
+if (typeof window !== 'undefined') window.countSparesUsed = countSparesUsed;
 
 // Capacitance tolerance of a capacitor UNIT vs its rated (nameplate) capacitance —
 // IEC 60871-1:2005 §7.2 (identical: IS 13925-1:2012): −5 % … +10 %. A unit measuring
@@ -169,7 +172,7 @@ function unitVoltageStats(y1, y2, systemKV, ratedKV) {
 if (typeof window !== 'undefined') {
   window.capSpecOf = capSpecOf; window.unitOutOfTolerance = unitOutOfTolerance;
   window.unitVoltageStats = unitVoltageStats;
-  window.unitDevOf = unitDevOf; window.parallelCountOf = parallelCountOf;
+  window.unitDevOf = unitDevOf; window.parallelCountOf = parallelCountOf; window.sumSpreadOf = sumSpreadOf;
 }
 
 function sumC(arr) { return arr.reduce((t, c) => t + c.val, 0); }
@@ -183,8 +186,18 @@ function sumC(arr) { return arr.reduce((t, c) => t + c.val, 0); }
 // spreads; `.all` (spread across all six phases) is kept for display only and does NOT
 // gate anything. Balance compares the SERIES value per phase (engineer's choice — the
 // same C_phase shown as "อนุกรม"); the sum1/sum2 fields exist but are NOT used here.
+// v10.3 — within-side spread of the per-phase SUM ΣC (field-sheet metric, drives ranking).
+function sumSpreadOf(metrics, tol) {
+  const t = (typeof tol === 'number' && tol > 0) ? tol : BAL_SUM_DEFAULT;
+  const p = metrics && metrics.perPhase;
+  if (!p) return { y1: NaN, y2: NaN, max: NaN, min: NaN, ok: false, tol: t };
+  const sp = a => Math.max.apply(null, a) - Math.min.apply(null, a);
+  const s1 = sp([p.A.sum1, p.B.sum1, p.C.sum1]), s2 = sp([p.A.sum2, p.B.sum2, p.C.sum2]);
+  const mx = Math.max(s1, s2);
+  return { y1: s1, y2: s2, max: mx, min: Math.min(s1, s2), ok: mx <= t + 1e-9, tol: t, sums: true };
+}
 function phaseSpreadOf(metrics, tol) {
-  const t = (typeof tol === 'number' && tol > 0) ? tol : BAL_TOL_UF;
+  const t = (typeof tol === 'number' && tol > 0) ? tol : PHASE_SPREAD_UF;
   const p = metrics && metrics.perPhase;
   if (!p) return { y1: NaN, y2: NaN, all: NaN, max: NaN, ok: false, tol: t };
   const sp = a => Math.max.apply(null, a) - Math.min.apply(null, a);
@@ -305,122 +318,119 @@ function calcYYMetrics(y1, y2, systemKV) {
 
 /** Engineering metrics for H-Bridge topology */
 function calcHBridgeMetrics(legA, legB, legC, legD, systemKV) {
-  const Vph  = (systemKV * 1000) / Math.sqrt(3);
-  // Left branch = A (top) + C (bottom), Right = B + D
-  const CA_top = sumC(legA) * 1e-6;
-  const CA_bot = sumC(legC) * 1e-6;
-  const CB_top = sumC(legB) * 1e-6;
-  const CB_bot = sumC(legD) * 1e-6;
-  const Xc_left_top  = CA_top > 0 ? 1 / (PI2F * CA_top) : 1e9;
-  const Xc_left_bot  = CA_bot > 0 ? 1 / (PI2F * CA_bot) : 1e9;
-  const Xc_right_top = CB_top > 0 ? 1 / (PI2F * CB_top) : 1e9;
-  const Xc_right_bot = CB_bot > 0 ? 1 / (PI2F * CB_bot) : 1e9;
-  const xa1 = Xc_left_top  + Xc_left_bot;
-  const xa2 = Xc_right_top + Xc_right_bot;
-  const Iup   = xa1 > 0 ? Vph / xa1 : 0;
-  const Idown = xa2 > 0 ? Vph / xa2 : 0;
-  const Iun   = Iup - Idown;
+  // v10.4 (fix 1) — H-bridge per phase: left branch A (top, phase side) + C (bottom,
+  // neutral side), right branch B (top) + D (bottom); the CT sits on the H-link between
+  // the two mid-points. Each leg's units are in parallel → leg C = ΣC (unchanged).
+  // With the near-zero-impedance CT tying the mid-points, the link current is
+  //   I_bridge = ω·Vph·(C_A·C_D − C_B·C_C) / (C_A + C_B + C_C + C_D)
+  // (Thevenin of the two dividers). Zero exactly when C_A/C_C = C_B/C_D (bridge balanced).
+  // The old code used I_left − I_right (branch-current difference), which is 0 whenever
+  // both branches have the same series C — e.g. A30/B27/C27/D30 read 0 mA although the
+  // mid-points sit ~3.5 kV apart. NOT yet checked against an EGAT H-bridge sheet.
+  const Vph = (systemKV * 1000) / Math.sqrt(3);                       // V
+  const uA = sumC(legA), uB = sumC(legB), uC = sumC(legC), uD = sumC(legD);   // µF
+  const CA = uA * 1e-6, CB = uB * 1e-6, CC = uC * 1e-6, CD = uD * 1e-6;     // F
+  const sum = CA + CB + CC + CD;
+  const Iun = sum > 0 ? PI2F * Vph * (CA * CD - CB * CC) / sum : 0;   // A (signed)
   const In_mA = Math.abs(Iun) * 1000;
-  // Vx = voltage at bridge midpoint (left branch)
-  const Vx = xa1 > 0 ? Vph * (Xc_left_bot / xa1) : 0;
-  const Bt = PI2F * (CA_top + CA_bot + CB_top + CB_bot);
-  const Qt = (Vph * Vph * Bt) / 1e6;
-  const S_total = Bt;
-  return { CA_top_uF: sumC(legA), CA_bot_uF: sumC(legC), CB_top_uF: sumC(legB), CB_bot_uF: sumC(legD), xa1, xa2, Iup, Idown, Iun, In_mA, Vx, Qt, S_total };
+  // open-link mid-point voltages (what the bridge compares) and the tied mid-point
+  const VxL = (CA + CC) > 0 ? Vph * CA / (CA + CC) : 0;
+  const VxR = (CB + CD) > 0 ? Vph * CB / (CB + CD) : 0;
+  const Vx  = sum > 0 ? Vph * (CA + CB) / sum : 0;
+  // reactive power with the mid-points tied: (A∥B) in series with (C∥D)
+  const Ceq = sum > 0 ? (CA + CB) * (CC + CD) / sum : 0;
+  const S_total = PI2F * Ceq;
+  const Qt = (Vph * Vph * S_total) / 1e6;                             // Mvar
+  return { CA_top_uF: uA, CA_bot_uF: uC, CB_top_uF: uB, CB_bot_uF: uD, Vph, Iun, In_mA, VxL, VxR, Vx, Qt, S_total, Ceq_uF: Ceq * 1e6 };
+}
+
+// v10.4 (fix 6): shared by ui.js (plan cards) and exporter.js (Excel "after" sheet).
+// Physical slot (rack position) each unit ends up in — exchanged/replacing units take
+// the slot of the unit they displaced, so the list follows the rack, not the value.
+function slotOrder(acts){
+  const slot = {};
+  (acts || []).forEach(a => {
+    if (a.type === 'exchange') {
+      const s1 = slot[a.from.id] != null ? slot[a.from.id] : a.from.pos, s2 = slot[a.to.id] != null ? slot[a.to.id] : a.to.pos;
+      slot[a.to.id] = s1; slot[a.from.id] = s2;
+    } else if ((a.type === 'replace-y1' || a.type === 'replace-y2') && a.to) {
+      slot[a.to.id] = slot[a.from.id] != null ? slot[a.from.id] : a.from.pos;
+    }
+  });
+  return slot;
 }
 
 function describeSwap(action) {
   const { type, from, to } = action;
   if (type === 'exchange') {
-    const d = action.dist != null ? action.dist : rackDist(from.origin, to.origin);
-    const near = d <= 1 ? ' — ใกล้' : (d >= 4 ? ' — ไกล' : '');
-    return `สลับ [${from.origin}] ↔ [${to.origin}] (ระยะ ${d}${near}): [${from.id}] ${from.val.toFixed(3)} ↔ [${to.id}] ${to.val.toFixed(3)} µF`;
+    if (action.hb)   // H-bridge legs (A–D): no Y-Y phase names
+      return `สลับ [${from.id}] ${from.val.toFixed(2)} µF กับ [${to.id}] ${to.val.toFixed(2)} µF`;
+    return `สลับ [${from.id}] ${from.val.toFixed(2)} µF (เฟส ${from.origin}) กับ [${to.id}] ${to.val.toFixed(2)} µF (เฟส ${to.origin})`;
   }
-  const srcTxt = to && to.pulledPiece ? `ชิ้นที่ถอดจาก [${to.id}]` : `[${to && to.id}]`;
-  if (type === 'replace-y1') return `ถอด [${from.id}] (${from.val.toFixed(3)} µF) จาก Y1 → แทนด้วย ${srcTxt} (${to.val.toFixed(3)} µF)`;
-  if (type === 'replace-y2') return `ถอด [${from.id}] (${from.val.toFixed(3)} µF) จาก Y2 → แทนด้วย ${srcTxt} (${to.val.toFixed(3)} µF)`;
+  const srcTxt = to && to.pulledPiece ? `ลูกที่ถอดจาก [${to.id}]` : (to && /^S-/.test(to.id || '') ? `spare [${to.id}]` : `ลูกที่ถอดจาก [${to && to.id}]`);
+  if (type === 'replace-y1') return `ถอด [${from.id}] (${from.val.toFixed(2)} µF) ออก ใส่ ${srcTxt} (${to.val.toFixed(2)} µF) แทน`;
+  if (type === 'replace-y2') return `ถอด [${from.id}] (${from.val.toFixed(2)} µF) ออก ใส่ ${srcTxt} (${to.val.toFixed(2)} µF) แทน`;
   // v10.0: say which PAIR, which piece, where the new piece comes from, and the new pair totals
-  if (type === 'piece-replace') return `คู่ขนาน [${from.id}] เปลี่ยนชิ้น ${action.piece} (${action.oldVal.toFixed(2)} µF) → ใส่ ${to.pulledPiece ? 'ชิ้นที่ถอดจาก' : 'อะไหล่'} [${to.id}] (${to.val.toFixed(2)} µF) · คู่ ${from.id} = ${action.newPairVal.toFixed(2)} µF`;
+  if (type === 'piece-replace') return `คู่ขนาน [${from.id}] เปลี่ยนลูก ${action.piece} (${action.oldVal.toFixed(2)} µF) เป็น ${srcTxt} (${to.val.toFixed(2)} µF) · คู่ ${from.id} = ${action.newPairVal.toFixed(2)} µF`;
   if (type === 'piece-swap') {
     const n1 = action.u1.val - action.v1 + action.v2, n2 = action.u2.val - action.v2 + action.v1;
-    return `สลับชิ้นระหว่างคู่ขนาน: [${action.u1.id}] ชิ้น ${action.p1} (${action.v1.toFixed(2)}) ↔ [${action.u2.id}] ชิ้น ${action.p2} (${action.v2.toFixed(2)} µF) · คู่ ${action.u1.id} = ${n1.toFixed(2)}, คู่ ${action.u2.id} = ${n2.toFixed(2)} µF`;
+    return `สลับลูก ${action.p1} ของ [${action.u1.id}] (${action.v1.toFixed(2)} µF) กับลูก ${action.p2} ของ [${action.u2.id}] (${action.v2.toFixed(2)} µF) · คู่ ${action.u1.id} = ${n1.toFixed(2)}, คู่ ${action.u2.id} = ${n2.toFixed(2)} µF`;
   }
   return '';
 }
 
-function applySwaps(y1, y2, spare, ops) {
-  let cY1 = y1.slice(), cY2 = y2.slice(), cS = spare.slice();
-  for (const op of ops) {
-    if (op.type === 'exchange')   { const t = cY1[op.i]; cY1[op.i] = cY2[op.j]; cY2[op.j] = t; }
-    else if (op.type === 'replace-y1') { const t = cY1[op.i]; cY1[op.i] = cS[op.k]; cS[op.k] = t; }
-    else if (op.type === 'replace-y2') { const t = cY2[op.j]; cY2[op.j] = cS[op.k]; cS[op.k] = t; }
+// v10.4 (fix 2) — H-bridge swap search. Greedy best-improvement, scored by the REAL
+// bridge current (calcHBridgeMetrics), each unit moved at most once. A moved unit takes
+// the leg tag of its new position (before v10.4 it kept its old tag, so reassembly
+// dropped every exchanged unit and the "after" numbers came from a bank missing units).
+// units: swappable units (origin A/B/C/D); locked: fixed units (always counted).
+// Returns states after 0..n steps; callers take budgets 2/4/6 and the last (full).
+function findHBridgeSwaps(units, locked, spare, kv, maxSteps) {
+  const legOf = u => (u.origin || '')[0];
+  const ino = arr => {
+    const g = { A: [], B: [], C: [], D: [] };
+    for (const u of arr) if (g[legOf(u)]) g[legOf(u)].push(u);
+    for (const u of locked) if (g[legOf(u)]) g[legOf(u)].push(u);
+    return calcHBridgeMetrics(g.A, g.B, g.C, g.D, kv).In_mA;
+  };
+  let cur = units.slice(), pool = (spare || []).slice(), acts = [];
+  const moved = new Set();
+  const states = [{ units: cur, acts: [], ino: ino(cur) }];
+  for (let step = 0; step < (maxSteps || 12); step++) {
+    let best = null;
+    const curIno = states[states.length - 1].ino;
+    for (let i = 0; i < cur.length; i++) {
+      const u = cur[i]; if (moved.has(u.id)) continue;
+      for (let j = i + 1; j < cur.length; j++) {
+        const w = cur[j]; if (moved.has(w.id) || legOf(u) === legOf(w) || u.val === w.val) continue;
+        const t = cur.slice();
+        t[i] = Object.assign({}, w, { origin: u.origin }); t[j] = Object.assign({}, u, { origin: w.origin });
+        const v = ino(t);
+        if (!best || v < best.ino) best = { ino: v, units: t, act: { type: 'exchange', from: u, to: w, hb: true }, ids: [u.id, w.id] };
+      }
+      for (let k = 0; k < pool.length; k++) {
+        const sp = pool[k]; if (sp.val === u.val) continue;
+        const t = cur.slice(); t[i] = Object.assign({}, sp, { origin: u.origin });
+        const v = ino(t);
+        const type = (legOf(u) === 'A' || legOf(u) === 'C') ? 'replace-y1' : 'replace-y2';
+        if (!best || v < best.ino) best = { ino: v, units: t, act: { type, from: u, to: sp }, ids: [sp.id], k };
+      }
+    }
+    if (!best || best.ino >= curIno - 1e-9) break;          // nothing improves any more
+    cur = best.units; acts = acts.concat([best.act]);
+    best.ids.forEach(id => moved.add(id));
+    if (best.k != null) pool = pool.filter((_, k) => k !== best.k);   // a spare is used once
+    states.push({ units: cur, acts, ino: best.ino });
   }
-  return { y1: cY1, y2: cY2, spare: cS };
-}
-
-function allSingleSwaps(y1, y2, spare, baseline) {
-  // baseline = { y1: sum of locked items in Y1, y2: sum of locked items in Y2 }
-  //          AND optional: { y1ByPhase: {A:.., B:.., C:..}, y2ByPhase: {...} }
-  //          for per-phase Ino-aware diff
-  const off1 = (baseline && baseline.y1) || 0;
-  const off2 = (baseline && baseline.y2) || 0;
-  const y1Ph = (baseline && baseline.y1ByPhase) || null;
-  const y2Ph = (baseline && baseline.y2ByPhase) || null;
-
-  // If per-phase baseline exists, use Ino-aware scoring
-  // Otherwise fall back to simple |sum1 - sum2|
-  function scoreState(curY1, curY2) {
-    if (!y1Ph || !y2Ph) {
-      return Math.abs((sumC(curY1) + off1) - (sumC(curY2) + off2));
-    }
-    // Sum each phase's swappable contribution + baseline
-    const phases = ['A','B','C'];
-    let totalIno = 0;
-    for (const ph of phases) {
-      const phPrime = ph + "'";
-      let s1 = (y1Ph[ph]||0), s2 = (y2Ph[ph]||0);
-      curY1.forEach(x => { if (x.origin === ph) s1 += x.val; });
-      curY2.forEach(x => { if (x.origin === phPrime) s2 += x.val; });
-      totalIno += Math.abs(s1 - s2);
-    }
-    return totalIno;
-  }
-
-  const n = y1.length, results = [];
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < y2.length; j++) {
-      // Simulate exchange
-      const t1 = y1[i], t2 = y2[j];
-      const nY1 = y1.slice(); nY1[i] = t2;
-      const nY2 = y2.slice(); nY2[j] = t1;
-      const d = scoreState(nY1, nY2);
-      const touchesOutlier = !!(t1.isOutlier || t2.isOutlier);
-      results.push({ diff: d, touchesOutlier, ops: [{ type:'exchange', i, j }], action: { type:'exchange', from:t1, to:t2 } });
-    }
-    for (let k = 0; k < spare.length; k++) {
-      const t1 = y1[i], ts = spare[k];
-      const nY1 = y1.slice(); nY1[i] = ts;
-      const d = scoreState(nY1, y2);
-      results.push({ diff: d, touchesOutlier: !!t1.isOutlier, ops:[{type:'replace-y1',i,k}], action:{type:'replace-y1',from:t1,to:ts} });
-    }
-  }
-  for (let j = 0; j < y2.length; j++) {
-    for (let k = 0; k < spare.length; k++) {
-      const t2 = y2[j], ts = spare[k];
-      const nY2 = y2.slice(); nY2[j] = ts;
-      const d = scoreState(y1, nY2);
-      results.push({ diff: d, touchesOutlier: !!t2.isOutlier, ops:[{type:'replace-y2',j,k}], action:{type:'replace-y2',from:t2,to:ts} });
-    }
-  }
-  // Sort: primary = lowest resulting imbalance; tiebreaker = prefer swaps that
-  // move a flagged outlier (Rule 2 prioritization). Tolerance avoids reordering
-  // genuinely better swaps just because they don't touch an outlier.
-  results.sort((a, b) => {
-    if (Math.abs(a.diff - b.diff) > 1e-6) return a.diff - b.diff;
-    if (a.touchesOutlier !== b.touchesOutlier) return a.touchesOutlier ? -1 : 1;
-    return 0;
-  });
-  return results;
+  const fmt = (st, budget) => {
+    const isLeft = u => legOf(u) === 'A' || legOf(u) === 'C';
+    return { swapCount: budget, actualSwaps: st.acts.length, sparesUsed: countSparesUsed(st.acts),
+      y1: st.units.filter(isLeft), y2: st.units.filter(u => !isLeft(u)), acts: st.acts,
+      steps: st.acts.length ? st.acts.map(describeSwap) : ['ไม่มีการสับเปลี่ยนที่ลดกระแส bridge ได้'],
+      diff: st.ino, Ino_mA: st.ino };
+  };
+  const at = n => states[Math.min(n, states.length - 1)];
+  return { baseIno: states[0].ino, swaps: [2, 4, 6].map(b => fmt(at(b), b)), full: fmt(states[states.length - 1], states.length - 1) };
 }
 
 // ═══════════════════════════════════════════════════════
@@ -476,8 +486,10 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   // now; it is re-arranged properly when spares arrive. Ranking puts within-side balance
   // ahead of the per-unit overvoltage count in this mode (the stress is reported).
   const MOVE_FAILED = !!OPTS.moveFailed;
-  const TOL = BAL_TOL_UF;                       // v10.0 user-set within-side balance tolerance
-  const BALF = BAL_FIRST;                       // v10.0 spare priority: balance first (field way)
+  const TOLS = (OPTS.balSum > 0) ? OPTS.balSum : BAL_SUM_DEFAULT;   // ΣC-per-phase tolerance (µF)
+  const BALF = !!OPTS.balFirst;                 // v10.0 spare priority: balance first (field way)
+  const scoreAt = (c, R) => Math.max(c.ino / R, c.spread / TOLS);
+  const passAt  = (c, R) => c.ino < R && c.spread <= TOLS + 1e-9;
   const kv = systemKV || 69;
   const lockY1 = lockedY1Arr || [];
   const lockY2 = lockedY2Arr || [];
@@ -492,13 +504,17 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   const SPEC = HAS_NP ? capSpecOf(nameplate) : null;
   const NP = SPEC ? SPEC.uf : null;
   const RATED = SPEC ? SPEC.ratedKV : null;
+  const badMemo = new WeakMap();    // v10.2 speed: tolerance check once per unit object
   function isBelow(u) {             // name kept from v6.5 — now means "out of tolerance"
     if (!SPEC || !u || u.origin === 'Spare') return false;
-    return unitOutOfTolerance(u, SPEC);
+    let b = badMemo.get(u);
+    if (b === undefined) { b = unitOutOfTolerance(u, SPEC); badMemo.set(u, b); }
+    return b;
   }
   const goodSpare = s => !SPEC || !capValOutOfTol(s.val, SPEC);
   // relative deviation of a failed unit (scissored → its worse piece)
-  const devOf = u => unitDevOf(u, SPEC);
+  const devMemo = new WeakMap();
+  const devOf = u => { let d = devMemo.get(u); if (d === undefined) { d = unitDevOf(u, SPEC); devMemo.set(u, d); } return d; };
 
   function bucket(arr) {
     const m = { A: [], B: [], C: [] };
@@ -522,34 +538,78 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   const KEEP1 = small ? Math.max(nSingles, 1) : 60;
   const BEAM  = small ? 40 : 24;
 
-  function inoOf(cY1, cY2) {
-    const fullY1 = [...cY1.A, ...cY1.B, ...cY1.C, ...lockY1];
-    const fullY2 = [...cY2.A, ...cY2.B, ...cY2.C, ...lockY2];
-    return calcYYMetrics(fullY1, fullY2, kv).Ino_mA;
+  // v10.2 (speed) — the optimizer scores ~10⁵ arrangements, and calcYYMetrics (array
+  // filters, perPhase objects, Σ for display) was ~55 % of the run time. fastEval uses
+  // the IDENTICAL formula and phase grouping (series C per phase = 1/Σ(1/C), locked
+  // units included via precomputed inverse sums), straight from the phase arrays.
+  // Every candidate is scored by the same function, so the ranking is unchanged; the
+  // plans shown to the user are re-measured with calcYYMetrics in decorate().
+  const phOf = u => (u.origin || '').replace("'", '');
+  const lockInv1 = { A: 0, B: 0, C: 0 }, lockInv2 = { A: 0, B: 0, C: 0 };
+  lockY1.forEach(u => { const p = phOf(u); if (lockInv1[p] !== undefined && u.val > 0) lockInv1[p] += 1 / u.val; });
+  lockY2.forEach(u => { const p = phOf(u); if (lockInv2[p] !== undefined && u.val > 0) lockInv2[p] += 1 / u.val; });
+  const lockSum1 = { A: 0, B: 0, C: 0 }, lockSum2 = { A: 0, B: 0, C: 0 };   // v10.3 ΣC per phase
+  lockY1.forEach(u => { const p = phOf(u); if (lockSum1[p] !== undefined && u.val > 0) lockSum1[p] += u.val; });
+  lockY2.forEach(u => { const p = phOf(u); if (lockSum2[p] !== undefined && u.val > 0) lockSum2[p] += u.val; });
+  function sumOf(arr, base) { let s = base; for (let i = 0; i < arr.length; i++) { const v = arr[i].val; if (v > 0) s += v; } return s; }
+  const VPH = kv / Math.sqrt(3);
+  const COS_M = Math.cos(-2 * Math.PI / 3), COS_P = Math.cos(2 * Math.PI / 3);
+  const SIN_M = Math.sin(-2 * Math.PI / 3), SIN_P = Math.sin(2 * Math.PI / 3);
+  function invOf(arr, base) { let s = base; for (let i = 0; i < arr.length; i++) { const v = arr[i].val; if (v > 0) s += 1 / v; } return s; }
+  function fastEval(cY1, cY2) {
+    const i1 = invOf(cY1.A, lockInv1.A), i2 = invOf(cY1.B, lockInv1.B), i3 = invOf(cY1.C, lockInv1.C);
+    const i4 = invOf(cY2.A, lockInv2.A), i5 = invOf(cY2.B, lockInv2.B), i6 = invOf(cY2.C, lockInv2.C);
+    const CA1 = i1 > 0 ? 1 / i1 : 0, CB1 = i2 > 0 ? 1 / i2 : 0, CC1 = i3 > 0 ? 1 / i3 : 0;
+    const CA2 = i4 > 0 ? 1 / i4 : 0, CB2 = i5 > 0 ? 1 / i5 : 0, CC2 = i6 > 0 ? 1 / i6 : 0;
+    const S1 = PI2F * CA1 / 1e6, S2 = PI2F * CB1 / 1e6, S3 = PI2F * CC1 / 1e6;
+    const S4 = PI2F * CA2 / 1e6, S5 = PI2F * CB2 / 1e6, S6 = PI2F * CC2 / 1e6;
+    const sumS = S1 + S2 + S3 + S4 + S5 + S6;
+    let Vnx = 0, Vny = 0;
+    if (sumS > 0) {
+      Vnx = (1 / sumS) * VPH * ((S1 + S4) + COS_M * (S2 + S5) + COS_P * (S3 + S6));
+      Vny = (1 / sumS) * VPH * (0 * (S1 + S4) + SIN_M * (S2 + S5) + SIN_P * (S3 + S6));
+    }
+    const s123 = S1 + S2 + S3;
+    const Inx = VPH * (S1 + S2 * COS_M + S3 * COS_P) - s123 * Vnx;
+    const Iny = VPH * (0 * S1 + S2 * SIN_M + S3 * SIN_P) - s123 * Vny;
+    const sp1 = Math.max(CA1, CB1, CC1) - Math.min(CA1, CB1, CC1);
+    const sp2 = Math.max(CA2, CB2, CC2) - Math.min(CA2, CB2, CC2);
+    // v10.3: balance = ΣC per phase within each side (field-sheet metric)
+    const a1 = sumOf(cY1.A, lockSum1.A), b1 = sumOf(cY1.B, lockSum1.B), c1 = sumOf(cY1.C, lockSum1.C);
+    const a2 = sumOf(cY2.A, lockSum2.A), b2 = sumOf(cY2.B, lockSum2.B), c2 = sumOf(cY2.C, lockSum2.C);
+    const ss1 = Math.max(a1, b1, c1) - Math.min(a1, b1, c1), ss2 = Math.max(a2, b2, c2) - Math.min(a2, b2, c2);
+    return { ino: Math.sqrt(Inx * Inx + Iny * Iny) * 1e6, spread: Math.max(ss1, ss2), spreadMin: Math.min(ss1, ss2),
+             serSpread: Math.max(sp1, sp2) };
   }
+  function inoOf(cY1, cY2) { return fastEval(cY1, cY2).ino; }
   const baseIno = inoOf(y1ByPhase, y2ByPhase);
 
   // Every visited state (from either track) is pushed here as a candidate.
   const candidates = [];
-  function record(y1obj, y2obj, spareArr, actions, ino) {
+  function record(y1obj, y2obj, spareArr, actions, ino, fm) {
     // Count ONLY actions that actually consume a spare (v8.0 fix kept): `exchange`
     // and `piece-swap` use no spare and must not inflate sparesUsed.
-    const spUsed = actions.reduce((n, a) => n + (SPARE_ACTION_TYPES.has(a.type) ? 1 : 0), 0);
+    const spUsed = countSparesUsed(actions);
     const y1 = [...y1obj.A, ...y1obj.B, ...y1obj.C];
     const y2 = [...y2obj.A, ...y2obj.B, ...y2obj.C];
-    const below = NP ? (y1.filter(isBelow).length + y2.filter(isBelow).length) : 0;
-    // v9.7 (G1): severity of what is LEFT — the worst relative deviation from rated C
-    // among failed units still installed. With too few spares, replace the WORST first.
-    const sev = NP ? [...y1, ...y2].filter(isBelow).reduce((m, u) => Math.max(m, devOf(u)), 0) : 0;
+    // failed units still installed + v9.7 (G1) severity of what is LEFT (worst relative
+    // deviation from rated C) — with too few spares, replace the WORST first.
+    let below = 0, sev = 0;
+    if (NP) {
+      for (const arr of [y1, y2]) for (let i = 0; i < arr.length; i++) {
+        const u = arr[i]; if (!isBelow(u)) continue;
+        below++; const d = devOf(u); if (d > sev) sev = d;
+      }
+    }
     // v9.7: within-side balance (A=B=C per wye, series C) — the balance objective.
-    const spObj = phaseSpreadOf(calcYYMetrics([...y1, ...lockY1], [...y2, ...lockY2], kv));
-    const spread = spObj.max, spreadMin = Math.min(spObj.y1, spObj.y2);   // v10.0: the better side too
+    const F = fm || fastEval(y1obj, y2obj);
+    const spread = F.spread, spreadMin = F.spreadMin;   // v10.0: the better side too
     const ov = RATED ? unitVoltageStats([...y1, ...lockY1], [...y2, ...lockY2], kv, RATED).ovCount : 0;
     const cand = {
       ino, swaps: actions.length, sp: spUsed, below, ov, sev, spread, spreadMin,
       y1, y2, spare: spareArr.slice(),
       acts: actions.slice(),   // raw actions — UI pairs each swap to its units
-      steps: actions.length ? actions.map(describeSwap) : ['ไม่มีการสับเปลี่ยนที่ลด Ino ได้']
+      steps: null              // v10.2: built lazily in fmt() (only for plans shown)
     };
     candidates.push(cand);
     return cand;
@@ -557,16 +617,18 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   record(y1ByPhase, y2ByPhase, sparePool, [], baseIno);
 
   function sig(st) {
-    const f = a => a.map(u => u.val.toFixed(4)).sort().join(',');   // multiset: order is irrelevant
+    // multiset key (order is irrelevant) — v10.2: integer 1e-4 µF steps instead of
+    // toFixed strings (same equality, ~4× cheaper; it ran for every generated state)
+    const f = a => { const k = new Array(a.length); for (let i = 0; i < a.length; i++) k[i] = Math.round(a[i].val * 1e4);
+                     k.sort((x, y) => x - y); return k.join(','); };
     return f(st.y1.A) + '|' + f(st.y1.B) + '|' + f(st.y1.C) + '#' +
-           f(st.y2.A) + '|' + f(st.y2.B) + '|' + f(st.y2.C) + '@' +
-           st.spare.map(u => u.val.toFixed(4)).sort().join(',');
+           f(st.y2.A) + '|' + f(st.y2.B) + '|' + f(st.y2.C) + '@' + f(st.spare);
   }
   function clone(st) {
     return {
       y1: { A: st.y1.A.slice(), B: st.y1.B.slice(), C: st.y1.C.slice() },
       y2: { A: st.y2.A.slice(), B: st.y2.B.slice(), C: st.y2.C.slice() },
-      spare: st.spare.slice(), actions: st.actions.slice(), ino: st.ino
+      spare: st.spare.slice(), actions: st.actions.slice(), ino: st.ino, fm: null
     };
   }
   // A scissored slot is a measured-separately parallel PAIR (2 cap pieces).
@@ -614,7 +676,7 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
           c.y1[ph] = a1.slice(); c.y2[ph] = a2.slice();
           c.y1[ph][i] = Object.assign({}, u2, { origin: tag1 });
           c.y2[ph][j] = Object.assign({}, u1, { origin: tag2 });
-          c.ino = inoOf(c.y1, c.y2);
+          c.fm = fastEval(c.y1, c.y2); c.ino = c.fm.ino;
           c.actions.push({ type: 'exchange', from: u1, to: u2 });
           kids.push(c);
         }
@@ -628,7 +690,7 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
           c.y1[ph][i] = Object.assign({}, sp, { origin: tag1 });
           c.spare = st.spare.slice();
           c.spare[k] = Object.assign({}, removed, { origin: 'Spare' });
-          c.ino = inoOf(c.y1, c.y2);
+          c.fm = fastEval(c.y1, c.y2); c.ino = c.fm.ino;
           c.actions.push({ type: 'replace-y1', from: removed, to: sp });
           kids.push(c);
         }
@@ -642,7 +704,7 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
           c.y2[ph][j] = Object.assign({}, sp, { origin: tag2 });
           c.spare = st.spare.slice();
           c.spare[k] = Object.assign({}, removed, { origin: 'Spare' });
-          c.ino = inoOf(c.y1, c.y2);
+          c.fm = fastEval(c.y1, c.y2); c.ino = c.fm.ino;
           c.actions.push({ type: 'replace-y2', from: removed, to: sp });
           kids.push(c);
         }
@@ -668,7 +730,7 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
             C[P] = aP.slice(); C[Q] = aQ.slice();
             C[P][i] = Object.assign({}, u2, { origin: P + sfx });
             C[Q][j] = Object.assign({}, u1, { origin: Q + sfx });
-            c.ino = inoOf(c.y1, c.y2);
+            c.fm = fastEval(c.y1, c.y2); c.ino = c.fm.ino;
             c.actions.push({ type: 'exchange', from: u1, to: u2 });
             kids.push(c);
           }
@@ -692,7 +754,7 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
         c.y1[P] = aP.slice(); c.y2[Q] = aQ.slice();
         c.y1[P][i] = Object.assign({}, u2, { origin: P });
         c.y2[Q][j] = Object.assign({}, u1, { origin: Q + "'" });
-        c.ino = inoOf(c.y1, c.y2);
+        c.fm = fastEval(c.y1, c.y2); c.ino = c.fm.ino;
         c.actions.push({ type: 'exchange', from: u1, to: u2 });
         kids.push(c);
       }
@@ -720,7 +782,7 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
           arrOf(c, loc)[loc.i] = nu;
           c.spare = st.spare.slice();
           c.spare[k] = { id: u.id + '.' + pc, val: oldVal, origin: 'Spare', pos: sp.pos, pulledPiece: true };
-          c.ino = inoOf(c.y1, c.y2);
+          c.fm = fastEval(c.y1, c.y2); c.ino = c.fm.ino;
           c.actions.push({ type: 'piece-replace', from: u, piece: pc, oldVal, to: sp, newPairVal: nu.val });
           kids.push(c);
         }
@@ -742,7 +804,7 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
           (B.side === 1 ? c.y1 : c.y2)[B.ph] = arrOf(st, B).slice();
           arrOf(c, A)[A.i] = pa === 'a' ? pieceUnit(uA, vb, uA.measuredB) : pieceUnit(uA, uA.measuredA, vb);
           arrOf(c, B)[B.i] = pb === 'a' ? pieceUnit(uB, va, uB.measuredB) : pieceUnit(uB, uB.measuredA, va);
-          c.ino = inoOf(c.y1, c.y2);
+          c.fm = fastEval(c.y1, c.y2); c.ino = c.fm.ino;
           c.actions.push({ type: 'piece-swap', u1: uA, p1: pa, v1: va, u2: uB, p2: pb, v2: vb });
           kids.push(c);
         }
@@ -765,20 +827,21 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
     const uniq = [];
     for (const k of kids) {
       const s = sig(k);
-      if (!seen.has(s)) { seen.add(s); uniq.push(k); const cd = record(k.y1, k.y2, k.spare, k.actions, k.ino); k.below = cd.below; k.ov = cd.ov; k.sev = cd.sev; k.spread = cd.spread; k.spreadMin = cd.spreadMin; }
+      if (!seen.has(s)) { seen.add(s); uniq.push(k); const cd = record(k.y1, k.y2, k.spare, k.actions, k.ino, k.fm); k.below = cd.below; k.ov = cd.ov; k.sev = cd.sev; k.spread = cd.spread; k.spreadMin = cd.spreadMin; }
     }
     // v9.6 (F4): keep BOTH the states that get failed units out (even if I_no rises
     // for now — removing a failure can unmask another) AND the lowest-I_no states.
     const cap = d === 1 ? KEEP1 : BEAM;
     // v9.7: thirds — failed-out (count, severity, overvoltage), within-side balance,
     // and lowest I_no — so balancing paths survive even while I_no is still high.
-    const byFail = uniq.slice().sort((a, b) => (a.below - b.below) || (a.sev - b.sev) || (a.ov - b.ov) || (a.ino - b.ino));
-    const bySpr  = uniq.slice().sort((a, b) => BALF ? ((a.spread - b.spread) || (a.spreadMin - b.spreadMin) || (a.ino - b.ino))
-                                                   : ((a.below - b.below) || (a.sev - b.sev) || (a.spread - b.spread) || (a.ino - b.ino)));
-    const byIno  = uniq.slice().sort((a, b) => a.ino - b.ino);
+    const byFail = uniq.slice().sort((a, b) => (a.below - b.below) || (a.sev - b.sev) || (a.ov - b.ov)
+                                               || (scoreAt(a, THR) - scoreAt(b, THR)) || (a.spreadMin - b.spreadMin) || (a.ino - b.ino));
+    // v10.3: thirds — failed-out, the EQUAL-WEIGHT score max(I_no/ref, ΔΣC/tol), and ΣC balance
+    const byScore = uniq.slice().sort((a, b) => (scoreAt(a, THR) - scoreAt(b, THR)) || (a.spreadMin - b.spreadMin) || (a.ino - b.ino));
+    const bySpr  = uniq.slice().sort((a, b) => (a.spread - b.spread) || (a.spreadMin - b.spreadMin) || (a.ino - b.ino));
     const third = Math.ceil(cap / 3), pickSet = new Set();
     beam = [];
-    for (const L of [byFail, bySpr, byIno]) {
+    for (const L of [byFail, byScore, bySpr]) {
       let n = 0;
       for (const k of L) { if (n >= third || beam.length >= cap) break; if (!pickSet.has(k)) { pickSet.add(k); beam.push(k); n++; } }
     }
@@ -842,50 +905,37 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   //    if neither is balanced, the tighter spread beyond SPREAD_TIE_UF) → then least
   //    work: fewest spares → fewest swaps → lowest I_no            (user decision)
   //    if it doesn't: lowest I_no (closest to safe) → spares → swaps
-  function better(c, best) {
-    const cp = c.ino < THR, bp = best.ino < THR;
-    if (BALF) {   // v10.0 balance first (field way): balance → pass → failed left → sev → ov → effort
-      const cb = c.spread <= TOL + 1e-9, bb = best.spread <= TOL + 1e-9;
-      if (cb !== bb) return cb;
-      if (!cb && Math.abs(c.spread - best.spread) > SPREAD_TIE_UF) return c.spread < best.spread;
+  // v10.3 — I_no and within-side ΣC balance have EQUAL weight (user decision 2026-11-17):
+  //   score(R) = max(I_no / R, ΔΣC / TOLS)   — ≤ 1 (I_no < R AND ΔΣC ≤ TOLS) = both pass.
+  // Safety keeps its place per spare-priority mode:
+  //   'failed'  : failed left → sev → overvoltage → both pass → score → effort
+  //   'balance' : both pass → score → failed left → sev → overvoltage → effort
+  //   temp mode (moveFailed): failed → sev → both pass → score → overvoltage → effort
+  // Among passing plans: fewest spares → fewest swaps → lower score. Not passing: the
+  // lower score (± SCORE_TIE) first — the plan that is closest to BOTH targets.
+  function betterAt(c, best, R) {
+    const cp = passAt(c, R), bp = passAt(best, R), sc = scoreAt(c, R), sb = scoreAt(best, R);
+    const work = () => (c.sp !== best.sp) ? c.sp < best.sp : (c.swaps !== best.swaps ? c.swaps < best.swaps : sc < sb);
+    const other = () => (!cp && Math.abs(c.spreadMin - best.spreadMin) > OTHER_TIE_UF) ? (c.spreadMin < best.spreadMin) : null;
+    if (BALF) {
       if (cp !== bp) return cp;
+      if (!cp && Math.abs(sc - sb) > SCORE_TIE) return sc < sb;
+      { const o = other(); if (o !== null) return o; }
       if (NP && c.below !== best.below) return c.below < best.below;
       if (Math.abs(c.sev - best.sev) > 1e-9) return c.sev < best.sev;
       if (c.ov !== best.ov) return c.ov < best.ov;
-      if (!cp && Math.abs(c.ino - best.ino) > 1e-9) return c.ino < best.ino;
-      // the better-balanced side only as a tie-break: balancing one side while the other
-      // stays off can RAISE I_no (the two imbalances were partly cancelling)
-      if (cp && !cb && Math.abs(c.spreadMin - best.spreadMin) > SPREAD_TIE_UF) return c.spreadMin < best.spreadMin;
-      if (c.sp !== best.sp) return c.sp < best.sp;
-      if (c.swaps !== best.swaps) return c.swaps < best.swaps;
-      return c.ino < best.ino;
+      return work();
     }
     if (NP && c.below !== best.below) return c.below < best.below;
     if (Math.abs(c.sev - best.sev) > 1e-9) return c.sev < best.sev;
     if (!MOVE_FAILED && c.ov !== best.ov) return c.ov < best.ov;
     if (cp !== bp) return cp;
-    if (MOVE_FAILED) {     // v9.9 temp mode: balance → I_no → overvoltage → spares → swaps
-      const cb = c.spread <= TOL + 1e-9, bb = best.spread <= TOL + 1e-9;
-      if (cb !== bb) return cb;
-      if (Math.abs(c.spread - best.spread) > SPREAD_TIE_UF) return c.spread < best.spread;
-      if (!cp && Math.abs(c.ino - best.ino) > 1e-9) return c.ino < best.ino;
-      if (c.ov !== best.ov) return c.ov < best.ov;
-      if (c.sp !== best.sp) return c.sp < best.sp;
-      if (c.swaps !== best.swaps) return c.swaps < best.swaps;
-      return c.ino < best.ino;
-    }
-    if (cp) {
-      const cb = c.spread <= TOL + 1e-9, bb = best.spread <= TOL + 1e-9;
-      if (cb !== bb) return cb;
-      if (!cb && Math.abs(c.spread - best.spread) > SPREAD_TIE_UF) return c.spread < best.spread;
-      if (c.sp !== best.sp) return c.sp < best.sp;
-      if (c.swaps !== best.swaps) return c.swaps < best.swaps;
-      return c.ino < best.ino;
-    }
-    if (Math.abs(c.ino - best.ino) > 1e-9) return c.ino < best.ino;
-    if (c.sp !== best.sp) return c.sp < best.sp;
-    return c.swaps < best.swaps;
+    if (!cp && Math.abs(sc - sb) > SCORE_TIE) return sc < sb;
+    { const o = other(); if (o !== null) return o; }
+    if (MOVE_FAILED && c.ov !== best.ov) return c.ov < best.ov;
+    return work();
   }
+  function better(c, best) { return betterAt(c, best, THR); }
   function pick(maxSwaps) {
     let best = candidates[0];
     for (const c of candidates) {
@@ -902,7 +952,7 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
     sparesUsed: b.sp,
     y1: b.y1, y2: b.y2, spare: b.spare,
     acts: b.acts,           // raw actions — UI pairs each swap to its units
-    steps: b.steps
+    steps: b.steps || (b.acts.length ? b.acts.map(describeSwap) : ['ไม่มีการสับเปลี่ยนที่ลด Ino ได้'])
   });
   const results = targets.map(target => fmt(pick(target), target));
 
@@ -920,121 +970,41 @@ function findPhaseAwareYYSwaps(y1Swap, y2Swap, spare, lockedBaseline, systemKV, 
   //    CLOSEST to r (highest I_no still below it) — so each row is a real option
   //    (<50 ≈ 48 mA in 2 swaps … <5 ≈ 4 mA in 7) instead of one plan repeated.
   //    Both keep the safety rules: failed out as far as possible, no overvoltage.
+  // v10.3 — both tables need I_no < r AND ΔΣC ≤ TOLS (equal weight, user decision).
+  //  • refPlans[r] (comparison table): least work (swaps → spares), then the plan CLOSEST
+  //    to r (highest I_no still below it). If no plan meets both, the row falls back to
+  //    the plan with the lowest score(r) (closest to both targets), flagged `fallback`.
+  //  • refBest[r] (default recommendation): betterAt(…, r) — null if nothing passes both.
   const refBest = {}, refPlans = {};
   INO_REF_LIST.forEach(r => {
-    const flex = candidates.filter(c => c.below === minBelow && c.sev <= minSev + 1e-9 && (MOVE_FAILED || c.ov === 0) && c.ino < r);
+    const safe = candidates.filter(c => c.below === minBelow && c.sev <= minSev + 1e-9 && (MOVE_FAILED || c.ov === 0));
+    const ok = safe.filter(c => passAt(c, r));
     let fb = null;
-    for (const c of flex) if (!fb || c.swaps < fb.swaps || (c.swaps === fb.swaps && (c.sp < fb.sp || (c.sp === fb.sp && c.ino > fb.ino)))) fb = c;
-    refPlans[r] = fb ? fmt(fb, fb.swaps) : null;
+    if (ok.length) {
+      for (const c of ok) if (!fb || c.swaps < fb.swaps || (c.swaps === fb.swaps && (c.sp < fb.sp || (c.sp === fb.sp && c.ino > fb.ino)))) fb = c;
+      refPlans[r] = fmt(fb, fb.swaps);
+    } else if (safe.length) {
+      for (const c of safe) {
+        if (!fb) { fb = c; continue; }
+        const d = scoreAt(c, r) - scoreAt(fb, r);
+        const dm = c.spreadMin - fb.spreadMin;
+        const tie = Math.abs(d) <= SCORE_TIE, otherTie = Math.abs(dm) <= OTHER_TIE_UF;
+        const lessWork = c.swaps < fb.swaps || (c.swaps === fb.swaps && (c.sp < fb.sp || (c.sp === fb.sp && d < 0)));
+        if (d < -SCORE_TIE || (tie && dm < -OTHER_TIE_UF) || (tie && otherTie && lessWork)) fb = c;
+      }
+      refPlans[r] = Object.assign(fmt(fb, fb.swaps), { fallback: true });
+    } else refPlans[r] = null;
 
-    const elig = candidates.filter(c => (BALF || (c.below === minBelow && c.sev <= minSev + 1e-9)) && (MOVE_FAILED || c.ov === 0) && c.ino < r);
-    if (!elig.length) { refBest[r] = null; return; }
-    // balance first (v9.7): balanced plans if any; else the tightest spread (± tie band)
-    const bal = elig.filter(c => c.spread <= TOL + 1e-9);
-    const minSpr = elig.reduce((m, c) => Math.min(m, c.spread), Infinity);
-    const pool = bal.length ? bal : elig.filter(c => c.spread <= minSpr + SPREAD_TIE_UF);
-    let b = null;   // then (balance-first: fewest failed left → sev) → least work: swaps → spares → I_no
-    const lessWork = (c, b) => c.swaps < b.swaps || (c.swaps === b.swaps && (c.sp < b.sp || (c.sp === b.sp && c.ino < b.ino)));
-    for (const c of pool) if (!b || (BALF
-        ? (c.below < b.below || (c.below === b.below && (c.sev < b.sev - 1e-9 || (Math.abs(c.sev - b.sev) <= 1e-9 && lessWork(c, b)))))
-        : lessWork(c, b))) b = c;
-    refBest[r] = fmt(b, b.swaps);
+    const elig = candidates.filter(c => (BALF || (c.below === minBelow && c.sev <= minSev + 1e-9)) && (MOVE_FAILED || c.ov === 0));
+    let b = null;
+    for (const c of elig) if (!b || betterAt(c, b, r)) b = c;
+    refBest[r] = (b && passAt(b, r)) ? fmt(b, b.swaps) : null;
   });
   return { baseDiff: baseIno, baseIno, swaps: results, refPlans, refBest, minBelow, maxDepth: MAXDEPTH };
 }
 
-function findBest1to3Swaps(origY1, origY2, origS, baseline) {
-  // เปลี่ยนเป็น 2 / 4 / 6 swap levels — iterative greedy
-  // baseline = { y1, y2 } sums of locked items (not swappable)
-  const off1 = (baseline && baseline.y1) || 0;
-  const off2 = (baseline && baseline.y2) || 0;
-  const baseDiff = Math.abs((sumC(origY1)+off1) - (sumC(origY2)+off2));
-  const targets = [2, 4, 6];
-  const results = [];
-
-  for (const target of targets) {
-    let curY1 = origY1.slice(), curY2 = origY2.slice(), curS = origS.slice();
-    let curDiff = baseDiff;
-    const actions = [];
-
-    for (let step = 0; step < target; step++) {
-      const candidates = allSingleSwaps(curY1, curY2, curS, baseline);
-      if (candidates.length === 0) break;
-      const best = candidates[0];
-      // Stop if no improvement
-      if (best.diff >= curDiff - 1e-9) break;
-      const { y1: nY1, y2: nY2, spare: nS } = applySwaps(curY1, curY2, curS, best.ops);
-      curY1 = nY1; curY2 = nY2; curS = nS;
-      curDiff = best.diff;
-      actions.push(best.action);
-    }
-
-    if (actions.length > 0) {
-      results.push({
-        swapCount: target,
-        actualSwaps: actions.length,
-        diff: curDiff,
-        y1: curY1,
-        y2: curY2,
-        steps: actions.map(describeSwap)
-      });
-    } else {
-      results.push({
-        swapCount: target,
-        actualSwaps: 0,
-        diff: baseDiff,
-        y1: origY1,
-        y2: origY2,
-        steps: ['ไม่มีการสับเปลี่ยนที่ลดความไม่สมดุลได้']
-      });
-    }
-  }
-
-  return { baseDiff, swaps: results };
-}
-
-function findBestFullSwap(origY1, origY2, origS, baseline, iterations=600) {
-  // Backward-compat: if 4th arg is a number, it's iterations (old signature)
-  if (typeof baseline === 'number') { iterations = baseline; baseline = null; }
-  const off1 = (baseline && baseline.y1) || 0;
-  const off2 = (baseline && baseline.y2) || 0;
-  const n=origY1.length, baseDiff=Math.abs((sumC(origY1)+off1)-(sumC(origY2)+off2));
-  let bestG={ diff:baseDiff, y1:origY1.slice(), y2:origY2.slice() };
-  const pool=origY1.concat(origY2,origS);
-  for (let it=0;it<iterations;it++) {
-    const sh=pool.slice().sort(()=>Math.random()-0.5);
-    let cY1=sh.slice(0,n), cY2=sh.slice(n,n*2), cS=sh.slice(n*2);
-    let imp=true;
-    while (imp) {
-      imp=false; let cd=Math.abs((sumC(cY1)+off1)-(sumC(cY2)+off2));
-      for (let i=0;i<n;i++) {
-        for (let j=0;j<n;j++) {
-          const d=Math.abs((sumC(cY1)+off1-cY1[i].val+cY2[j].val)-(sumC(cY2)+off2-cY2[j].val+cY1[i].val));
-          if (d<cd){const t=cY1[i];cY1[i]=cY2[j];cY2[j]=t;cd=d;imp=true;}
-        }
-        for (let k=0;k<cS.length;k++) {
-          const d1=Math.abs((sumC(cY1)+off1-cY1[i].val+cS[k].val)-(sumC(cY2)+off2));
-          if (d1<cd){const t=cY1[i];cY1[i]=cS[k];cS[k]=t;cd=d1;imp=true;}
-          if (i<cY2.length){const d2=Math.abs((sumC(cY1)+off1)-(sumC(cY2)+off2-cY2[i].val+cS[k].val));if(d2<cd){const t=cY2[i];cY2[i]=cS[k];cS[k]=t;cd=d2;imp=true;}}
-        }
-      }
-    }
-    const fd=Math.abs((sumC(cY1)+off1)-(sumC(cY2)+off2));
-    if (fd<bestG.diff) bestG={diff:fd,y1:cY1.slice(),y2:cY2.slice()};
-  }
-  let sc=0;
-  bestG.y1.forEach(c=>{if(c.origin!=='Y1')sc++;});
-  bestG.y2.forEach(c=>{if(c.origin!=='Y2')sc++;});
-  bestG.swapCount=sc;
-  return bestG;
-}
-
-
-// Expose calculator functions globally for client-side use
 window._calcYYMetrics     = calcYYMetrics;
 window._calcHBridgeMetrics= calcHBridgeMetrics;
-window._findBest1to3Swaps = findBest1to3Swaps;
-window._findBestFullSwap  = findBestFullSwap;
 
 
 // ═══════════════════════════════════════
@@ -1121,30 +1091,19 @@ function expandPairs(arr) {
   }));
 }
 
-// Helper: group pair-granularity items before passing to swap algorithm
-function prepareTier2Array(arr) {
-  // Tier 2 fallback: locked items are swapped INDIVIDUALLY (ทีละตัว),
-  // not as pairs. Each sub-unit is its own swappable item.
-  // Pass through unchanged so the algorithm treats each as a single unit.
-  return arr.slice();
-}
-
-// Helper: pass-through (no pair packing to unpack)
-function unpackTier2Result(arr) {
-  return arr.slice();
-}
-
 async function clientCalculate(payload) {
   const {topology, y1, y2, spare, legs, systemKV, alarmMA, capRating, balSumUF, sparePriority} = payload;
   // v10.0 — balance target (ΣC difference per rack, field-sheet style) → series tolerance;
   // spare priority 'balance' (field way, default) or 'failed' (worst failed out first).
   const BAL_SUM_UF = (parseFloat(balSumUF) > 0) ? parseFloat(balSumUF) : BAL_SUM_DEFAULT;
-  {
+  const BAL_SUM_TOL = BAL_SUM_UF;                                   // ΣC per phase (ranking)
+  const BAL_FIRST = sparePriority ? sparePriority === 'balance' : false;
+  // series-C equivalent of the ΣC tolerance (ΔC_series ≈ ΔΣC / n²) — reference only
+  const SER_TOL = (() => {
     const cnt = {}; [...(y1 || []), ...(y2 || [])].forEach(u => { cnt[u.origin] = (cnt[u.origin] || 0) + 1; });
     const ns = Object.values(cnt), n = ns.length ? ns.reduce((a, b) => a + b, 0) / ns.length : 10;
-    BAL_TOL_UF = BAL_SUM_UF / (n * n);
-    BAL_FIRST = sparePriority ? sparePriority === 'balance' : false;
-  }
+    return BAL_SUM_UF / (n * n);
+  })();
   const kv = parseFloat(systemKV) || 69;
   // Capacitor rating from Step 2 (v9.5): rated µF, tolerance band, unit rated kV.
   // Falls back to NAMEPLATE_UF / IEC 60871-1 −5 %…+10 % / no voltage check.
@@ -1193,10 +1152,9 @@ async function clientCalculate(payload) {
     }
 
     // Tier 1: focus on "วัดแยก" items
-    const leftT1  = [...aT1, ...cT1];
-    const rightT1 = [...bT1, ...dT1];
-    quickResult = findBest1to3Swaps(leftT1, rightT1, spare || []);
-    fullResult  = findBestFullSwap(leftT1, rightT1, spare || []);
+    const hb1 = findHBridgeSwaps([...aT1, ...cT1, ...bT1, ...dT1], [...aT2, ...bT2, ...cT2, ...dT2], spare || [], kv, 12);
+    quickResult = { baseDiff: hb1.baseIno, baseIno: hb1.baseIno, swaps: hb1.swaps };
+    fullResult  = hb1.full;
 
     quickResult.swaps = quickResult.swaps.map(sw => {
       const f = reassembleLegs(sw.y1, sw.y2, false);
@@ -1225,17 +1183,9 @@ async function clientCalculate(payload) {
     const totalT2 = aT2.length + bT2.length + cT2.length + dT2.length;
     if (!t1Best.underThreshold && totalT2 > 0 && !hasScissors) {
       // Prepare Tier 2 — swap locked items individually (ทีละตัว)
-      const aT2P = prepareTier2Array(aT2), bT2P = prepareTier2Array(bT2);
-      const cT2P = prepareTier2Array(cT2), dT2P = prepareTier2Array(dT2);
-      const leftAll  = [...aT1, ...cT1, ...aT2P, ...cT2P];
-      const rightAll = [...bT1, ...dT1, ...bT2P, ...dT2P];
-      const t2Quick = findBest1to3Swaps(leftAll, rightAll, spare || []);
-      const t2Full  = findBestFullSwap(leftAll, rightAll, spare || []);
-
-      // Unpack pairs before reassembly
+      const hb2 = findHBridgeSwaps([...aF, ...bF, ...cF, ...dF], [], spare || [], kv, 12);
+      const t2Quick = { swaps: hb2.swaps }, t2Full = hb2.full;
       t2Quick.swaps.forEach(sw => {
-        sw.y1 = unpackTier2Result(sw.y1);
-        sw.y2 = unpackTier2Result(sw.y2);
         const f = reassembleLegs(sw.y1, sw.y2, true);
         sw.engAfter = calcHBridgeMetrics(f.finalA, f.finalB, f.finalC, f.finalD, kv);
         sw.Ino_mA = sw.engAfter.In_mA;
@@ -1245,8 +1195,6 @@ async function clientCalculate(payload) {
         sw.tier = 2;
       });
       {
-        t2Full.y1 = unpackTier2Result(t2Full.y1);
-        t2Full.y2 = unpackTier2Result(t2Full.y2);
         const f = reassembleLegs(t2Full.y1, t2Full.y2, true);
         t2Full.engAfter = calcHBridgeMetrics(f.finalA, f.finalB, f.finalC, f.finalD, kv);
         t2Full.Ino_mA = t2Full.engAfter.In_mA;
@@ -1268,15 +1216,16 @@ async function clientCalculate(payload) {
     const t1Count = aT1.length + bT1.length + cT1.length + dT1.length;
     const t2Count = aT2.length + bT2.length + cT2.length + dT2.length;
     quickResult.lockedNote = (t1Count + t2Count) > 0
-      ? `Tier 1 (ติ๊ก "วัดแยก"): ${t1Count} ตัว · Tier 2 (กรุ๊ป): ${t2Count} ตัว · Spare ${(spare||[]).length} ตัว` +
-        (quickResult.fallbackUsed ? ' · ⚠ Tier 1 ไม่พอ ใช้ fallback (สลับ Tier 2 ด้วย)' : '') +
-        (hasScissors && t2Count > 0 ? ' · 🔒 มีวัดแยก → สับเฉพาะตัววัดแยก + Spare (ไม่แตะตัวกรุ๊ป)' : '')
+      ? `ช่องที่สลับได้ ${t1Count} ช่อง · ช่องกรุ๊ปขนาน ${t2Count} ช่อง · spare ${(spare||[]).length} ลูก` +
+        (quickResult.fallbackUsed ? ' · ต้องสลับช่องกรุ๊ปขนานด้วย' : '') +
+        (hasScissors && t2Count > 0 ? ' · มีช่องวัดแยก ระบบจึงสับเฉพาะช่องวัดแยกกับ spare' : '')
       : null;
   } else {
     const y1Flat = expandPairs(y1);
     const y2Flat = expandPairs(y2);
     engBefore   = calcYYMetrics(y1Flat, y2Flat, kv);
-    engBefore.spread = phaseSpreadOf(engBefore);   // within-side A/B/C series spread (display only)
+    engBefore.spread = sumSpreadOf(engBefore, BAL_SUM_TOL);     // v10.3: within-side ΣC per phase (field-sheet metric)
+    engBefore.serSpread = phaseSpreadOf(engBefore, SER_TOL);
 
     // ── Rule 2: mode-based outlier detection for non-parallel groups ──
     // Flag units deviating ≥5% from the per-phase mode; these are prioritized.
@@ -1310,7 +1259,7 @@ async function clientCalculate(payload) {
     function runPass(swapY1, swapY2, lockY1, lockY2, level, depth, moveFailed) {
       const baseline = { y1ByPhase: sumByPhase(lockY1), y2ByPhase: sumByPhase(lockY2) };
       const res = findPhaseAwareYYSwaps(swapY1, swapY2, spare || [], baseline, kv, lockY1, lockY2, CAP,
-                                        { maxDepth: depth, moveFailed: !!moveFailed }, THRESHOLD_MA);
+                                        { maxDepth: depth, moveFailed: !!moveFailed, balSum: BAL_SUM_TOL, balFirst: BAL_FIRST }, THRESHOLD_MA);
       function decorate(sw) {
         if (!sw) return sw;
         const fullY1 = [...sw.y1, ...lockY1];
@@ -1318,9 +1267,11 @@ async function clientCalculate(payload) {
         sw.engAfter = calcYYMetrics(fullY1, fullY2, kv);
         sw.Ino_mA = sw.engAfter.Ino_mA;
         sw.underThreshold = sw.Ino_mA < THRESHOLD_MA;
-        sw.spread = phaseSpreadOf(sw.engAfter);        // display only (not a goal since v9.4)
+        sw.spread = sumSpreadOf(sw.engAfter, BAL_SUM_TOL);   // v10.3: ΣC per phase within each side
+        sw.serSpread = phaseSpreadOf(sw.engAfter, SER_TOL);  // series C spread (kept for reference)
         sw.spreadOK = sw.spread.ok;
         sw.fullyPass = sw.underThreshold && sw.spreadOK;
+        sw.score = Math.max(sw.Ino_mA / THRESHOLD_MA, sw.spread.max / BAL_SUM_TOL);
         sw.unitV = unitVoltageStats(fullY1, fullY2, kv, CAP.ratedKV);   // v9.5
         sw.overV = sw.unitV.ovCount > 0;
         sw.y1Full = fullY1; sw.y2Full = fullY2;
@@ -1367,7 +1318,10 @@ async function clientCalculate(payload) {
         .filter(u => u.origin !== 'Spare' && isFailedUnit(u)).reduce((m, u) => Math.max(m, dev(u)), 0);
     }
     const sprOf = sw => (sw.spread && isFinite(sw.spread.max)) ? sw.spread.max : Infinity;
-    const balOf = sw => sprOf(sw) <= BAL_TOL_UF + 1e-9;
+    const balOf = sw => sprOf(sw) <= BAL_SUM_TOL + 1e-9;
+    // v10.3 equal-weight score at ref R and "both pass"
+    const scoreR = (sw, R) => Math.max(sw.Ino_mA / R, sprOf(sw) / BAL_SUM_TOL);
+    const bothR  = (sw, R) => sw.Ino_mA < R && balOf(sw);
     // Per budget, in priority order matching the field procedure:
     //   1. get the FAILED (out-of-tolerance) units OUT — fewest left installed
     //   2. no unit above 110 % of rated voltage (v9.5)
@@ -1376,34 +1330,23 @@ async function clientCalculate(payload) {
     //   4b. if NOTHING passes (v9.6, F1): LOWEST I_no first (closest to safe) → spares
     //       → swaps → level. (v6.5 ranked the lower level first even then, so a failed-
     //       only L0 plan at 307 mA beat an L1 plan at 188 mA.)
+    // v10.3 — one comparator for budgets and the default-recommendation table (mirrors
+    // betterAt() in the optimizer): equal-weight score max(I_no/R, ΔΣC/tol).
+    function cmpPlans(a, b, R, useLevel) {
+      const pa = bothR(a, R), pb = bothR(b, R), sa = scoreR(a, R), sb = scoreR(b, R);
+      const safety = () => (a._fail - b._fail) || ((Math.abs(a._sev - b._sev) > 1e-9) ? a._sev - b._sev : 0)
+                        || ((a.overV ? 1 : 0) - (b.overV ? 1 : 0));
+      const om = sw => (sw.spread && isFinite(sw.spread.min)) ? sw.spread.min : Infinity;
+      const passFirst = () => ((pb ? 1 : 0) - (pa ? 1 : 0)) || (!pa && Math.abs(sa - sb) > SCORE_TIE ? sa - sb : 0)
+                           || (!pa && Math.abs(om(a) - om(b)) > OTHER_TIE_UF ? om(a) - om(b) : 0);
+      const effort = () => (useLevel && pa ? a.level - b.level : 0) || (a.sparesUsed || 0) - (b.sparesUsed || 0)
+                        || a.actualSwaps - b.actualSwaps || (sa - sb) || (useLevel ? a.level - b.level : 0);
+      return BAL_FIRST ? (passFirst() || safety() || effort()) : (safety() || passFirst() || effort());
+    }
     function chooseBudget(i) {
       const cands = levels.map(p => p.swaps[i]).filter(Boolean);
       cands.forEach(c => { c._fail = failRemain(c); c._sev = failSev(c); });
-      cands.sort((a, b) => {
-        if (BAL_FIRST) {    // v10.0: balance → spread → pass → failed → sev → ov → effort
-          const bl = (balOf(b) ? 1 : 0) - (balOf(a) ? 1 : 0); if (bl) return bl;
-          if (!balOf(a) && Math.abs(sprOf(a) - sprOf(b)) > SPREAD_TIE_UF) return sprOf(a) - sprOf(b);
-          const pp = (b.underThreshold ? 1 : 0) - (a.underThreshold ? 1 : 0); if (pp) return pp;
-          const df = a._fail - b._fail; if (df) return df;
-          if (Math.abs(a._sev - b._sev) > 1e-9) return a._sev - b._sev;
-          const oo = (a.overV ? 1 : 0) - (b.overV ? 1 : 0); if (oo) return oo;
-          return a.underThreshold
-            ? (a.level - b.level || (a.sparesUsed || 0) - (b.sparesUsed || 0) || a.actualSwaps - b.actualSwaps || a.Ino_mA - b.Ino_mA)
-            : (a.Ino_mA - b.Ino_mA || (a.sparesUsed || 0) - (b.sparesUsed || 0) || a.actualSwaps - b.actualSwaps || a.level - b.level);
-        }
-        const d = a._fail - b._fail; if (d) return d;
-        if (Math.abs(a._sev - b._sev) > 1e-9) return a._sev - b._sev;                 // G1
-        const o = (a.overV ? 1 : 0) - (b.overV ? 1 : 0); if (o) return o;
-        const p = (b.underThreshold ? 1 : 0) - (a.underThreshold ? 1 : 0); if (p) return p;
-        if (a.underThreshold) {
-          const bl = (balOf(b) ? 1 : 0) - (balOf(a) ? 1 : 0); if (bl) return bl;       // balance first
-          if (!balOf(a) && Math.abs(sprOf(a) - sprOf(b)) > SPREAD_TIE_UF) return sprOf(a) - sprOf(b);
-          return a.level - b.level || (a.sparesUsed || 0) - (b.sparesUsed || 0)
-              || a.actualSwaps - b.actualSwaps || a.Ino_mA - b.Ino_mA;
-        }
-        return (a.Ino_mA - b.Ino_mA) || (a.sparesUsed || 0) - (b.sparesUsed || 0)
-            || a.actualSwaps - b.actualSwaps || a.level - b.level;
-      });
+      cands.sort((a, b) => cmpPlans(a, b, THRESHOLD_MA, true));
       return cands[0];
     }
     const pickBudgets = () => levels[0].swaps.map((_, i) => chooseBudget(i));
@@ -1416,7 +1359,9 @@ async function clientCalculate(payload) {
       const goodSp = (spare || []).filter(sp => !capValOutOfTol(sp.val, CAP)).length;
       const needMore = !budgetPicks.some(sw => sw.underThreshold) ||
                        (best._fail > 0 && goodSp > (best.sparesUsed || 0)) ||
-                       !balOf(best);                                  // v9.7: balance not reached yet
+                       !balOf(best) ||                                // v9.7: balance not reached yet
+                       // v10.3: a comparison-table row can't meet I_no AND ΣC yet → search deeper
+                       INO_REF_LIST.some(r => !levels.some(p => p.refPlans && p.refPlans[r] && !p.refPlans[r].fallback));
       // v9.9: deep enough to replace every failed unit AND still balance (cap 16)
       const nF = [...y1Flat, ...y2Flat].filter(isFailedUnit).length;
       const extD = Math.min(TEMP_DEPTH, Math.max(EXT_DEPTH, Math.min(nF, goodSp) + 4));
@@ -1434,28 +1379,24 @@ async function clientCalculate(payload) {
       const cands = levels.map(p => p.refPlans && p.refPlans[r]).filter(Boolean);
       cands.forEach(c => { c._fail = failRemain(c); c._sev = failSev(c); });
       cands.sort((a, b) => a._fail - b._fail || (a._sev - b._sev) || ((a.overV ? 1 : 0) - (b.overV ? 1 : 0))
-        || a.actualSwaps - b.actualSwaps || (a.sparesUsed || 0) - (b.sparesUsed || 0)
-        || b.Ino_mA - a.Ino_mA || a.level - b.level);
-      return { ref: r, plan: cands[0] || null };
+        || ((bothR(b, r) ? 1 : 0) - (bothR(a, r) ? 1 : 0))
+        || (bothR(a, r)
+            ? (a.actualSwaps - b.actualSwaps || (a.sparesUsed || 0) - (b.sparesUsed || 0) || b.Ino_mA - a.Ino_mA || a.level - b.level)
+            : ((Math.abs(scoreR(a, r) - scoreR(b, r)) > SCORE_TIE ? scoreR(a, r) - scoreR(b, r) : 0)
+               || (Math.abs(a.spread.min - b.spread.min) > OTHER_TIE_UF ? a.spread.min - b.spread.min : 0)
+               || a.actualSwaps - b.actualSwaps || (a.sparesUsed || 0) - (b.sparesUsed || 0) || scoreR(a, r) - scoreR(b, r))));
+      const p = cands[0] || null;
+      return { ref: r, plan: p, fallback: !!(p && !bothR(p, r)) };   // v10.3: fallback = closest, not passing both
     });
     // Default-recommendation table (balance-first → least work), v9.7 rule.
     quickResult.refBest = INO_REF_LIST.map(r => {
       const cands = levels.map(p => p.refBest && p.refBest[r]).filter(Boolean);
       cands.forEach(c => { c._fail = failRemain(c); c._sev = failSev(c); });
-      cands.sort((a, b) => BAL_FIRST
-        ? (((balOf(b) ? 1 : 0) - (balOf(a) ? 1 : 0))
-          || (!balOf(a) && Math.abs(sprOf(a) - sprOf(b)) > SPREAD_TIE_UF ? sprOf(a) - sprOf(b) : 0)
-          || a._fail - b._fail || (a._sev - b._sev) || ((a.overV ? 1 : 0) - (b.overV ? 1 : 0))
-          || a.actualSwaps - b.actualSwaps || (a.sparesUsed || 0) - (b.sparesUsed || 0) || a.level - b.level || a.Ino_mA - b.Ino_mA)
-        : a._fail - b._fail || (a._sev - b._sev) || ((a.overV ? 1 : 0) - (b.overV ? 1 : 0))
-        || ((balOf(b) ? 1 : 0) - (balOf(a) ? 1 : 0))
-        || (!balOf(a) && Math.abs(sprOf(a) - sprOf(b)) > SPREAD_TIE_UF ? sprOf(a) - sprOf(b) : 0)
-        || a.actualSwaps - b.actualSwaps || (a.sparesUsed || 0) - (b.sparesUsed || 0)
-        || a.level - b.level || a.Ino_mA - b.Ino_mA);
+      cands.sort((a, b) => cmpPlans(a, b, r, true));
       return { ref: r, plan: cands[0] || null };
     });
     {
-      const ok = quickResult.refTable.filter(row => row.plan);
+      const ok = quickResult.refTable.filter(row => row.plan && !row.fallback);
       if (ok.length) {
         // 🛠 least work = cheapest plan (fewest swaps, then spares) — its tightest ref row.
         const cost = p => p.actualSwaps * 1000 + (p.sparesUsed || 0);
@@ -1484,7 +1425,7 @@ async function clientCalculate(payload) {
     // wait for spares and be re-arranged anyway). The plan becomes: replace the WORST
     // failed units with the good spares on hand, and report how many more are needed.
     {
-      const anyPass = budgetPicks.some(sw => sw.underThreshold) || quickResult.refTable.some(r => r.plan) || quickResult.refBest.some(r => r.plan);
+      const anyPass = budgetPicks.some(sw => sw.underThreshold) || quickResult.refTable.some(r => r.plan && !r.fallback) || quickResult.refBest.some(r => r.plan);
       const goodSp = (spare || []).filter(sp => !capValOutOfTol(sp.val, CAP))
         .sort((a, b) => Math.abs(a.val - CAP.uf) - Math.abs(b.val - CAP.uf));
       const nFailedTotal = [...y1Flat, ...y2Flat].filter(isFailedUnit).length;
@@ -1505,7 +1446,7 @@ async function clientCalculate(payload) {
           y1: y1F, y2: y2F, y1Full: y1F, y2Full: y2F, acts,
           steps: acts.length ? acts.map(describeSwap) : ['ไม่มี spare ที่ดีให้เปลี่ยน'],
           engAfter: m, Ino_mA: m.Ino_mA, diff: m.Ino_mA, underThreshold: m.Ino_mA < THRESHOLD_MA,
-          spread: phaseSpreadOf(m), unitV: unitVoltageStats(y1F, y2F, kv, CAP.ratedKV), level: 0, tier: 1 };
+          spread: sumSpreadOf(m, BAL_SUM_TOL), serSpread: phaseSpreadOf(m, SER_TOL), unitV: unitVoltageStats(y1F, y2F, kv, CAP.ratedKV), level: 0, tier: 1 };
         sw.spreadOK = sw.spread.ok; sw.fullyPass = sw.underThreshold && sw.spreadOK; sw.overV = sw.unitV.ovCount > 0;
         sw._fail = failRemain(sw); sw._sev = failSev(sw);
         quickResult.sparesOnly = sw;
@@ -1532,8 +1473,7 @@ async function clientCalculate(payload) {
         ts.forEach(c => { c._fail = failRemain(c); c._sev = failSev(c); });
         // least work that is passing + balanced; else the deepest (best-ranked) plan
         let tp = ts.find(c => c.underThreshold && balOf(c)) || ts[ts.length - 1];
-        const key = c => BAL_FIRST ? [balOf(c) ? 0 : 1, sprOf(c), c.underThreshold ? 0 : 1, c.Ino_mA]
-                                   : [c.underThreshold ? 0 : 1, balOf(c) ? 0 : 1, sprOf(c), c.Ino_mA];
+        const key = c => [bothR(c, THRESHOLD_MA) ? 0 : 1, scoreR(c, THRESHOLD_MA), c.Ino_mA];   // v10.3
         const lessThan = (a, b) => { const ka = key(a), kb = key(b);
           for (let i = 0; i < ka.length; i++) { if (Math.abs(ka[i] - kb[i]) > 1e-9) return ka[i] < kb[i]; } return false; };
         if (tp && (!normBest || lessThan(tp, normBest))) {
@@ -1562,19 +1502,18 @@ async function clientCalculate(payload) {
     const failLeft  = failRemain(quickResult.swaps[quickResult.swaps.length - 1]);
     const tolTxt = `${CAP.lo.toFixed(2)}–${CAP.hi.toFixed(2)} µF (${CAP.uf.toFixed(2)} µF −${CAP.minusPct}%/+${CAP.plusPct}%)`;
     quickResult.lockedNote = (tier1Count + tier2Count) > 0
-      ? `Tier 1 (วัดแยก): ${tier1Count} ตัว · Tier 2 (กรุ๊ป): ${tier2Count} ตัว · Spare ${sCount} ตัว (ดี ${goodSpare})` +
-        ' · สลับได้: เฟสเดียวกันข้ามฝั่ง (A↔A\') และข้ามเฟสในฝั่งเดียวกัน (A↔B↔C, A\'↔B\'↔C\')' +
-        (nFail > 0 ? ` · 🔧 พบ ${nFail} ตัวนอกพิกัด ${tolTxt} (เสีย) ถอดออกก่อน` : '') +
+      ? `ช่องที่สลับได้ ${tier1Count} ช่อง · ช่องกรุ๊ปขนาน ${tier2Count} ช่อง · spare ${sCount} ลูก (ใช้ได้ ${goodSpare})` +
+        (nFail > 0 ? ` · พบลูกนอกพิกัด ${nFail} ช่อง (ช่วงปกติ ${CAP.lo.toFixed(2)}–${CAP.hi.toFixed(2)} µF) จะถอดออกก่อน` : '') +
         (quickResult.tempPlan
-          ? ` · ⛔ ตัวเสีย ${quickResult.failedTotal} ตัว แต่ spare ดีมี ${goodSpare} ตัว → แผนจัดชั่วคราว: เปลี่ยนตัวเสียหนักสุดก่อน แล้วกระจายตัวเสียที่เหลือให้แต่ละเฟสเท่ากัน · หา spare ดีเพิ่มอีก ${quickResult.sparesShort} ตัว แล้วจัดใหม่`
+          ? ` · ลูกเสียมี ${quickResult.failedTotal} ลูก แต่ spare ดีมี ${goodSpare} ลูก จึงจัดแบบชั่วคราว ควรหา spare เพิ่มอีก ${quickResult.sparesShort} ลูก`
           : quickResult.sparesOnly
-          ? ` · ⛔ ตัวเสีย ${quickResult.failedTotal} ตัว แต่ spare ดีมี ${goodSpare} ตัว — สับให้ผ่านไม่ได้ตอนนี้ แนะนำเปลี่ยนตัวเสียหนักสุดก่อน แล้วหา spare ดีเพิ่มอีก ${quickResult.sparesShort} ตัว`
-          : (failLeft > 0 ? ` · ⛔ spare ดีไม่พอ (มี ${goodSpare} ตัว) → ยังเหลือตัวเสีย ${failLeft} ตัว (เหลือไว้เฉพาะตัวที่เสียน้อยสุด) — ต้องหา spare ดีเพิ่มอีก ${failLeft} ตัว` : '')) +
-        (quickResult.usedGood && !quickResult.fallbackUsed ? ' · ⚠ ตัวเสียอย่างเดียวไม่พอ ต้องสับตัวดีด้วย' : '') +
-        (CAP.ratedKV ? ` · ⚡ ตรวจแรงดันรายตัว ≤ ${Math.round(UNIT_OV_LIMIT*100)}% ของ ${CAP.ratedKV} kV` : '') +
-        (quickResult.extended ? ` · 🔎 สับ ${BASE_DEPTH} ครั้งไม่พอ → ค้นหาเพิ่มถึง ${quickResult.maxDepth} ครั้ง` : '') +
-        (quickResult.fallbackUsed ? ' · ⚠ ต้องใช้ fallback (สลับตัวกรุ๊ป Tier 2 ด้วย)' : '') +
-        (hasScissors && tier2Count > 0 ? ' · 🔒 มีวัดแยก → ไม่แตะตัวกรุ๊ป' : '')
+          ? ` · ลูกเสียมี ${quickResult.failedTotal} ลูก แต่ spare ดีมี ${goodSpare} ลูก ตอนนี้ยังสับให้ผ่านไม่ได้ ควรหา spare เพิ่มอีก ${quickResult.sparesShort} ลูก`
+          : (failLeft > 0 ? ` · spare ดีไม่พอ ยังเหลือลูกเสีย ${failLeft} ลูก (เหลือไว้เฉพาะลูกที่เสียน้อยสุด)` : '')) +
+        (quickResult.usedGood && !quickResult.fallbackUsed ? ' · ต้องสลับลูกที่ยังดีอยู่ด้วย' : '') +
+        (CAP.ratedKV ? ` · ตรวจแรงดันรายลูกไม่ให้เกิน ${Math.round(UNIT_OV_LIMIT*100)}% ของ ${CAP.ratedKV} kV` : '') +
+        (quickResult.extended ? ` · ค้นหาเพิ่มถึง ${quickResult.maxDepth} ครั้ง` : '') +
+        (quickResult.fallbackUsed ? ' · ต้องสลับช่องกรุ๊ปขนานด้วย' : '') +
+        (hasScissors && tier2Count > 0 ? ' · มีช่องวัดแยก ระบบจึงไม่แตะช่องกรุ๊ปขนาน' : '')
       : null;
   }
 
@@ -1593,7 +1532,6 @@ async function clientCalculate(payload) {
   engBefore.thresholdMA = THRESHOLD_MA;
   engBefore.capSpec = CAP;                                   // v9.5 — UI reads tolerance/rating from here
   if (topology !== 'h-bridge') engBefore.unitV = unitVoltageStats(expandPairs(y1), expandPairs(y2), kv, CAP.ratedKV);
-  engBefore.phaseSpreadTol = BAL_TOL_UF;
   engBefore.balSumUF = BAL_SUM_UF;
   engBefore.balanceFirst = BAL_FIRST;
   const beforeMA = topology==='h-bridge' ? engBefore.In_mA : engBefore.Ino_mA;

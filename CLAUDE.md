@@ -69,7 +69,7 @@ project/
   build.js             bundles src/ → dist/ single-file HTML
   test/calc.test.js    asserts I_no matches Excel reference values
   src/
-    _head.html         <head> markup (fonts, xlsx CDN) up to <style>
+    _head.html         <head> markup (fonts, icons, xlsx CDN) up to <style>
     _body_markup.html  <body> markup with NO <script> blocks (build injects them)
     styles/main.css    all CSS (dual light/dark theme) — the authoritative design system
     styles/tailwind.css Tailwind v4 entry (utilities + theme only, NO Preflight);
@@ -312,6 +312,33 @@ being hoisted into the shared global scope, so:
     `handleCalculate(r)` sets `vals.pickRef`, and ui.js then recommends (and Excel
     exports) THAT row's plan; "ใช้แผนนี้" on the balance row re-runs the default.
     Tests that assert balance-first expectations read `refBest`.
+  - **v10.2 — speed (no logic change).** Inside `findPhaseAwareYYSwaps` every candidate
+    is scored by `fastEval()` — the IDENTICAL phasor formula and phase grouping as
+    `calcYYMetrics` (series C = 1/Σ(1/C), locked units via precomputed inverse sums),
+    without the array filters/perPhase objects; it also returns the within-side spreads.
+    `isBelow`/`devOf` are memoized per unit object (WeakMap), step text is built lazily
+    in `fmt()`, and `sig()` uses integer 1e-4 µF keys. Plans shown to the user are still
+    re-measured with `calcYYMetrics` in `decorate()`. SNO-CAY3 at ΣC 0.1: 16 s → ~2 s;
+    verified identical plans (all budgets, ref tables, temp/spares-only) on 17 banks × 2
+    spare modes vs v10.1. If you change the I_no formula, change BOTH functions.
+  - **v10.3 — I_no and per-phase ΣC balance have EQUAL weight (user decision
+    2026-11-17).** The balance metric is now the field-sheet number itself: the SUM ΣC
+    of each phase (A/B/C on Y1, A'/B'/C' on Y2), max − min within each side ≤
+    `BAL_SUM_TOL` (= Step-2 `#balSumUF`, UI default 0.1 µF; engine default
+    `BAL_SUM_DEFAULT` 0.5 when not passed). `sumSpreadOf()` (from `perPhase.sum1/sum2`)
+    → `sw.spread` (UI shows ΔΣC Y1/Y2, 2 d.p.); the old series spread is `sw.serSpread`.
+    `fastEval()` returns ΣC spreads. **Score = max(I_no / ref, ΔΣC / tol)**, ≤ 1 = both
+    pass. Ranking (`betterAt` in the optimizer, `cmpPlans` in clientCalculate):
+    'failed' mode = failed left → sev → overvoltage → both-pass → score (± `SCORE_TIE`
+    0.02) → other side's ΔΣC (± `OTHER_TIE_UF` 0.05) → spares → swaps; 'balance' mode =
+    both-pass → score → other side → failed → sev → overvoltage → effort. The "other
+    side" tie-break matters: with max() the worse side dominates and the search would
+    never balance the better side otherwise. Beam thirds: failed / score / ΣC spread.
+    The comparison table and `refBest` require BOTH (I_no < r AND ΔΣC ≤ tol); a row that
+    can't is filled with the lowest-score plan and flagged `fallback` (⚠ in the UI,
+    excluded from 🛠/⭐ tags and from "anything passes"). F2 also extends the search when
+    any table row is still a fallback. SNO-CAY3 (ΣC 0.1): 6 swaps → 16.0 mA, ΔΣC
+    0.10/0.10, failed B-5 out; <5 row = 7 swaps 4.99 mA (Case 22).
   - **Display (v9.6):** the "ก่อนสับเปลี่ยน" card (YY) no longer shows Σ Y1 / Σ Y2 /
     |ΣY1−ΣY2| (that difference does NOT drive I_no — two balanced wyes can differ);
     it shows ΔC within Y1, ΔC within Y2, per-phase total ratio max/min (IEC ≤ 1.08)
@@ -319,6 +346,36 @@ being hoisted into the shared global scope, so:
     the per-phase ratio. H-bridge keeps the old Σ rows.
   It NEVER changes the I_no calculation. (H-bridge path keeps its simpler optimizer;
   its failed badges use the same tolerance band.)
+  - **v10.4 — audit fixes 1–9.** (1) H-bridge CT current = ω·Vph·|C_A·C_D − C_B·C_C| / ΣC
+    (bridge between the A/C and B/D mid-points; the old I_left − I_right read 0 mA for
+    A30/B27/C27/D30) — NOT yet checked against an EGAT H-bridge sheet; Q uses
+    (A∥B) in series with (C∥D). (2) H-bridge search = `findHBridgeSwaps()` (greedy, real
+    bridge current, move-once, moved units RE-TAGGED to their new leg) — replaces
+    applySwaps/allSingleSwaps/findBest1to3Swaps/findBestFullSwap, which dropped exchanged
+    units on reassembly. (3) blank/≤0 kV → alert (no silent 69 kV). (4) `sparesUsed` =
+    `countSparesUsed()` = only entered spares (id `S-n`); re-installing a pulled-out good
+    part is a move. (5) JSZip inlined. (6) `slotOrder()` lives in calculator.js; the Excel
+    after-sheet is written in rack order. (7) formulas.js Q step uses ΣS (series), steps
+    1–6. (8) Case 23: fastEval == calcYYMetrics with locked units. (9) optimizer settings
+    via options `{balSum, balFirst}` — no mutable globals. Cases 23–24.
+  - **v10.5 — Step 2 for phones + field wording (UI only, no math change).**
+    - Mobile (≤600 px, "variant 1" of `docs/mockups/step2-variants.html`): per-side phase
+      tabs (`.phase-tabs`, `setActivePhase`, `nextPhase`) show one phase at a time with its
+      ΣC; inputs 16 px / ≥44 px; labelled "วัดแยก" button; header not sticky, no blur.
+      Desktop keeps the 3-column grid (tracks `minmax(0,1fr)`, so no overflow at ~1000 px).
+    - `updatePhaseSums()` (app.js) shows ΣC per phase in each panel header, the pair total
+      of a measured-separately slot (`.cr-slot.is-split .pair-sum`) and an amber
+      "นอกพิกัด" flag while typing (grouped parallel slots judged per unit, like the
+      calculator). The payload from `getInputValues()` is unchanged.
+    - Fixes: split state and scissors visibility survived `rebuildPanel` only by accident
+      (read a non-existent `.split-toggle-cb`; buttons came back hidden); switching
+      topology Y-Y ↔ H-bridge kept the old input markup (`area.dataset.built`).
+    - #systemKV has no prefilled 69 (placeholder only; validated in getInputValues).
+    - Wording: Thai field terms ("ลูก", "ต่อขนาน 2 ลูก", "วัดแยก"), no emoji / Tier /
+      fallback / ref jargon in Step 2–3 text, 2-decimal values, step text as sentences
+      ("ถอด [B-5] (25.20 µF) ออก ใส่ spare [S-2] (26.40 µF) แทน"); only `S-n` is called a
+      spare, a re-used pulled unit is "ลูกที่ถอดจาก […]". Grouped parallel phases say
+      "ช่องละ 2 ลูกขนาน" once in the plan-card phase header. `rackDist`/`RACK_ORDER` removed.
 - **Within-side balance (`PHASE_SPREAD_UF = 0.005 µF`) — a RANKING OBJECTIVE again
   since v9.7** (user: "บาลานซ์ A B C ของแต่ละฝั่ง", "บาลานซ์ก่อน แรงงานทีหลัง"). The
   within-wye series spread (A=B=C on Y1, A'=B'=C' on Y2, via `phaseSpreadOf()` on the
@@ -341,8 +398,8 @@ Export fills the **actual EGAT reference workbook** (`Double wye unground CAP
 (RS-CAY21)`) so the output looks byte-identical to the field form. The template is
 embedded as base64 in `template-xlsx.js` (`EGAT_TEMPLATE_B64`). **We do NOT
 round-trip through SheetJS** — its community build drops cell fills/borders on
-write (verified). Instead we do **XML surgery with JSZip** (loaded from CDN like
-xlsx): unzip, string-patch only the input cells' `<v>` values in the raw
+write (verified). Instead we do **XML surgery with JSZip** (INLINED by build.js from the pinned
+devDependency `jszip@3.10.1` since v10.4, so export works offline — no CDN): unzip, string-patch only the input cells' `<v>` values in the raw
 `xl/worksheets/sheetN.xml`, re-zip (DEFLATE). Everything we don't touch —
 formatting, merges, drawings, formulas — is preserved verbatim.
 - **6 output sheets** = the template's 3 (C-Bank Arrangement, Farad Measurement,

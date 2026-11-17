@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Step 2 Mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --page:#eceef2; --ink:#14181f; --ink2:#4a5261; --rule:#d3d7de;
+  --sun:#ffd400; --warn-ink:#8a4b00; --warn-bg:#fff1d6; --bad:#b3261e;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--page);color:var(--ink);font-family:"Noto Sans Thai",system-ui,sans-serif;line-height:1.5;padding:32px 16px 64px}
+::selection{background:#1d4ed8;color:#fff}
+.intro{max-width:1100px;margin:0 auto 28px}
+.intro h1{font-size:1.6rem;font-weight:700;letter-spacing:-0.01em;margin-bottom:6px}
+.intro p{color:var(--ink2);max-width:70ch}
+.row{display:flex;gap:28px;overflow-x:auto;padding:8px 4px 24px;scroll-snap-type:x mandatory;max-width:100%}
+.variant{flex:0 0 360px;scroll-snap-align:start}
+.variant h2{font-size:1.05rem;font-weight:700;margin-bottom:2px}
+.variant .why{font-size:.9rem;color:var(--ink2);margin-bottom:12px;min-height:3em}
+.notes{margin-top:14px;font-size:.88rem;color:var(--ink2)}
+.notes b{color:var(--ink)}
+.notes li{margin-left:1.1em;margin-bottom:3px}
+
+/* phone frame */
+.phone{width:360px;height:760px;border-radius:34px;background:#0f1115;padding:10px;box-shadow:0 18px 40px -18px rgba(15,17,21,.55),0 2px 6px rgba(15,17,21,.25)}
+.screen{width:100%;height:100%;border-radius:26px;overflow:hidden;position:relative;display:flex;flex-direction:column}
+.status{height:26px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 18px;font:600 12px/1 "IBM Plex Sans Thai",sans-serif}
+svg.i{width:20px;height:20px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* ───── V1  ปรับจากของเดิม ───── */
+.v1 .screen{background:#f4f6fa;color:#111827}
+.v1 .bar{flex:none;display:flex;align-items:center;gap:10px;padding:8px 16px 10px;background:#fff;border-bottom:1px solid #e3e7ee}
+.v1 .bar b{font-size:1rem}
+.v1 .bar span{margin-left:auto;font-size:.8rem;color:#475569}
+.v1 .sum{margin:12px 16px 0;background:#fff;border:1px solid #e3e7ee;border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:8px;font-size:.88rem;color:#334155}
+.v1 .sum a{margin-left:auto;color:#1d4ed8;font-weight:600;text-decoration:none}
+.v1 .seg{margin:12px 16px 0;display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.v1 .seg button{font:inherit;border:1px solid #d5dbe5;background:#fff;border-radius:10px;padding:6px 0 5px;color:#1f2937;line-height:1.25}
+.v1 .seg button small{display:block;font-size:.72rem;color:#475569}
+.v1 .seg button.on{background:#1d4ed8;border-color:#1d4ed8;color:#fff}
+.v1 .seg button.on small{color:#dbe4ff}
+.v1 .seg button.warn small{color:#8a4b00;font-weight:600}
+.v1 .seglbl{margin:12px 16px 0;font-size:.78rem;color:#475569;display:flex;justify-content:space-between}
+.v1 .list{flex:1;overflow:hidden;padding:4px 0;margin:8px 16px 0;background:#fff;border:1px solid #e3e7ee;border-radius:12px}
+.v1 .r{display:flex;align-items:center;gap:10px;height:48px;padding:5px 12px;border-bottom:1px solid #eef1f5}
+.v1 .r label{width:44px;white-space:nowrap;font:500 .85rem "IBM Plex Mono",monospace;color:#475569}
+.v1 .r input{flex:1;min-width:0;height:38px;border:1px solid #d5dbe5;border-radius:8px;padding:0 10px;font:500 16px "IBM Plex Mono",monospace;color:#111827;background:#fff;font-variant-numeric:tabular-nums}
+.v1 .r input:focus{outline:2px solid #1d4ed8;outline-offset:1px}
+.v1 .r .u{font-size:.8rem;color:#475569;width:18px}
+.v1 .r.bad input{border-color:#d97706;background:#fff7e8}
+.v1 .flag{font-size:.72rem;font-weight:600;color:#8a4b00;background:#fff1d6;border-radius:6px;padding:2px 6px;white-space:nowrap}
+.v1 .foot{flex:none;display:flex;align-items:center;gap:10px;padding:10px 16px 14px;background:#fff;border-top:1px solid #e3e7ee;margin-top:10px}
+.v1 .foot div{font-size:.8rem;color:#475569;line-height:1.3}
+.v1 .foot div b{display:block;font:600 1rem "IBM Plex Mono",monospace;color:#111827}
+.v1 .foot button{margin-left:auto;font:600 .95rem "Noto Sans Thai";background:#1d4ed8;color:#fff;border:0;border-radius:12px;height:48px;padding:0 18px}
+
+/* ───── V2  ใบงานกระดาษ ───── */
+.v2 .screen{background:#f6f3ea;color:#1b1a17;font-family:"IBM Plex Sans Thai",sans-serif}
+.v2 .head{flex:none;padding:6px 16px 10px;border-bottom:1.5px solid #1b1a17}
+.v2 .head .t{display:flex;justify-content:space-between;align-items:baseline}
+.v2 .head b{font-size:1.05rem}
+.v2 .head span{font:500 .8rem "IBM Plex Mono",monospace}
+.v2 .head .m{font-size:.8rem;color:#55524a;margin-top:2px}
+.v2 .tabs{flex:none;display:flex;border-bottom:1px solid #b9b3a3}
+.v2 .tabs button{flex:1;font:600 .9rem "IBM Plex Sans Thai";background:none;border:0;height:42px;color:#55524a}
+.v2 .tabs button.on{color:#1b1a17;box-shadow:inset 0 -2px #1b1a17}
+.v2 table{width:100%;border-collapse:collapse;font:500 15px "IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+.v2 .sheet{flex:1;overflow:hidden;padding:0 10px}
+.v2 th{font:600 .78rem "IBM Plex Sans Thai";color:#55524a;padding:8px 4px 4px;text-align:right;border-bottom:1px solid #b9b3a3}
+.v2 th:first-child{text-align:left}
+.v2 td{height:40px;padding:0 6px;text-align:right;border-bottom:1px solid #d8d2c2}
+.v2 td:first-child{text-align:left;color:#5f5a4e;font-size:.8rem;width:34px}
+.v2 td + td{border-left:1px solid #d8d2c2}
+.v2 td.bad{background:#ffe9b8;color:#6b3a00;font-weight:600}
+.v2 td.cur{outline:2px solid #1b1a17;outline-offset:-2px;background:#fff}
+.v2 tr.tot td{border-top:1.5px solid #1b1a17;border-bottom:0;font-weight:600;color:#1b1a17}
+.v2 .diff{flex:none;margin:6px 16px 12px;padding:8px 10px;border:1.5px solid #8a4b00;color:#6b3a00;font-size:.84rem;display:flex;gap:8px;align-items:center;background:#fff6e0}
+.v2 .diff b{font-family:"IBM Plex Mono",monospace}
+
+/* ───── V3  ทีละช่อง + แป้นตัวเลข ───── */
+.v3 .screen{background:#fbfbfc;color:#0f172a}
+.v3 .top{flex:none;display:flex;align-items:center;justify-content:space-between;padding:6px 18px 0;font-size:.85rem;color:#475569}
+.v3 .prog{flex:none;display:grid;grid-template-columns:repeat(11,1fr);gap:4px;margin:10px 18px 0}
+.v3 .prog i{height:6px;border-radius:3px;background:#dfe4ec}
+.v3 .prog i.d{background:#0f766e}.v3 .prog i.b{background:#d97706}.v3 .prog i.c{background:#0f172a}
+.v3 .slot{flex:none;text-align:center;margin-top:22px}
+.v3 .slot .id{font:600 1rem "IBM Plex Mono",monospace;color:#334155}
+.v3 .slot .val{font:600 64px/1.1 "IBM Plex Mono",monospace;letter-spacing:-0.02em;margin-top:4px;font-variant-numeric:tabular-nums}
+.v3 .slot .val small{font:500 1.1rem "Noto Sans Thai";color:#475569;margin-left:4px;letter-spacing:0}
+.v3 .msg{margin:10px auto 0;width:max-content;max-width:88%;font-size:.86rem;font-weight:600;color:#8a4b00;background:#fff1d6;border-radius:10px;padding:6px 12px;display:flex;gap:6px;align-items:center}
+.v3 .near{flex:none;display:flex;justify-content:center;gap:18px;margin-top:14px;font:500 .9rem "IBM Plex Mono",monospace;color:#64748b}
+.v3 .near span b{color:#0f172a;font-weight:600}
+.v3 .pad{margin-top:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:14px 14px 16px;background:#eef1f5}
+.v3 .pad button{height:58px;border:0;border-radius:14px;background:#fff;font:600 24px "IBM Plex Mono",monospace;color:#0f172a;box-shadow:0 1px 2px rgba(15,23,42,.12)}
+.v3 .pad button.k2{grid-column:span 2;font:600 1.05rem "Noto Sans Thai";background:#0f172a;color:#fff;display:flex;align-items:center;justify-content:center;gap:8px}
+.v3 .pad button.bk{display:flex;align-items:center;justify-content:center}
+
+/* ───── V4  แดดจ้า ───── */
+.v4 .screen{background:#fff;color:#000;font-family:"IBM Plex Sans Thai",sans-serif}
+.v4 .bar{flex:none;display:flex;align-items:center;justify-content:space-between;padding:6px 16px 12px;border-bottom:2px solid #000}
+.v4 .bar b{font-size:1.25rem}
+.v4 .bar span{font-weight:600;font-size:.95rem}
+.v4 .tabs{flex:none;display:grid;grid-template-columns:repeat(3,1fr);border-bottom:2px solid #000}
+.v4 .tabs button{height:56px;font:700 1.2rem "IBM Plex Sans Thai";background:#fff;border:0;color:#000}
+.v4 .tabs button + button{border-left:2px solid #000}
+.v4 .tabs button.on{background:#000;color:#fff}
+.v4 .rows{flex:1;overflow:hidden}
+.v4 .r{display:flex;align-items:center;height:58px;padding:8px 16px;border-bottom:1.5px solid #000;gap:12px}
+.v4 .r label{font:700 1.05rem "IBM Plex Mono",monospace;width:44px}
+.v4 .r .v{flex:1;font:600 24px "IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+.v4 .r .u{font-size:1rem;font-weight:600}
+.v4 .r.cur{background:var(--sun)}
+.v4 .r.cur .v::after{content:"";display:inline-block;width:2px;height:26px;background:#000;margin-left:3px;vertical-align:-4px}
+.v4 .r.bad{background:#000;color:#fff}
+.v4 .r.bad .tag{font-size:.85rem;font-weight:700;border:2px solid #fff;padding:1px 6px}
+.v4 .go{flex:none;margin:12px 16px 16px;height:60px;border:0;background:#000;color:#fff;font:700 1.2rem "IBM Plex Sans Thai";display:flex;align-items:center;justify-content:center;gap:10px}
+
+/* ───── V5  วางค่าทั้งเฟส ───── */
+.v5 .screen{background:#f5f7f6;color:#10201b}
+.v5 .bar{flex:none;padding:6px 16px 10px;display:flex;align-items:center;justify-content:space-between}
+.v5 .bar b{font-size:1rem}
+.v5 .bar span{font-size:.8rem;color:#3d544b}
+.v5 .phs{flex:none;margin:0 16px;display:grid;grid-template-columns:repeat(6,1fr);gap:4px}
+.v5 .phs div{border-radius:8px;padding:5px 4px;text-align:center;font:600 .82rem "IBM Plex Mono",monospace;background:#fff;border:1px solid #d6dfda;color:#3d544b;line-height:1.2}
+.v5 .phs div small{display:block;font:500 .62rem "Noto Sans Thai";color:#3d544b}
+.v5 .phs div.ok{background:#e3f2ec;border-color:#9cc9b5;color:#0b5a40}
+.v5 .phs div.now{background:#10201b;border-color:#10201b;color:#fff}
+.v5 .phs div.now small{color:#cfe3da}
+.v5 h3{margin:14px 16px 6px;font-size:.92rem}
+.v5 .paste{margin:0 16px;background:#fff;border:1.5px dashed #7fa595;border-radius:12px;padding:10px 12px;font:500 15px/1.55 "IBM Plex Mono",monospace;color:#10201b;height:92px;overflow:hidden}
+.v5 .hint{margin:6px 16px 0;font-size:.78rem;color:#3d544b}
+.v5 .chips{margin:12px 16px 0;display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.v5 .chip{background:#fff;border:1px solid #d6dfda;border-radius:10px;padding:5px 8px;line-height:1.2}
+.v5 .chip small{display:block;font:500 .68rem "IBM Plex Mono",monospace;color:#3d544b}
+.v5 .chip b{font:600 1rem "IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+.v5 .chip.bad{background:#fff1d6;border-color:#e0a54a}
+.v5 .chip.bad b{color:#8a4b00}
+.v5 .res{margin:12px 16px 0;background:#fff;border:1px solid #d6dfda;border-radius:12px;padding:10px 12px;font-size:.85rem;color:#3d544b}
+.v5 .res b{font-family:"IBM Plex Mono",monospace;color:#10201b}
+.v5 .res .w{color:#8a4b00;font-weight:600;display:flex;gap:6px;align-items:center;margin-top:4px}
+.v5 .go{margin:auto 16px 16px;height:50px;border:0;border-radius:12px;background:#10201b;color:#fff;font:600 1rem "Noto Sans Thai"}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="warn" viewBox="0 0 24 24"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="cut" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/></symbol>
+  <symbol id="back" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></symbol>
+  <symbol id="next" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="del" viewBox="0 0 24 24"><path d="M21 5H9l-6 7 6 7h12V5z"/><path d="M17 9l-5 6M12 9l5 6"/></symbol>
+  <symbol id="clip" viewBox="0 0 24 24"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"/></symbol>
+</svg>
+
+<div class="intro">
+  <h1>Step 2 กรอกค่า บนมือถือ — 5 แนวทาง</h1>
+  <p>ตัวอย่างหน้าจอ 360 px ใช้ข้อมูลจริงเฟส B ของแบงค์ SNO-CAY3 (B-5 = 25.2 µF นอกพิกัด 25.65–29.70) ทุกแบบแก้ปัญหาที่ตรวจเจอ: ไม่ล้นจอ ช่องกรอก ≥ 16 px กดง่ายด้วยนิ้ว เตือนค่าผิดทันที และโชว์ผลรวม C ต่อเฟสแบบใบงาน · เลื่อนซ้าย–ขวาเพื่อดูครบ</p>
+</div>
+
+<div class="row">
+
+<!-- V1 -->
+<section class="variant v1">
+  <h2>1 · ปรับจากของเดิม</h2>
+  <p class="why">หน้าตาเดิม (ฟ้า–ขาว) แต่เรียงเป็นแถวเดียว เลือกเฟสด้วยปุ่มด้านบน มีปุ่มไปเฟสถัดไปติดล่าง</p>
+  <div class="phone"><div class="screen">
+    <div class="status"><span>9:41</span><span>5G</span></div>
+    <div class="bar"><svg class="i"><use href="#back"/></svg><b>กรอกค่าความจุ</b><span>ขั้น 2 จาก 3</span></div>
+    <div class="sum">115 kV · ref 50 mA · ΣC ≤ 0.1 µF<a href="#">แก้</a></div>
+    <div class="seglbl"><span>ฝั่ง Y1</span><span>ผลรวม C ต่อเฟส</span></div>
+    <div class="seg">
+      <button>A<small>299.8</small></button>
+      <button class="on">B<small>298.1</small></button>
+      <button>C<small>ยังไม่ครบ</small></button>
+    </div>
+    <div class="list">
+      <div class="r"><label>B-1</label><input value="27.6" inputmode="decimal"><span class="u">µF</span></div>
+      <div class="r"><label>B-2</label><input value="27.4" inputmode="decimal"><span class="u">µF</span></div>
+      <div class="r"><label>B-3</label><input value="26.8" inputmode="decimal"><span class="u">µF</span></div>
+      <div class="r"><label>B-4</label><input value="27.7" inputmode="decimal"><span class="u">µF</span></div>
+      <div class="r bad"><label>B-5</label><input value="25.2" inputmode="decimal"><span class="flag">นอกพิกัด</span></div>
+      <div class="r"><label>B-6</label><input value="26.6" inputmode="decimal"><span class="u">µF</span></div>
+      <div class="r"><label>B-7</label><input value="27.6" inputmode="decimal"><span class="u">µF</span></div>
+      <div class="r"><label>B-8</label><input value="27.6" inputmode="decimal"><span class="u">µF</span></div>
+      <div class="r"><label>B-9</label><input value="27.5" inputmode="decimal"><span class="u">µF</span></div>
+    </div>
+    <div class="foot"><div>เฟส B · 11/11 ช่อง<b>298.1 µF</b></div><button>ถัดไป: เฟส C</button></div>
+  </div></div>
+  <ul class="notes">
+    <li><b>เหมาะ:</b> เปลี่ยนน้อยสุด ผู้ใช้เดิมคุ้นตา ทำได้เร็ว</li>
+    <li><b>ข้อแลก:</b> ยังกรอกทีละช่อง 66 ช่องเหมือนเดิม</li>
+  </ul>
+</section>
+
+<!-- V2 -->
+<section class="variant v2">
+  <h2>2 · ใบงานหน้างาน</h2>
+  <p class="why">หน้าตาเหมือนใบบันทึกกระดาษของ กฟผ.: ตาราง 3 เฟสในหน้าเดียว แถวรวม และความต่างใต้ตาราง</p>
+  <div class="phone"><div class="screen">
+    <div class="status"><span>9:41</span><span>5G</span></div>
+    <div class="head"><div class="t"><b>SNO-CAY3</b><span>18 ต.ค. 64</span></div><div class="m">115 kV · พิกัด 27.00 µF (−5 / +10 %) · ΣC ≤ 0.1</div></div>
+    <div class="tabs"><button class="on">ฝั่ง Y1</button><button>ฝั่ง Y2</button><button>Spare</button></div>
+    <div class="sheet"><table>
+      <tr><th>ช่อง</th><th>A</th><th>B</th><th>C</th></tr>
+      <tr><td>1</td><td>26.2</td><td>27.6</td><td>27.6</td></tr>
+      <tr><td>2</td><td>27.5</td><td>27.4</td><td>27.1</td></tr>
+      <tr><td>3</td><td>26.5</td><td>26.8</td><td>26.7</td></tr>
+      <tr><td>4</td><td>27.7</td><td>27.7</td><td>27.7</td></tr>
+      <tr><td>5</td><td>27.0</td><td class="bad">25.2</td><td>27.8</td></tr>
+      <tr><td>6</td><td>27.5</td><td>26.6</td><td>26.7</td></tr>
+      <tr><td>7</td><td>27.6</td><td>27.6</td><td>27.5</td></tr>
+      <tr><td>8</td><td>27.1</td><td>27.6</td><td>27.0</td></tr>
+      <tr><td>9</td><td>27.6</td><td>27.5</td><td>27.6</td></tr>
+      <tr><td>10</td><td>27.5</td><td>26.7</td><td class="cur">26.8</td></tr>
+      <tr><td>11</td><td>27.6</td><td>27.4</td><td>26.9</td></tr>
+      <tr class="tot"><td>รวม</td><td>299.8</td><td>298.1</td><td>299.4</td></tr>
+    </table></div>
+    <div class="diff"><svg class="i"><use href="#warn"/></svg><span>ผลรวมต่างกัน <b>1.7 µF</b> (เกิน 0.1) · B-5 นอกพิกัด</span></div>
+  </div></div>
+  <ul class="notes">
+    <li><b>เหมาะ:</b> ตรงกับใบที่ช่างใช้อยู่ เห็นภาพรวมทั้ง rack ตรวจทานง่าย</li>
+    <li><b>ข้อแลก:</b> ช่องแคบ (~88 px) แตะแก้ทีละเซลล์ ต้องเลื่อนดูฝั่ง Y2</li>
+  </ul>
+</section>
+
+<!-- V3 -->
+<section class="variant v3">
+  <h2>3 · ทีละช่อง + แป้นตัวเลข</h2>
+  <p class="why">โฟกัสค่าเดียวเต็มจอ แป้นตัวเลขของแอปเอง (ปุ่มใหญ่ 58 px) กดถัดไปแล้วไปช่องต่อไปเอง</p>
+  <div class="phone"><div class="screen">
+    <div class="status"><span>9:41</span><span>5G</span></div>
+    <div class="top"><span>ฝั่ง Y1 · เฟส B</span><span>ช่อง 5 / 11</span></div>
+    <div class="prog"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="c"></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <div class="slot">
+      <div class="id">B-5</div>
+      <div class="val">25.2<small>µF</small></div>
+      <div class="msg"><svg class="i"><use href="#warn"/></svg>นอกพิกัด 25.65–29.70 µF · ตรวจค่าอีกครั้ง</div>
+    </div>
+    <div class="near"><span>B-4 <b>27.7</b></span><span>B-6 —</span></div>
+    <div class="pad">
+      <button>1</button><button>2</button><button>3</button>
+      <button>4</button><button>5</button><button>6</button>
+      <button>7</button><button>8</button><button>9</button>
+      <button>.</button><button>0</button><button class="bk" aria-label="ลบ"><svg class="i"><use href="#del"/></svg></button>
+      <button class="bk" aria-label="ย้อน"><svg class="i"><use href="#back"/></svg></button><button class="k2">ถัดไป B-6<svg class="i"><use href="#next"/></svg></button>
+    </div>
+  </div></div>
+  <ul class="notes">
+    <li><b>เหมาะ:</b> ใส่ถุงมือก็กดได้ ไม่ต้องเล็ง ไม่มีคีย์บอร์ดมือถือมาบัง</li>
+    <li><b>ข้อแลก:</b> เห็นทีละค่า ทวนทั้งเฟสต้องกดดูรายการ</li>
+  </ul>
+</section>
+
+<!-- V4 -->
+<section class="variant v4">
+  <h2>4 · โหมดแดดจ้า</h2>
+  <p class="why">ขาว–ดำคอนทราสต์สูงสุด ตัวใหญ่ 24 px แถวสูง 58 px ช่องที่กำลังกรอกเป็นแถบเหลือง</p>
+  <div class="phone"><div class="screen">
+    <div class="status"><span>9:41</span><span>5G</span></div>
+    <div class="bar"><b>เฟส B · Y1</b><span>ช่อง 10 / 11</span></div>
+    <div class="tabs"><button>A</button><button class="on">B</button><button>C</button></div>
+    <div class="rows">
+      <div class="r"><label>B-3</label><span class="v">26.8</span><span class="u">µF</span></div>
+      <div class="r"><label>B-4</label><span class="v">27.7</span><span class="u">µF</span></div>
+      <div class="r bad"><label>B-5</label><span class="v">25.2</span><span class="tag">นอกพิกัด</span></div>
+      <div class="r"><label>B-6</label><span class="v">26.6</span><span class="u">µF</span></div>
+      <div class="r"><label>B-7</label><span class="v">27.6</span><span class="u">µF</span></div>
+      <div class="r"><label>B-8</label><span class="v">27.6</span><span class="u">µF</span></div>
+      <div class="r"><label>B-9</label><span class="v">27.5</span><span class="u">µF</span></div>
+      <div class="r cur"><label>B-10</label><span class="v">26.7</span><span class="u">µF</span></div>
+      <div class="r"><label>B-11</label><span class="v"></span><span class="u">µF</span></div>
+    </div>
+    <button class="go">ถัดไป<svg class="i"><use href="#next"/></svg></button>
+  </div></div>
+  <ul class="notes">
+    <li><b>เหมาะ:</b> อ่านได้กลางแดด ผ่านคอนทราสต์ทุกจุด (21:1)</li>
+    <li><b>ข้อแลก:</b> ใช้เป็น "โหมดสลับ" ได้ แต่ถ้าเป็นหน้าหลักอาจแข็งไปสำหรับเปิดเสนอโปรเจกต์</li>
+  </ul>
+</section>
+
+<!-- V5 -->
+<section class="variant v5">
+  <h2>5 · วางค่าทั้งเฟส</h2>
+  <p class="why">คัดลอกค่าจาก Excel หรือพิมพ์ต่อกันทีเดียว ระบบแยกเป็นช่อง ตรวจพิกัด และรวมผลให้ทันที</p>
+  <div class="phone"><div class="screen">
+    <div class="status"><span>9:41</span><span>5G</span></div>
+    <div class="bar"><b>กรอกค่าความจุ</b><span>4 จาก 6 เฟส</span></div>
+    <div class="phs">
+      <div class="ok">A<small>✓</small></div><div class="now">B<small>ตอนนี้</small></div><div>C<small>—</small></div>
+      <div class="ok">A'<small>✓</small></div><div class="ok">B'<small>✓</small></div><div>C'<small>—</small></div>
+    </div>
+    <h3>เฟส B · วางค่า B-1 ถึง B-11</h3>
+    <div class="paste">27.6 27.4 26.8 27.7 25.2 26.6<br>27.6 27.6 27.5 26.7 27.4</div>
+    <p class="hint">คั่นด้วยช่องว่าง จุลภาค หรือขึ้นบรรทัด · วางทั้งคอลัมน์จาก Excel ได้</p>
+    <div class="chips">
+      <div class="chip"><small>B-1</small><b>27.6</b></div><div class="chip"><small>B-2</small><b>27.4</b></div><div class="chip"><small>B-3</small><b>26.8</b></div><div class="chip"><small>B-4</small><b>27.7</b></div>
+      <div class="chip bad"><small>B-5</small><b>25.2</b></div><div class="chip"><small>B-6</small><b>26.6</b></div><div class="chip"><small>B-7</small><b>27.6</b></div><div class="chip"><small>B-8</small><b>27.6</b></div>
+      <div class="chip"><small>B-9</small><b>27.5</b></div><div class="chip"><small>B-10</small><b>26.7</b></div><div class="chip"><small>B-11</small><b>27.4</b></div>
+    </div>
+    <div class="res">ได้ 11/11 ช่อง · ผลรวม <b>298.1 µF</b> · ต่ำกว่าเฟส A <b>1.7 µF</b>
+      <div class="w"><svg class="i"><use href="#warn"/></svg>B-5 = 25.2 นอกพิกัด (ต่ำกว่า 25.65)</div>
+    </div>
+    <button class="go">ใช้ค่าชุดนี้ แล้วไปเฟส C</button>
+  </div></div>
+  <ul class="notes">
+    <li><b>เหมาะ:</b> เร็วที่สุด ถ้ามีค่าในไฟล์หรือเครื่องวัดอยู่แล้ว (66 ค่า เหลือ 6 ครั้ง)</li>
+    <li><b>ข้อแลก:</b> หน้างานที่จดมือยังต้องพิมพ์ ควรมีแบบ 1 หรือ 3 เป็นทางเลือก</li>
+  </ul>
+</section>
+
+</div>
+</body>
+</html>
